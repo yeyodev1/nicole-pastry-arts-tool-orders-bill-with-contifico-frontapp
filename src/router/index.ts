@@ -17,6 +17,18 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/orders/:id',
+      name: 'order-detail',
+      component: () => import('../views/orders/OrderDetailView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/reports/sales-by-responsible',
+      name: 'sales-by-responsible',
+      component: () => import('../views/reports/SalesByResponsibleView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/login',
       name: 'login',
       component: LoginView

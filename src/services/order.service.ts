@@ -51,6 +51,16 @@ class OrderService extends APIBase {
       throw error
     }
   }
+
+  async getOrder(id: string): Promise<any> {
+    try {
+      const response = await this.get<any>(`orders/${id}`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching order:', error)
+      throw error
+    }
+  }
 }
 
 export default new OrderService()

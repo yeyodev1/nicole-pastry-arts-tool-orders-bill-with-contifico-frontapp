@@ -25,14 +25,11 @@ onMounted(() => {
 
 <template>
   <div class="orders-list-page">
-    <header class="app-header">
-       <div class="container">
-         <h1>Lista de Pedidos</h1>
-         <router-link to="/orders/new" class="btn-primary">Nuevo Pedido</router-link>
-       </div>
-    </header>
-
     <main class="container">
+      <div class="page-header">
+        <h1>Lista de Pedidos</h1>
+      </div>
+
       <div v-if="isLoading" class="loading-state">
         <div class="spinner"></div>
         <span>Cargando pedidos...</span>
@@ -51,7 +48,7 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="order in orders" :key="order._id">
+            <tr v-for="order in orders" :key="order._id" @click="$router.push(`/orders/${order._id}`)" class="clickable-row">
                <td>{{ new Date(order.deliveryDate).toLocaleDateString() }} {{ new Date(order.deliveryDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</td>
                <td>
                  <div class="client-column">
@@ -93,6 +90,12 @@ onMounted(() => {
   .container {
     display: flex;
     justify-content: space-between;
+    align-items: center;
+  }
+
+  .actions {
+    display: flex;
+    gap: 1rem;
     align-items: center;
   }
 
@@ -138,6 +141,15 @@ onMounted(() => {
 
         &:hover {
           background-color: $gray-50;
+        }
+
+        &.clickable-row {
+          cursor: pointer;
+          transition: background-color 0.2s;
+
+          &:hover {
+            background-color: rgba($NICOLE-PURPLE, 0.05);
+          }
         }
       }
 

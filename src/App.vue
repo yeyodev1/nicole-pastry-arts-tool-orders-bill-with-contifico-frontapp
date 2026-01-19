@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
+import NavBar from './components/NavBar.vue'
+
+const route = useRoute()
 </script>
 
 <template>
-  <header>
-    <nav>
-      <RouterLink to="/">Home</RouterLink>
-      <RouterLink to="/about">About</RouterLink>
-    </nav>
-  </header>
-
-  <RouterView />
+  <div class="app-layout">
+    <NavBar v-if="route.name !== 'login'" />
+    <RouterView />
+  </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.app-layout {
+  min-height: 100vh;
+  background-color: var(--color-background);
+}
+</style>

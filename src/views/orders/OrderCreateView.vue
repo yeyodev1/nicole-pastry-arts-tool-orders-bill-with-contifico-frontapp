@@ -182,16 +182,12 @@ onMounted(() => {
 
 <template>
   <div class="order-page">
-    <header class="app-header">
-      <div class="container">
-        <h1>Nuevo Pedido</h1>
-        <div class="user-info">
-          <span>ventas@nicole.com.ec</span>
-        </div>
-      </div>
-    </header>
+    <div class="container page-header">
+      <h1>Nuevo Pedido</h1>
+    </div>
 
     <main class="container main-content">
+
       <!-- Left Column: Product Selection -->
       <section class="products-section">
         <div class="search-bar">
@@ -210,13 +206,20 @@ onMounted(() => {
               v-for="product in products" 
               :key="product.id" 
               class="product-card"
-              @click="addToCart(product)"
             >
-              <div class="product-info">
-                <h3>{{ product.nombre || product.name }}</h3>
-                <p class="price">${{ parseFloat(product.pvp1 || product.price || 0).toFixed(2) }}</p>
+              <div class="product-image">
+                 <img :src="product.image || 'https://placehold.co/150x150/f3e8ff/6b21a8?text=Nicole'" alt="Product" />
               </div>
-              <button class="btn-add">+</button>
+              <div class="product-content">
+                <div class="product-info">
+                  <h3>{{ product.nombre || product.name }}</h3>
+                  <p class="description">{{ product.description || 'Deliciosas creaciones de Nicole Pastry Arts' }}</p>
+                </div>
+                <div class="product-actions">
+                  <span class="price">${{ parseFloat(product.pvp1 || product.price || 0).toFixed(2) }}</span>
+                  <button @click="addToCart(product)" class="btn-add">Agregar</button>
+                </div>
+              </div>
             </div>
           </div>
           
@@ -377,6 +380,18 @@ onMounted(() => {
     align-items: center;
   }
 
+  .page-header {
+    margin-bottom: 2rem;
+    margin-top: 1.5rem;
+
+    h1 {
+      margin: 0;
+      font-family: $font-principal;
+      color: $NICOLE-PURPLE;
+      font-size: 1.8rem;
+    }
+  }
+
   h1 {
     margin: 0;
     font-family: $font-principal;
@@ -454,57 +469,100 @@ onMounted(() => {
 
 .products-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1.5rem;
 }
 
 .product-card {
   background: white;
   border: 1px solid $border-light;
-  border-radius: 8px;
-  padding: 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   display: flex;
-  justify-content: space-between;
-  align-items: start;
+  flex-direction: column;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
 
   &:hover {
     border-color: $NICOLE-PURPLE;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 20px rgba(0, 0, 0, 0.08);
+  }
+
+  .product-image {
+    width: 100%;
+    height: 140px;
+    background: $gray-100;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .product-content {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    gap: 1rem;
   }
 
   .product-info {
+    flex-grow: 1;
+
     h3 {
-      font-size: 0.95rem;
-      margin: 0 0 0.25rem 0;
+      font-size: 1rem;
+      margin: 0 0 0.5rem 0;
       color: $text-dark;
+      font-weight: 600;
+      line-height: 1.3;
     }
 
-    .price {
-      font-weight: 600;
-      color: $NICOLE-PURPLE;
+    .description {
+      font-size: 0.85rem;
+      color: $text-light;
       margin: 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
   }
 
-  .btn-add {
-    background: $gray-100;
-    border: none;
-    color: $NICOLE-PURPLE;
-    font-weight: bold;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    cursor: pointer;
+  .product-actions {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
+    border-top: 1px solid $gray-100;
+    padding-top: 0.75rem;
+    margin-top: auto;
 
-    &:hover {
-      background: $NICOLE-PURPLE;
-      color: white;
+    .price {
+      font-weight: 700;
+      color: $NICOLE-SECONDARY;
+      font-size: 1.1rem;
+    }
+
+    .btn-add {
+      background: $gray-50;
+      border: 1px solid $gray-200;
+      color: $text-dark;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      width: auto;
+      height: auto;
+
+      &:hover {
+        background: $NICOLE-PURPLE;
+        border-color: $NICOLE-PURPLE;
+        color: white;
+      }
     }
   }
 }
