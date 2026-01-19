@@ -1,0 +1,57 @@
+// Colores principales de Nicole Pastry Arts
+$NICOLE-PURPLE: #812a73;
+$NICOLE-CREAM: #f6f1ee;
+
+// Color primario principal
+$NICOLE-PRIMARY: $NICOLE-PURPLE;
+
+// Colores base
+$white: #ffffff;
+$purple-primary: $NICOLE-PURPLE;
+$cream-primary: $NICOLE-CREAM;
+$text-dark: #1a1a1a;
+$text-light: #666666;
+
+// Colores de fondo y bordes
+$background-light: $NICOLE-CREAM;
+$background-cream: $NICOLE-CREAM;
+$border-light: #e9ecef;
+
+// Variaciones del morado principal para diferentes estados
+@use 'sass:color';
+$purple-light: color.adjust($NICOLE-PURPLE, $lightness: 15%); // Morado más claro
+$purple-dark: color.adjust($NICOLE-PURPLE, $lightness: -15%); // Morado más oscuro
+
+// Color secundario (definido después de $purple-dark)
+$NICOLE-SECONDARY: $purple-dark;
+$purple-hover: color.adjust($NICOLE-PURPLE, $lightness: -8%); // Para hover states
+$purple-overlay: rgba($NICOLE-PURPLE, 0.1);
+
+// Colores neutros para UI (basados en grises)
+$gray-50: #fafafa;
+$gray-100: #f5f5f5;
+$gray-200: #eeeeee;
+$gray-300: #e0e0e0;
+$gray-400: #bdbdbd;
+$gray-500: #9e9e9e;
+$gray-600: #757575;
+$gray-700: #616161;
+$gray-800: #424242;
+$gray-900: #212121;
+
+// Colores de estado (manteniendo la paleta minimalista)
+$success: #4caf50;
+$warning: #ff9800;
+$error: #f44336;
+$info: $NICOLE-PURPLE;
+
+// Variaciones de colores de estado usando funciones modernas de Sass
+$success-light: color.scale($success, $lightness: 20%);
+$success-dark: color.scale($success, $lightness: -20%);
+$warning-light: color.scale($warning, $lightness: 20%);
+$warning-dark: color.scale($warning, $lightness: -20%);
+$error-light: color.scale($error, $lightness: 20%);
+$error-dark: color.scale($error, $lightness: -20%);
+
+// Funciones de utilidad para colores (usando las nuevas funciones de Sass)
+// Estas reemplazan las funciones deprecadas como lighten(), darken(), etc.

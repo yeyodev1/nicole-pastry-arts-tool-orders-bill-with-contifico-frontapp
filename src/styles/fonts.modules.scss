@@ -1,0 +1,49 @@
+// Importación de fuentes modernas de Google
+@use 'sass:string';
+
+// Google Fonts - Selección moderna y atractiva
+@import url('https://fonts.googleapis.com/css2?family=Bitcount:wght@100..900&family=GFS+Didot&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+
+// Fuentes modernas y atractivas para web
+// Bitcount: Perfect for modern and unique headings
+// GFS Didot: Elegant serif font ideal for coffee shop branding
+// Roboto: Clean and highly readable for body text
+
+// Variables CSS modernas
+:root {
+  --font-bitcount: 'Bitcount', sans-serif;
+  --font-gfs-didot: 'GFS Didot', serif;
+  --font-roboto: 'Roboto', sans-serif;
+}
+
+// Variables SCSS para uso en componentes
+$font-principal: 'GFS Didot', serif;           // Para títulos principales y headings
+$font-secondary: 'Roboto', sans-serif;         // Para texto de cuerpo y párrafos
+$font-accent: 'Bitcount', sans-serif;          // Para elementos destacados y CTAs
+$font-interface: 'Roboto', sans-serif;         // Para elementos de UI y navegación
+$font-fallback: 'Arial', sans-serif;           // Fuente de respaldo confiable
+
+// Mixins para facilitar el uso
+@mixin heading-font($weight: 400) {
+  font-family: $font-principal;
+  font-weight: $weight;
+  line-height: 1.2;
+}
+
+@mixin body-font($weight: 400) {
+  font-family: $font-secondary;
+  font-weight: $weight;
+  line-height: 1.6;
+}
+
+@mixin accent-font($weight: 500) {
+  font-family: $font-accent;
+  font-weight: $weight;
+  line-height: 1.4;
+}
+
+@mixin interface-font($weight: 400) {
+  font-family: $font-interface;
+  font-weight: $weight;
+  line-height: 1.5;
+}
