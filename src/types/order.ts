@@ -67,3 +67,16 @@ export interface OrderFormData {
   paymentMethod: string
   invoiceData: InvoiceData
 }
+
+export interface Order extends OrderFormData {
+  _id: string
+  orderDate: string
+  products: CartItem[]
+  totalValue: number
+  deliveryValue: number
+  invoiceStatus?: 'PENDING' | 'PROCESSED' | 'ERROR'
+  productionStage: 'PENDING' | 'IN_PROCESS' | 'FINISHED'
+  productionNotes: string
+  createdAt: string
+  updatedAt: string
+}
