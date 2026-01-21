@@ -38,20 +38,53 @@ const router = createRouter({
       name: 'create-order',
       component: OrderCreateView,
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/production',
+      name: 'production-dashboard',
+      component: () => import('../views/production/ProductionDashboardView.vue'),
+      meta: { requiresAuth: true, role: 'production' }
+    },
+    {
+      path: '/production/summary',
+      name: 'production-summary',
+      component: () => import('../views/production/ProductionItemsSummaryView.vue'),
+      meta: { requiresAuth: true, role: 'production' }
     }
   ],
 })
 
 router.beforeEach((to, from, next) => {
   const isAuthenticated = localStorage.getItem('access_token')
+  const userInfoStr = localStorage.getItem('user_info')
+  const user = userInfoStr ? JSON.parse(userInfoStr) : null
+  const role = user?.role
 
   if (to.meta.requiresAuth && !isAuthenticated) {
     next({ name: 'login' })
-  } else if (to.name === 'login' && isAuthenticated) {
-    next({ name: 'create-order' })
-  } else {
-    next()
+    return
   }
+
+  if (to.name === 'login' && isAuthenticated) {
+    if (role === 'production') next({ name: 'production-dashboard' })
+    else next({ name: 'create-order' })
+    return
+  }
+
+  // Role based access control
+  if (isAuthenticated) {
+    if (role === 'production' && !to.path.startsWith('/production')) {
+      next({ name: 'production-dashboard' })
+      return
+    }
+
+    if (role === 'sales' && to.path.startsWith('/production')) {
+      next({ name: 'create-order' })
+      return
+    }
+  }
+
+  next()
 })
 
 export default router
