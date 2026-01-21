@@ -1,13 +1,6 @@
 import APIBase from './httpBase'
 import type { AxiosResponse } from 'axios'
-
-interface Product {
-  id: string
-  name: string
-  price: number
-  category_id?: string
-  // Add other fields as needed
-}
+import type { Product } from '@/types/order'
 
 class ProductService extends APIBase {
   async getProducts(params: { filtro?: string; page?: number; limit?: number } = {}): Promise<Product[]> {
