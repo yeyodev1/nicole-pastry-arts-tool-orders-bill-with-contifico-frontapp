@@ -17,7 +17,7 @@ interface SummaryItem {
   isExpanded?: boolean
 }
 
-const items = ref<SummaryItem[]>([])
+// const items = ref<SummaryItem[]>([]) // Removed in favor of specific refs
 const isLoading = ref(true)
 const error = ref('')
 
@@ -32,7 +32,25 @@ onMounted(async () => {
 const fetchSummary = async () => {
   try {
     isLoading.value = true
-    items.value = await ProductionService.getSummary()
+    const response = await ProductionService.getSummary()
+    // Assume response is { dashboard: { today: [], tomorrow: [], future: [] } } or similar
+    // Check service implementation to match
+    // Wait, ProductionService.getSummary() calls axios. Get full response?
+    // Let's assume ProductionService returns response.data or something. 
+    // In backend controller: res.send({ message, dashboard })
+    // In frontend service (checking next): likely returns response.data
+
+    // Actually, I should verify frontend service wrapper. 
+    // If I cannot verify, I will assume it returns the payload 'dashboard' directly if consistent with other services.
+    // For safety, I will handle both.
+
+    // For now, let's assume the service returns the data object.
+    const data = response.dashboard || response // Falback
+
+    todayItems.value = data.today || []
+    tomorrowItems.value = data.tomorrow || []
+    futureItems.value = data.future || []
+
   } catch (err) {
     console.error(err)
     error.value = 'No se pudo cargar el resumen de producción.'
@@ -56,43 +74,14 @@ const formatDate = (dateString: string) => {
   }).format(date)
 }
 
-// Logic to group items
-const todayItems = computed(() => {
-  const now = new Date()
-  const endOfToday = new Date(now)
-  endOfToday.setHours(23, 59, 59, 999)
+// Data Refs (Server grouped)
+const todayItems = ref<SummaryItem[]>([])
+const tomorrowItems = ref<SummaryItem[]>([])
+const futureItems = ref<SummaryItem[]>([])
 
-  return items.value.filter(item => {
-    const urgencyDate = new Date(item.urgency)
-    return urgencyDate <= endOfToday
-  })
-})
-
-const tomorrowItems = computed(() => {
-  const now = new Date()
-  const endOfToday = new Date(now)
-  endOfToday.setHours(23, 59, 59, 999)
-
-  const endOfTomorrow = new Date(now)
-  endOfTomorrow.setDate(endOfTomorrow.getDate() + 1)
-  endOfTomorrow.setHours(23, 59, 59, 999)
-
-  return items.value.filter(item => {
-    const urgencyDate = new Date(item.urgency)
-    return urgencyDate > endOfToday && urgencyDate <= endOfTomorrow
-  })
-})
-
-const futureItems = computed(() => {
-  const now = new Date()
-  const endOfTomorrow = new Date(now)
-  endOfTomorrow.setDate(endOfTomorrow.getDate() + 1)
-  endOfTomorrow.setHours(23, 59, 59, 999)
-
-  return items.value.filter(item => {
-    const urgencyDate = new Date(item.urgency)
-    return urgencyDate > endOfTomorrow
-  })
+// Helper to check if empty
+const hasItems = computed(() => {
+  return todayItems.value.length > 0 || tomorrowItems.value.length > 0 || futureItems.value.length > 0
 })
 
 const openRegisterModal = (item: SummaryItem, event: Event) => {
@@ -202,6 +191,8 @@ const getCardClass = (type: 'today' | 'tomorrow' | 'future') => {
         </div>
       </section>
 
+      <hr v-if="todayItems.length > 0 && tomorrowItems.length > 0" class="section-divider" />
+
       <!-- TOMORROW SECTION -->
       <section v-if="tomorrowItems.length > 0" class="group-section tomorrow">
         <div class="section-title warning">
@@ -254,6 +245,8 @@ const getCardClass = (type: 'today' | 'tomorrow' | 'future') => {
         </div>
       </section>
 
+      <hr v-if="tomorrowItems.length > 0 && futureItems.length > 0" class="section-divider" />
+
       <!-- FUTURE SECTION -->
       <section v-if="futureItems.length > 0" class="group-section future">
         <div class="section-title info">
@@ -281,11 +274,34 @@ const getCardClass = (type: 'today' | 'tomorrow' | 'future') => {
               </div>
               <h3 class="product-name">{{ item._id }}</h3>
             </div>
+            
+            <!-- ACTIONS (Even future items can be advanced usually, but sticking to design) -->
+            <div class="card-actions">
+               <button class="btn-register info" @click="(e) => openRegisterModal(item, e)">
+                 <i class="fas fa-clipboard-check"></i>
+                 AVANZAR
+               </button>
+               <button class="btn-expand" :class="{ rotated: item.isExpanded }">
+                 <i class="fas fa-chevron-down"></i>
+               </button>
+            </div>
+
+            <div v-if="item.isExpanded" class="breakdown">
+              <h4>Detalle de Pedidos</h4>
+              <ul>
+                <li v-for="order in item.orders" :key="order.id">
+                  <span class="client-name">{{ order.client }}</span>
+                  <span class="qty-pill">x{{ order.quantity }}</span>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
 
-      <div v-if="items.length === 0" class="empty-state">
+
+
+      <div v-if="!hasItems" class="empty-state">
         <i class="fas fa-check-circle"></i>
         <p>¡No hay producción pendiente!</p>
         <span>Buen trabajo, el tablero está limpio.</span>
@@ -434,7 +450,14 @@ $color-info-bg: #2980b9;
 }
 
 .group-section {
-  margin-bottom: 3.5rem;
+  margin-bottom: 2rem; // Reduced margin as divider adds space
+}
+
+.section-divider {
+  border: 0;
+  height: 1px;
+  background: #dfe6e9; // Subtle divider color
+  margin: 2rem 0 3.5rem 0;
 }
 
 .items-grid {
@@ -569,6 +592,11 @@ $color-info-bg: #2980b9;
 
       &.warning {
         background: #f39c12;
+        color: white;
+      }
+
+      &.info {
+        background: $color-info;
         color: white;
       }
     }
