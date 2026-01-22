@@ -28,6 +28,10 @@ class ProductionService extends APIBase {
     await this.patch('production/batch', { ids, stage })
   }
 
+  async registerProgress(productName: string, quantity: number) {
+    await this.post('production/progress', { productName, quantity })
+  }
+
   async getSummary(): Promise<any[]> {
     const response = await this.get<{ summary: any[] }>('production/summary')
     return response.data.summary
