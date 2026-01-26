@@ -37,6 +37,17 @@ const formData = reactive<OrderFormData>({
     businessName: '',
     email: '',
     address: ''
+  },
+  // Default Payment at Creation
+  registerPaymentNow: false,
+  paymentDetails: {
+    forma_cobro: 'TRA',
+    monto: 0,
+    fecha: new Date().toISOString().split('T')[0] || '',
+    numero_comprobante: '',
+    numero_tarjeta: '',
+    cuenta_bancaria_id: '',
+    tipo_ping: 'D'
   }
 })
 
