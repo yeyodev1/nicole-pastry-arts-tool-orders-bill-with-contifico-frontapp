@@ -94,8 +94,13 @@ const save = async () => {
 <template>
   <div v-if="isOpen" class="modal-overlay">
     <div class="modal-content">
-      <h2>Editar Datos de Facturación</h2>
+      <h2>{{ currentInvoiceData ? 'Editar Datos de Facturación' : 'Agregar Datos de Facturación' }}</h2>
       
+      <div class="alert-info">
+        <i class="fa-solid fa-pen"></i>
+        <span>Modificar estos datos actualizará la orden (si la factura aún no se ha procesado).</span>
+      </div>
+
       <div class="form-group checkbox-group">
           <label>
               <input type="checkbox" v-model="form.invoiceNeeded"> Requiere Factura
@@ -238,5 +243,18 @@ const save = async () => {
       opacity: 0.9;
     }
   }
+}
+
+.alert-info {
+  background-color: #fef9c3; // Yellowish for caution
+  color: #854d0e;
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  border: 1px solid #fde047;
 }
 </style>
