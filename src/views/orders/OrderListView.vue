@@ -4,6 +4,7 @@ import OrderService from '@/services/order.service'
 import { generateOrderSummary } from '@/utils/orderSummary'
 import ToastNotification from '@/components/ToastNotification.vue'
 import OrderWhatsAppModal from './components/OrderWhatsAppModal.vue'
+import PaymentModal from './components/PaymentModal.vue'
 
 const orders = ref<any[]>([])
 const isLoading = ref(false)
@@ -18,6 +19,10 @@ const toast = ref({
 // Modal State
 const showWhatsAppModal = ref(false)
 const whatsAppModalMessage = ref('')
+
+// Payment Modal State
+const showPaymentModal = ref(false)
+const selectedOrderForPayment = ref<any>(null)
 
 const fetchOrders = async () => {
   isLoading.value = true
@@ -62,6 +67,37 @@ const openWhatsApp = () => {
   // For now, simpler is creating a link 
   const text = encodeURIComponent(whatsAppModalMessage.value)
   window.open(`https://wa.me/?text=${text}`, '_blank')
+}
+
+const openPaymentModal = (order: any) => {
+  selectedOrderForPayment.value = order
+  showPaymentModal.value = true
+}
+
+const handlePaymentRegister = async (payload: any) => {
+  if (!selectedOrderForPayment.value) return
+
+  // Optimistic UI or wait for reload? 
+  // Let's reload to be safe and ensure status is updated if backend changes it
+  try {
+    await OrderService.registerCollection(selectedOrderForPayment.value._id, payload)
+
+    toast.value = {
+      show: true,
+      message: 'Cobro registrado exitosamente',
+      type: 'success'
+    }
+    showPaymentModal.value = false
+    // Refresh orders to see any status updates (future proof)
+    fetchOrders()
+  } catch (error: any) {
+    console.error("Payment error", error)
+    toast.value = {
+      show: true,
+      message: error.response?.data?.message || 'Error registrando cobro',
+      type: 'error'
+    }
+  }
 }
 
 onMounted(() => {
@@ -117,9 +153,12 @@ onMounted(() => {
                   </span>
                   <span v-else class="status-text">-</span>
                </td>
-               <td @click.stop>
+               <td class="actions-cell" @click.stop>
                   <button class="btn-icon" @click="copySummary(order)" title="Copiar Resumen WhatsApp">
                     <i class="fa-regular fa-copy"></i>
+                  </button>
+                  <button class="btn-icon pay-icon" @click="openPaymentModal(order)" title="Registrar Cobro">
+                    <i class="fa-solid fa-dollar-sign"></i>
                   </button>
                </td>
             </tr>
@@ -145,6 +184,16 @@ onMounted(() => {
       :message="whatsAppModalMessage"
       @close="showWhatsAppModal = false"
       @send="openWhatsApp"
+    />
+
+    <!-- Payment Modal -->
+    <PaymentModal
+      v-if="selectedOrderForPayment"
+      :is-open="showPaymentModal"
+      :order-id="selectedOrderForPayment._id"
+      :default-amount="selectedOrderForPayment.totalValue"
+      @close="showPaymentModal = false"
+      @submit="handlePaymentRegister"
     />
   </div>
 </template>
@@ -339,6 +388,12 @@ onMounted(() => {
   padding: 2rem !important;
 }
 
+.actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .btn-icon {
   background: none;
   border: none;
@@ -353,6 +408,15 @@ onMounted(() => {
     background-color: rgba($NICOLE-PURPLE, 0.1);
     color: $NICOLE-PURPLE;
     transform: scale(1.05);
+  }
+
+  &.pay-icon {
+    color: $success;
+
+    &:hover {
+      background-color: rgba($success, 0.1);
+      color: darken($success, 10%);
+    }
   }
 }
 
