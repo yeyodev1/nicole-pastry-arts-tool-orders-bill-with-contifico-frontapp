@@ -13,8 +13,8 @@ const emit = defineEmits<{
 <template>
   <div v-if="isOpen" class="modal-overlay">
     <div class="modal">
-      <h2>Pedido Creado con Éxito</h2>
-      <p>El pedido ha sido guardado. Envía la confirmación por WhatsApp:</p>
+      <h2>Resumen de Pedido</h2>
+      <p>El resumen ha sido copiado al portapapeles. Puedes enviarlo directamente:</p>
       <textarea readonly :value="message" rows="10"></textarea>
       <div class="modal-actions">
         <button @click="emit('close')" class="btn-secondary">Cerrar</button>

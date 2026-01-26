@@ -65,6 +65,15 @@ class OrderService extends APIBase {
       throw error
     }
   }
+  async updateInvoiceData(id: string, data: { invoiceNeeded: boolean, invoiceData?: any }): Promise<any> {
+    try {
+      const response = await this.put<any>(`orders/${id}/invoice`, data)
+      return response.data
+    } catch (error) {
+      console.error('Error updating invoice data:', error)
+      throw error
+    }
+  }
 }
 
 export default new OrderService()

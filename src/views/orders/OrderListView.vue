@@ -1,9 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import OrderService from '@/services/order.service'
+import { generateOrderSummary } from '@/utils/orderSummary'
+import ToastNotification from '@/components/ToastNotification.vue'
+import OrderWhatsAppModal from './components/OrderWhatsAppModal.vue'
 
 const orders = ref<any[]>([])
 const isLoading = ref(false)
+
+// Toast State
+const toast = ref({
+  show: false,
+  message: '',
+  type: 'success' as 'success' | 'error' | 'info'
+})
+
+// Modal State
+const showWhatsAppModal = ref(false)
+const whatsAppModalMessage = ref('')
 
 const fetchOrders = async () => {
   isLoading.value = true
@@ -15,6 +29,39 @@ const fetchOrders = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+const copySummary = async (order: any) => {
+  const text = generateOrderSummary(order)
+  whatsAppModalMessage.value = text
+
+  try {
+    await navigator.clipboard.writeText(text)
+
+    // Show Toast Feedback
+    toast.value = {
+      show: true,
+      message: 'Copiado! Verificando contenido...',
+      type: 'success'
+    }
+
+    // Open Modal to show what was copied
+    showWhatsAppModal.value = true
+  } catch (err) {
+    console.error('Failed to copy: ', err);
+    toast.value = {
+      show: true,
+      message: 'Error al copiar resumen.',
+      type: 'error'
+    }
+  }
+}
+
+const openWhatsApp = () => {
+  // Encode and open - reuse logic or simple open
+  // For now, simpler is creating a link 
+  const text = encodeURIComponent(whatsAppModalMessage.value)
+  window.open(`https://wa.me/?text=${text}`, '_blank')
 }
 
 onMounted(() => {
@@ -45,6 +92,7 @@ onMounted(() => {
               <th>Responsable</th>
               <th>Total</th>
               <th>Facturación</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -69,6 +117,11 @@ onMounted(() => {
                   </span>
                   <span v-else class="status-text">-</span>
                </td>
+               <td @click.stop>
+                  <button class="btn-icon" @click="copySummary(order)" title="Copiar Resumen WhatsApp">
+                    <i class="fa-regular fa-copy"></i>
+                  </button>
+               </td>
             </tr>
             <tr v-if="orders.length === 0">
               <td colspan="6" class="empty-cell">No hay pedidos registrados</td>
@@ -77,6 +130,22 @@ onMounted(() => {
         </table>
       </div>
     </main>
+
+    <!-- Feedback Notification -->
+    <ToastNotification 
+      :show="toast.show" 
+      :message="toast.message" 
+      :type="toast.type"
+      @close="toast.show = false"
+    />
+
+    <!-- Copy Confirmation Modal -->
+    <OrderWhatsAppModal
+      :is-open="showWhatsAppModal"
+      :message="whatsAppModalMessage"
+      @close="showWhatsAppModal = false"
+      @send="openWhatsApp"
+    />
   </div>
 </template>
 
@@ -268,6 +337,23 @@ onMounted(() => {
   text-align: center;
   color: $text-light;
   padding: 2rem !important;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0.5rem;
+  border-radius: 6px;
+  color: $text-light;
+  transition: all 0.2s;
+
+  &:hover {
+    background-color: rgba($NICOLE-PURPLE, 0.1);
+    color: $NICOLE-PURPLE;
+    transform: scale(1.05);
+  }
 }
 
 .container {
