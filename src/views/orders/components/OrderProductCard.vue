@@ -13,6 +13,34 @@ const emit = defineEmits<{
 // Use the cached image loader
 const { imageSrc, isLoading } = useProductImage(props.product.imagen)
 
+import { computed, ref } from 'vue'
+
+const isDelivery = computed(() => {
+  return props.product.nombre.toLowerCase().includes('delivery')
+})
+
+const manualPrice = ref<number | string>('')
+
+const handleAdd = () => {
+  if (isDelivery.value) {
+    // Determine price: Manual if entered, otherwise default to 0 or pvp1 if exists
+    // The user said "Delivery... editable". Usually starts empty or 0.
+    const priceToUse = manualPrice.value ? Number(manualPrice.value) : Number(props.product.pvp1 || 0)
+
+    // We emit a *copy* of the product with the modified price
+    // Note: We modify 'pvp1' effectively for the cart to read it as unit price
+    emit('add', {
+      ...props.product,
+      pvp1: priceToUse.toString() // Use string as pvp1 comes as string usually
+    })
+    // Reset manual price after add? Maybe useful if adding multiple deliveries (unlikely)
+    // manualPrice.value = '' 
+  } else {
+    emit('add', props.product)
+  }
+}
+
+
 </script>
 
 <template>
@@ -32,8 +60,21 @@ const { imageSrc, isLoading } = useProductImage(props.product.imagen)
         <p class="description">{{ product.descripcion || 'Deliciosas creaciones de Nicole Pastry Arts' }}</p>
       </div>
       <div class="product-actions">
-        <span class="price">${{ parseFloat(product.pvp1 || '0').toFixed(2) }}</span>
-        <button @click="emit('add', product)" class="btn-add">Agregar</button>
+        <!-- Conditional Price Display/Input -->
+        <div v-if="isDelivery" class="manual-price-container">
+          <span class="currency">$</span>
+          <input 
+            type="number" 
+            v-model="manualPrice" 
+            placeholder="0.00" 
+            step="0.01"
+            class="manual-price-input"
+            @click.stop
+          />
+        </div>
+        <span v-else class="price">${{ parseFloat(product.pvp1 || '0').toFixed(2) }}</span>
+        
+        <button @click="handleAdd" class="btn-add">Agregar</button>
       </div>
     </div>
   </div>
@@ -138,6 +179,47 @@ const { imageSrc, isLoading } = useProductImage(props.product.imagen)
       font-weight: 700;
       color: $NICOLE-SECONDARY;
       font-size: 1.1rem;
+    }
+
+    .manual-price-container {
+      display: flex;
+      align-items: center;
+      background: #fdf2f8; // Light pink background
+      border: 1px dashed $NICOLE-PURPLE;
+      border-radius: 6px;
+      padding: 0 0.5rem;
+      width: 80px;
+
+      .currency {
+        font-weight: 600;
+        color: $NICOLE-PURPLE;
+        font-size: 0.9rem;
+        margin-right: 2px;
+      }
+
+      .manual-price-input {
+        width: 100%;
+        border: none;
+        background: transparent;
+        font-weight: 700;
+        color: $NICOLE-SECONDARY;
+        font-size: 1rem;
+        padding: 0.25rem 0;
+        outline: none;
+        text-align: right; // Align numbers for better feel
+
+        &::placeholder {
+          color: rgba($NICOLE-SECONDARY, 0.4);
+          font-weight: 400;
+        }
+
+        /* Remove spin buttons */
+        &::-webkit-inner-spin-button,
+        &::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+      }
     }
 
     .btn-add {

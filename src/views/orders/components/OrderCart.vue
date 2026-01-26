@@ -18,7 +18,20 @@ const cartTotal = computed(() => {
 })
 
 const cartSubtotal = computed(() => cartTotal.value)
-const cartIVA = computed(() => cartSubtotal.value * 0.15)
+
+const cartIVA = computed(() => {
+  return props.cart.reduce((totalIVA, item) => {
+    // Check if item is Delivery (0% IVA)
+    const isDelivery = item.name.toLowerCase().includes('delivery')
+
+    if (isDelivery) {
+      return totalIVA // No IVA
+    } else {
+      return totalIVA + (item.price * item.quantity * 0.15)
+    }
+  }, 0)
+})
+
 const finalTotal = computed(() => cartSubtotal.value + cartIVA.value)
 
 const onDecrease = (item: CartItem, index: number) => {
