@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { OrderFormData } from '@/types/order'
 import { computed } from 'vue'
+import PaymentFields from './PaymentFields.vue'
 
 const props = defineProps<{
   modelValue: OrderFormData
@@ -125,6 +126,19 @@ const isDelivery = computed(() => props.modelValue.deliveryType === 'delivery')
         <label>Dirección</label>
         <input v-model="props.modelValue.invoiceData.address" />
       </div>
+    </div>
+
+    <!-- Payment at Creation Section -->
+    <div class="payment-toggle">
+        <label>
+            <input type="checkbox" v-model="props.modelValue.registerPaymentNow" />
+             Registrar Cobro Ahora
+        </label>
+    </div>
+    
+    <div v-if="props.modelValue.registerPaymentNow" class="payment-fields-section">
+        <h3>Datos del Cobro</h3>
+        <PaymentFields v-model="props.modelValue.paymentDetails" />
     </div>
   </div>
 </template>
@@ -278,6 +292,37 @@ const isDelivery = computed(() => props.modelValue.deliveryType === 'delivery')
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+.payment-toggle {
+  margin: 1.5rem 0 1rem;
+  padding: 0.5rem;
+  background: rgba($success, 0.1);
+  border: 1px solid $success;
+  border-radius: 6px;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-weight: 500;
+    color: darken($success, 10%);
+  }
+}
+
+.payment-fields-section {
+  display: grid;
+  gap: 1rem;
+  animation: fadeIn 0.3s ease;
+  border-top: 1px dashed $border-light;
+  padding-top: 1rem;
+
+  h3 {
+    font-size: 1rem;
+    color: $text-dark;
+    margin: 0.5rem 0 0;
   }
 }
 </style>
