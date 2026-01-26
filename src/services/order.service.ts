@@ -74,6 +74,16 @@ class OrderService extends APIBase {
       throw error
     }
   }
+
+  async registerCollection(id: string, data: any): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/collection`, data)
+      return response.data
+    } catch (error) {
+      console.error('Error registering collection:', error)
+      throw error
+    }
+  }
 }
 
 export default new OrderService()
