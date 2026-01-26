@@ -3,9 +3,14 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import OrderService from '@/services/order.service'
 
+import InvoiceEditModal from './components/InvoiceEditModal.vue'
+import PaymentModal from './components/PaymentModal.vue'
+
 const route = useRoute()
 const order = ref<any>(null)
 const isLoading = ref(false)
+const showInvoiceModal = ref(false)
+const showPaymentModal = ref(false)
 
 const fetchOrder = async () => {
   const id = route.params.id as string
@@ -19,6 +24,28 @@ const fetchOrder = async () => {
     console.error('Error fetching order:', error)
   } finally {
     isLoading.value = false
+  }
+}
+
+const handleOrderUpdated = (updatedOrder: any) => {
+  order.value = updatedOrder
+}
+
+const registerCollection = async (payload: any) => {
+  if (!order.value) return;
+
+  isLoading.value = true
+  try {
+    const response = await OrderService.registerCollection(order.value._id, payload);
+    alert("Cobro registrado exitosamente en Contífico.");
+    showPaymentModal.value = false;
+    // Ideally reload order or update status, though we don't track collections in local DB yet.
+    // fetchOrder(); 
+  } catch (error: any) {
+    console.error("Error registering collection:", error);
+    alert(error.response?.data?.message || "Error al registrar el cobro.");
+  } finally {
+    isLoading.value = false;
   }
 }
 
@@ -116,27 +143,56 @@ onMounted(() => {
               </div>
            </div>
 
-           <div class="card invoice-card" v-if="order.invoiceNeeded">
-              <h2>Datos Facturación</h2>
-              <div class="field">
-                <label>Razón Social</label>
-                <p>{{ order.invoiceData.businessName }}</p>
+           <div class="card invoice-card">
+              <div class="card-header-row">
+                <h2>Datos Facturación</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                  <button v-if="order.invoiceStatus === 'PROCESSED'" @click="showPaymentModal = true" class="btn-xs btn-primary">Registrar Cobro</button>
+                  <button v-if="order.invoiceStatus !== 'PROCESSED'" @click="showInvoiceModal = true" class="btn-xs">Editar</button>
+                </div>
               </div>
-              <div class="field">
-                <label>RUC/CI</label>
-                <p>{{ order.invoiceData.ruc }}</p>
+              
+              <div v-if="order.invoiceNeeded">
+                  <div class="field">
+                    <label>Razón Social</label>
+                    <p>{{ order.invoiceData.businessName }}</p>
+                  </div>
+                  <div class="field">
+                    <label>RUC/CI</label>
+                    <p>{{ order.invoiceData.ruc }}</p>
+                  </div>
+                  <div class="field">
+                    <label>Email</label>
+                    <p>{{ order.invoiceData.email }}</p>
+                  </div>
+                  <div class="field">
+                    <label>Dirección</label>
+                    <p>{{ order.invoiceData.address }}</p>
+                  </div>
               </div>
-              <div class="field">
-                <label>Email</label>
-                <p>{{ order.invoiceData.email }}</p>
-              </div>
-              <div class="field">
-                <label>Dirección</label>
-                <p>{{ order.invoiceData.address }}</p>
+              <div v-else class="empty-invoice">
+                  <p>No requiere factura.</p>
               </div>
            </div>
         </section>
       </div>
+    <InvoiceEditModal
+      :is-open="showInvoiceModal"
+      :order-id="order._id"
+      :invoice-needed="order.invoiceNeeded"
+      :current-invoice-data="order.invoiceData"
+      @close="showInvoiceModal = false"
+      @saved="handleOrderUpdated"
+    />
+
+    <PaymentModal
+      v-if="order"
+      :is-open="showPaymentModal"
+      :order-id="order._id"
+      :default-amount="order.totalValue"
+      @close="showPaymentModal = false"
+      @submit="registerCollection"
+    />
     </main>
 
     <div v-if="isLoading" class="loading-state">
@@ -385,5 +441,42 @@ onMounted(() => {
   .header-info {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid $border-light;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+
+  h2 {
+    border-bottom: none;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+.btn-xs {
+  background: white;
+  border: 1px solid $border-light;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: $NICOLE-PURPLE;
+  font-weight: 500;
+
+  &:hover {
+    background: $gray-50;
+    border-color: $NICOLE-PURPLE;
+  }
+}
+
+.empty-invoice {
+  color: $text-light;
+  font-size: 0.9rem;
+  font-style: italic;
 }
 </style>

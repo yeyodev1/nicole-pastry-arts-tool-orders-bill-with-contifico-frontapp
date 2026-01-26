@@ -59,13 +59,28 @@ export interface OrderFormData {
   customerName: string
   customerPhone: string
   deliveryDate: string
-  deliveryType: 'pickup' | 'delivery'
+  deliveryTime: string // New field
+  deliveryType: 'pickup' | 'delivery' | 'retiro' // 'retiro' is used in backend
+  branch?: 'San Marino' | 'Mall del Sol' | 'Centro de Producción' // New field
+  googleMapsLink?: string // New field
+  deliveryAddress?: string // New field
   invoiceNeeded: boolean
   comments: string
   responsible: string
   salesChannel: string
   paymentMethod: string
   invoiceData: InvoiceData
+  // New Payment Fields
+  registerPaymentNow?: boolean
+  paymentDetails?: {
+    forma_cobro: string
+    monto: number
+    fecha: string
+    numero_comprobante: string
+    numero_tarjeta?: string // Added for TC
+    cuenta_bancaria_id: string
+    tipo_ping: string
+  }
 }
 
 export interface Order extends OrderFormData {

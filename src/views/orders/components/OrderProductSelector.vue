@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import ProductService from '@/services/product.service'
 import OrderProductCard from './OrderProductCard.vue'
 import type { Product } from '@/types/order'
+import { getOfficialName } from '@/services/productMapping.service'
 
 const emit = defineEmits<{
   (e: 'add-to-cart', product: Product): void
@@ -28,8 +29,11 @@ const fetchProducts = async (isNewSearch = true) => {
 
   isLoading.value = true
   try {
+    // Apply mapping to search term (e.g. "Tarta Vasca" -> "Tarta de Queso")
+    const query = getOfficialName(searchTerm.value)
+
     const data = await ProductService.getProducts({
-      filtro: searchTerm.value,
+      filtro: query,
       page: currentPage.value,
       limit: pageSize
     })

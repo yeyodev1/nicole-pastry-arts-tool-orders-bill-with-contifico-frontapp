@@ -4,7 +4,11 @@ interface OrderData {
   customerName: string
   customerPhone: string
   deliveryDate: string
-  deliveryType: 'pickup' | 'delivery'
+  deliveryTime: string
+  deliveryType: 'pickup' | 'delivery' | 'retiro'
+  branch?: 'San Marino' | 'Mall del Sol' | 'Centro de Producción'
+  googleMapsLink?: string
+  deliveryAddress?: string
   products: Array<{
     id?: string
     contifico_id?: string
@@ -58,6 +62,25 @@ class OrderService extends APIBase {
       return response.data
     } catch (error) {
       console.error('Error fetching order:', error)
+      throw error
+    }
+  }
+  async updateInvoiceData(id: string, data: { invoiceNeeded: boolean, invoiceData?: any }): Promise<any> {
+    try {
+      const response = await this.put<any>(`orders/${id}/invoice`, data)
+      return response.data
+    } catch (error) {
+      console.error('Error updating invoice data:', error)
+      throw error
+    }
+  }
+
+  async registerCollection(id: string, data: any): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/collection`, data)
+      return response.data
+    } catch (error) {
+      console.error('Error registering collection:', error)
       throw error
     }
   }
