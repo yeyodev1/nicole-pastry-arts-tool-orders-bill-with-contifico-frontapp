@@ -4,11 +4,13 @@ import { useRoute } from 'vue-router'
 import OrderService from '@/services/order.service'
 
 import InvoiceEditModal from './components/InvoiceEditModal.vue'
+import PaymentModal from './components/PaymentModal.vue'
 
 const route = useRoute()
 const order = ref<any>(null)
 const isLoading = ref(false)
 const showInvoiceModal = ref(false)
+const showPaymentModal = ref(false)
 
 const fetchOrder = async () => {
   const id = route.params.id as string
@@ -27,6 +29,24 @@ const fetchOrder = async () => {
 
 const handleOrderUpdated = (updatedOrder: any) => {
   order.value = updatedOrder
+}
+
+const registerCollection = async (payload: any) => {
+  if (!order.value) return;
+
+  isLoading.value = true
+  try {
+    const response = await OrderService.registerCollection(order.value._id, payload);
+    alert("Cobro registrado exitosamente en Contífico.");
+    showPaymentModal.value = false;
+    // Ideally reload order or update status, though we don't track collections in local DB yet.
+    // fetchOrder(); 
+  } catch (error: any) {
+    console.error("Error registering collection:", error);
+    alert(error.response?.data?.message || "Error al registrar el cobro.");
+  } finally {
+    isLoading.value = false;
+  }
 }
 
 const formatDate = (date: string) => {
@@ -126,7 +146,10 @@ onMounted(() => {
            <div class="card invoice-card">
               <div class="card-header-row">
                 <h2>Datos Facturación</h2>
-                <button v-if="order.invoiceStatus !== 'PROCESSED'" @click="showInvoiceModal = true" class="btn-xs">Editar</button>
+                <div style="display: flex; gap: 0.5rem;">
+                  <button v-if="order.invoiceStatus === 'PROCESSED'" @click="showPaymentModal = true" class="btn-xs btn-primary">Registrar Cobro</button>
+                  <button v-if="order.invoiceStatus !== 'PROCESSED'" @click="showInvoiceModal = true" class="btn-xs">Editar</button>
+                </div>
               </div>
               
               <div v-if="order.invoiceNeeded">
@@ -160,6 +183,15 @@ onMounted(() => {
       :current-invoice-data="order.invoiceData"
       @close="showInvoiceModal = false"
       @saved="handleOrderUpdated"
+    />
+
+    <PaymentModal
+      v-if="order"
+      :is-open="showPaymentModal"
+      :order-id="order._id"
+      :default-amount="order.totalValue"
+      @close="showPaymentModal = false"
+      @submit="registerCollection"
     />
     </main>
 
