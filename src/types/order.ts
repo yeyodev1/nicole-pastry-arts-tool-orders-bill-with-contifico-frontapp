@@ -70,6 +70,17 @@ export interface OrderFormData {
   salesChannel: string
   paymentMethod: string
   invoiceData: InvoiceData
+  // New Payment Fields
+  registerPaymentNow?: boolean
+  paymentDetails?: {
+    forma_cobro: string
+    monto: number
+    fecha: string
+    numero_comprobante: string
+    numero_tarjeta?: string // Added for TC
+    cuenta_bancaria_id: string
+    tipo_ping: string
+  }
 }
 
 export interface Order extends OrderFormData {
