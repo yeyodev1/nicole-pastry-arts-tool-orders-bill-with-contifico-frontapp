@@ -14,6 +14,7 @@ const router = createRouter({
           try {
             const user = JSON.parse(userInfoStr)
             if (user?.role === 'production') return { name: 'production-summary' }
+            if (user?.role === 'RetailManager') return { name: 'pos-shipments' }
             return { name: 'create-order' }
           } catch (e) {
             return { name: 'login' }
@@ -73,6 +74,13 @@ const router = createRouter({
       name: 'production-reports',
       component: () => import('../views/production/ProductionReportsView.vue'),
       meta: { requiresAuth: true, role: 'production', title: 'Reportes de Producción' }
+    },
+    // POS / RetailManager Routes
+    {
+      path: '/pos/shipments',
+      name: 'pos-shipments',
+      component: () => import('../views/pos/IncomingShipmentsView.vue'),
+      meta: { requiresAuth: true, role: 'RetailManager', title: 'Recepción de Pedidos' }
     }
   ],
 })
@@ -105,22 +113,27 @@ router.beforeEach((to, from, next) => {
   // 2. Redirect authenticated users away from login page
   if (to.name === 'login' && isAuthenticated) {
     if (role === 'production') next({ name: 'production-summary' })
+    else if (role === 'RetailManager') next({ name: 'pos-shipments' })
     else next({ name: 'create-order' })
     return
   }
 
   // 3. Role-Based Access Control logic
   if (isAuthenticated) {
-    // Production user trying to access non-production and non-public routes?
-    // (Assuming they shouldn't access sales routes)
+    // Production user
     if (role === 'production' && !to.path.startsWith('/production')) {
-      // Allow them to go to their home
       next({ name: 'production-summary' })
       return
     }
 
-    // Sales user trying to access production routes?
-    if (role === 'sales' && to.path.startsWith('/production')) {
+    // RetailManager user should stick to /pos
+    if (role === 'RetailManager' && !to.path.startsWith('/pos')) {
+      next({ name: 'pos-shipments' })
+      return
+    }
+
+    // Sales user trying to access production or pos routes?
+    if (role === 'sales' && (to.path.startsWith('/production') || to.path.startsWith('/pos'))) {
       next({ name: 'create-order' })
       return
     }
