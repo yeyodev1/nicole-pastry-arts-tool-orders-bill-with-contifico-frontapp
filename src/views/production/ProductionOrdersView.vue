@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import ProductionService from '@/services/production.service'
+import DispatchReportModal from './components/DispatchReportModal.vue'
 
 interface Order {
   _id: string
@@ -10,6 +11,7 @@ interface Order {
   customerPhone?: string
   salesChannel: string
   products: {
+    _id: string
     name: string
     quantity: number
     productionStatus: string
@@ -18,12 +20,94 @@ interface Order {
   deliveryType: string
   branch?: string
   deliveryAddress?: string
+
+  // Dispatch
+  dispatchStatus?: string
+  dispatches?: {
+    _id: string
+    reportedAt: string
+    destination: string
+    items: any[]
+  }[]
 }
 
 const orders = ref<Order[]>([])
 const isLoading = ref(true)
 const error = ref('')
 const filterMode = ref('today') // Default to Today for focus
+
+// Modal State
+const showDispatchModal = ref(false)
+const selectedOrder = ref<Order | null>(null)
+const dispatchDestination = ref('')
+
+// Batch Selection
+const selectedIds = ref<string[]>([])
+
+const toggleSelection = (id: string) => {
+  if (selectedIds.value.includes(id)) {
+    selectedIds.value = selectedIds.value.filter(i => i !== id)
+  } else {
+    selectedIds.value.push(id)
+  }
+}
+
+const toggleSelectAll = () => {
+  if (selectedIds.value.length === filteredOrders.value.length) {
+    selectedIds.value = []
+  } else {
+    selectedIds.value = filteredOrders.value.map(o => o._id)
+  }
+}
+
+const handleBatchDispatch = async () => {
+  if (selectedIds.value.length === 0) return
+  if (!confirm(`¿Estás seguro de marcar como ENVIADOS ${selectedIds.value.length} órdenes?`)) return
+
+  try {
+    isLoading.value = true
+    await ProductionService.registerBatchDispatch(selectedIds.value)
+    selectedIds.value = [] // clear selection
+    await fetchOrders()
+    alert('Envíos masivos registrados correctamente.')
+  } catch (err) {
+    console.error(err)
+    alert('Hubo un error al procesar los envíos masivos.')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const openDispatchModal = (order: Order) => {
+  selectedOrder.value = order
+
+  // Determine Destination Label
+  if (order.deliveryType === 'delivery') {
+    dispatchDestination.value = 'Domicilio / Delivery'
+  } else {
+    dispatchDestination.value = order.branch || 'Local'
+  }
+
+  showDispatchModal.value = true
+}
+
+const handleDispatchConfirm = async (payload: any) => {
+  if (!selectedOrder.value) return
+
+  try {
+    isLoading.value = true
+    await ProductionService.registerDispatch(selectedOrder.value._id, {
+      ...payload,
+      reportedBy: 'Producción'
+    })
+    showDispatchModal.value = false
+    await fetchOrders() // Refresh to show new status
+  } catch (err: any) {
+    alert('Error registrando envío: ' + (err.response?.data?.message || err.message))
+  } finally {
+    isLoading.value = false
+  }
+}
 
 // Helper to strip time for date comparison
 const isSameDay = (d1: Date, d2: Date) => {
@@ -163,6 +247,16 @@ const getStatusBadge = (stage: string) => {
   }
   return map[stage] || { label: stage, class: '' }
 }
+
+const getDispatchBadge = (status?: string) => {
+  const map: Record<string, any> = {
+    'NOT_SENT': { label: 'NO ENVIADO', class: 'disp-none' },
+    'PARTIAL': { label: 'PARCIAL', class: 'disp-partial' },
+    'SENT': { label: 'ENVIADO', class: 'disp-sent' },
+    'PROBLEM': { label: 'EXCESO / ERROR', class: 'disp-problem' }
+  }
+  return map[status || 'NOT_SENT'] || map['NOT_SENT']
+}
 </script>
 
 <template>
@@ -232,9 +326,25 @@ const getStatusBadge = (stage: string) => {
     </div>
 
     <div v-else-if="filteredOrders.length > 0" class="table-container">
+      
+      <!-- Bulk Actions Bar -->
+      <div class="bulk-actions" v-if="selectedIds.length > 0">
+        <span class="count">{{ selectedIds.length }} seleccionados</span>
+        <button class="btn-bulk" @click="handleBatchDispatch">
+          <i class="fas fa-shipping-fast"></i> Reportar {{ selectedIds.length }} Envíos
+        </button>
+      </div>
+
       <table class="orders-table">
         <thead>
           <tr>
+            <th class="col-check">
+              <input 
+                type="checkbox" 
+                :checked="selectedIds.length === filteredOrders.length && filteredOrders.length > 0"
+                @change="toggleSelectAll"
+              >
+            </th>
             <th>Cliente</th>
             <th>Canal</th>
             <th>Destino / Entrega</th>
@@ -243,7 +353,14 @@ const getStatusBadge = (stage: string) => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="order in filteredOrders" :key="order._id">
+          <tr v-for="order in filteredOrders" :key="order._id" :class="{ selected: selectedIds.includes(order._id) }">
+            <td class="col-check">
+               <input 
+                type="checkbox" 
+                :checked="selectedIds.includes(order._id)"
+                @change="toggleSelection(order._id)"
+              >
+            </td>
             <td class="col-client">
               <span class="name">{{ order.customerName }}</span>
               <span class="phone" v-if="order.customerPhone"><i class="fas fa-phone-alt"></i> {{ order.customerPhone }}</span>
@@ -283,9 +400,25 @@ const getStatusBadge = (stage: string) => {
               </ul>
             </td>
             <td>
-              <span class="status-pill" :class="getStatusBadge(order.productionStage).class">
-                {{ getStatusBadge(order.productionStage).label }}
-              </span>
+              <div class="status-stack">
+                <span class="status-pill" :class="getStatusBadge(order.productionStage).class">
+                  {{ getStatusBadge(order.productionStage).label }}
+                </span>
+                
+                <div class="dispatch-group">
+                  <span 
+                    class="dispatch-badge" 
+                    :class="getDispatchBadge(order.dispatchStatus).class"
+                    v-if="order.dispatchStatus && order.dispatchStatus !== 'NOT_SENT'"
+                  >
+                    <i class="fas fa-truck"></i> {{ getDispatchBadge(order.dispatchStatus).label }}
+                  </span>
+                  
+                  <button class="btn-dispatch" @click="openDispatchModal(order)">
+                    <i class="fas fa-paper-plane"></i> Reportar Envío
+                  </button>
+                </div>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -296,6 +429,17 @@ const getStatusBadge = (stage: string) => {
       <i class="fas fa-box-open"></i>
       <p>No hay órdenes activas en este momento.</p>
     </div>
+
+    <!-- Modals -->
+    <DispatchReportModal
+      v-if="selectedOrder"
+      :is-open="showDispatchModal"
+      :order-id="selectedOrder._id"
+      :destination="dispatchDestination"
+      :products="selectedOrder.products"
+      @close="showDispatchModal = false"
+      @confirm="handleDispatchConfirm"
+    />
   </div>
 </template>
 
@@ -595,6 +739,72 @@ $color-primary: #8e44ad;
   &.status-delayed {
     background: #fdedec;
     color: #e74c3c;
+  }
+}
+
+.status-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.dispatch-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+
+  .dispatch-badge {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    &.disp-sent {
+      color: #2ecc71;
+      background: #eafaf1;
+    }
+
+    &.disp-partial {
+      color: #f1c40f;
+      background: #fef9e7;
+    }
+
+    &.disp-problem {
+      color: #e74c3c;
+      background: #fdedec;
+    }
+  }
+
+  .btn-dispatch {
+    font-size: 0.8rem;
+    padding: 6px 12px;
+    background: #8e44ad;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    color: white;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 2px 4px rgba(142, 68, 173, 0.2);
+    margin-top: 4px;
+
+    &:hover {
+      background: #9b59b6;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(142, 68, 173, 0.3);
+    }
+
+    i {
+      font-size: 0.9rem;
+    }
   }
 }
 
