@@ -62,6 +62,19 @@ class POSService extends APIBase {
       throw error
     }
   }
+
+  /**
+   * Get pickup orders for a branch
+   */
+  async getPickupOrders(branch: string): Promise<any[]> {
+    try {
+      const response = await this.get<{ data: any[] }>(`pos/pickups?branch=${encodeURIComponent(branch)}`)
+      return response.data.data
+    } catch (error) {
+      console.error('Error fetching pickups:', error)
+      throw error
+    }
+  }
 }
 
 export default new POSService()
