@@ -23,6 +23,7 @@ const handleLogout = () => {
     </div>
     <nav class="sub-nav">
       <router-link to="/production/summary" class="nav-item" active-class="active">Resumen</router-link>
+      <router-link to="/production/orders" class="nav-item" active-class="active">Órdenes</router-link>
     </nav>
   </header>
 </template>
