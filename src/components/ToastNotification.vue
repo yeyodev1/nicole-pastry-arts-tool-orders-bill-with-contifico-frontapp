@@ -33,9 +33,7 @@ watch(() => props.show, (newVal) => {
 
 <style lang="scss" scoped>
 .toast-notification {
-  position: fixed;
-  bottom: 2rem;
-  right: 2rem; // Or center: left: 50%; transform: translateX(-50%);
+  /* Position handling moved to container */
   background: white;
   padding: 1rem 1.5rem;
   border-radius: 8px;
@@ -43,8 +41,12 @@ watch(() => props.show, (newVal) => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  z-index: 9999;
   border-left: 4px solid;
+  font-weight: 500;
+  color: $text-dark;
+  width: auto;
+  min-width: 300px;
+  max-width: 100%;
   font-weight: 500;
   color: $text-dark;
 
