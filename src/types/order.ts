@@ -46,6 +46,7 @@ export interface CartItem {
   name: string
   price: number
   quantity: number
+  isCourtesy?: boolean
 }
 
 export interface InvoiceData {
