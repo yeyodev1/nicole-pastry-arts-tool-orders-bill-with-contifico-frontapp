@@ -82,17 +82,26 @@ export interface OrderFormData {
     cuenta_bancaria_id: string
     tipo_ping: string
   }
+  // Added for Form Validation
+  totalValue?: number
 }
 
 export interface Order extends OrderFormData {
   _id: string
   orderDate: string
   products: CartItem[]
-  totalValue: number
+  totalValue: number // Required here
   deliveryValue: number
   invoiceStatus?: 'PENDING' | 'PROCESSED' | 'ERROR'
   productionStage: 'PENDING' | 'IN_PROCESS' | 'FINISHED'
   productionNotes: string
   createdAt: string
   updatedAt: string
+  // History of payments
+  payments?: Array<{
+    forma_cobro: string
+    monto: number
+    fecha: string
+    status: string
+  }>
 }
