@@ -162,6 +162,18 @@ const submitPayment = async () => {
   width: 90%;
   max-width: 400px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+
+  /* Scrollable Fix */
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-body {
+  overflow-y: auto;
+  flex: 1;
+  /* Cosmetic: add some space for scrollbar if needed */
+  padding-right: 4px;
 }
 
 .modal-header {
