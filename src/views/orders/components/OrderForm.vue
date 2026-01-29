@@ -225,7 +225,10 @@ const selectTime = (time: string) => {
     
     <div v-if="props.modelValue.registerPaymentNow" class="payment-fields-section">
         <h3>Datos del Cobro</h3>
-        <PaymentFields v-model="props.modelValue.paymentDetails" />
+        <PaymentFields 
+          v-model="props.modelValue.paymentDetails" 
+          :totalToPay="props.modelValue.totalValue"
+        />
     </div>
   </div>
 </template>
