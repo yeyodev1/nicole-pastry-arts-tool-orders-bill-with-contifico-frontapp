@@ -55,3 +55,10 @@ $error-dark: color.scale($error, $lightness: -20%);
 
 // Funciones de utilidad para colores (usando las nuevas funciones de Sass)
 // Estas reemplazan las funciones deprecadas como lighten(), darken(), etc.
+@function lighten-color($color, $amount) {
+  @return color.adjust($color, $lightness: $amount);
+}
+
+@function darken-color($color, $amount) {
+  @return color.adjust($color, $lightness: -$amount);
+}
