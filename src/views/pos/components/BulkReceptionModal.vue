@@ -464,7 +464,7 @@ const handleConfirm = async () => {
 
     &.missing {
       background: rgba($warning, 0.1);
-      color: darken($warning, 10%);
+      color: darken-color($warning, 10%);
     }
 
     &.excess {
