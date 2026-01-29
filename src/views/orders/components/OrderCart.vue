@@ -95,62 +95,86 @@ const onDecrease = (item: CartItem, index: number) => {
 <style lang="scss" scoped>
 .card {
   background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  border-radius: 16px; // Match OrderForm
+  padding: 2rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
   border: 1px solid $border-light;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  transition: all 0.3s ease;
+
+  &:hover {
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.06);
+  }
 
   h2 {
     font-family: $font-principal;
-    font-size: 1.25rem;
-    color: $NICOLE-SECONDARY;
+    font-size: 1.5rem;
+    color: $text-dark;
     margin-top: 0;
-    border-bottom: 1px solid $border-light;
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
+    border-bottom: 2px solid $gray-50;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    font-weight: 700;
   }
 }
 
 .cart-items {
-  margin-bottom: 1.5rem;
-  max-height: 300px;
+  margin-bottom: 2rem;
+  max-height: 400px;
   overflow-y: auto;
+  padding-right: 0.5rem;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: $gray-200;
+    border-radius: 3px;
+  }
 }
 
 .cart-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid $border-light;
+  padding: 1rem 0;
+  border-bottom: 1px dashed $border-light;
+
+  &:last-child {
+    border-bottom: none;
+  }
 
   .item-details {
     flex: 1;
 
     .item-name {
       display: block;
-      font-size: 0.9rem;
-      font-weight: 500;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: $text-dark;
+      margin-bottom: 0.25rem;
 
       .badge-courtesy {
         background-color: #e0f2fe;
         color: #0369a1;
         font-size: 0.7rem;
-        padding: 2px 6px;
-        border-radius: 4px;
-        margin-left: 4px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        margin-left: 6px;
         vertical-align: middle;
+        font-weight: 700;
       }
     }
 
     .item-price {
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: $text-light;
+      font-feature-settings: "tnum";
 
       &.free {
-        color: #0369a1; // Match badge color or green
-        font-weight: 600;
+        color: #0369a1;
+        font-weight: 700;
       }
     }
   }
@@ -158,49 +182,73 @@ const onDecrease = (item: CartItem, index: number) => {
   .item-controls {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    background: $gray-50;
+    padding: 0.25rem;
+    border-radius: 8px;
+    border: 1px solid $border-light;
 
     button {
-      width: 24px;
-      height: 24px;
-      border: 1px solid $border-light;
+      width: 28px;
+      height: 28px;
+      border: none;
       background: white;
-      border-radius: 4px;
+      border-radius: 6px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      color: $text-dark;
+      font-weight: 600;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      transition: all 0.2s;
 
       &:hover {
-        background: $gray-100;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        color: $NICOLE-PURPLE;
       }
     }
 
     span {
-      font-weight: 600;
-      min-width: 20px;
+      font-weight: 700;
+      min-width: 24px;
       text-align: center;
+      font-size: 0.9rem;
     }
   }
 }
 
 .totals {
-  border-top: 2px solid $border-light;
-  padding-top: 1rem;
+  background: $gray-50;
+  padding: 1.5rem;
+  border-radius: 12px;
   margin-bottom: 1.5rem;
+  border: 1px solid $border-light;
 
   .total-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 0.5rem;
-    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
     color: $text-light;
 
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    span:last-child {
+      font-feature-settings: "tnum";
+      font-weight: 600;
+    }
+
     &.final {
-      font-size: 1.1rem;
-      font-weight: 700;
-      color: $text-dark;
-      margin-top: 0.5rem;
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: $NICOLE-PURPLE;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 2px dashed rgba($border-light, 0.5);
     }
   }
 }
@@ -210,21 +258,35 @@ const onDecrease = (item: CartItem, index: number) => {
   background: $NICOLE-PURPLE;
   color: white;
   border: none;
-  padding: 1rem;
-  border-radius: 8px;
+  padding: 1.2rem;
+  border-radius: 12px;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 1.1rem;
   cursor: pointer;
   transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.3);
 
   &:hover:not(:disabled) {
-    background: $purple-dark;
+    background: lighten-color($NICOLE-PURPLE, 5%);
     transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba($NICOLE-PURPLE, 0.4);
   }
 
   &:disabled {
     background: $gray-400;
     cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
   }
+}
+
+.empty-cart {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: $text-light;
+  font-style: italic;
+  background: $gray-50;
+  border-radius: 8px;
+  border: 1px dashed $border-light;
 }
 </style>
