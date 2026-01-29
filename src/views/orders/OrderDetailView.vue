@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import OrderService from '@/services/order.service'
+import { useToast } from '@/composables/useToast'
 
 // Components
 import InvoiceEditModal from './components/InvoiceEditModal.vue'
@@ -58,18 +59,20 @@ const handleOrderUpdated = (updatedOrder: any) => {
   order.value = updatedOrder
 }
 
+const { success, error: showError } = useToast()
+
 const registerCollection = async (payload: any) => {
   if (!order.value) return;
 
   isLoading.value = true
   try {
     const response = await OrderService.registerCollection(order.value._id, payload);
-    alert("Cobro registrado exitosamente en Contífico.");
+    success("Cobro registrado exitosamente en Contífico.");
     showPaymentModal.value = false;
     fetchOrder();
   } catch (error: any) {
     console.error("Error registering collection:", error);
-    alert(error.response?.data?.message || "Error al registrar el cobro.");
+    showError(error.response?.data?.message || "Error al registrar el cobro.");
   } finally {
     isLoading.value = false;
   }
