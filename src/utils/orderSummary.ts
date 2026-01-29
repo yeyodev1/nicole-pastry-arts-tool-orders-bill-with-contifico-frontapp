@@ -1,45 +1,34 @@
-import type { OrderFormData, CartItem } from '@/types/order'
-
 export function generateOrderSummary(order: any): string {
   const productsString = order.products
-    .map((p: any) => `${p.quantity} x ${p.name}`)
+    .map((p: any) => `- ${p.quantity}x ${p.name}${(p.features && p.features.length > 0) ? ` (${p.features.join(', ')})` : ''}`)
     .join("\n");
 
-  const deliveryDateFormatted = new Date(order.deliveryDate).toLocaleDateString('es-EC');
+  const dateObj = new Date(order.deliveryDate);
+  const dateFormatted = dateObj.toLocaleDateString('es-EC');
+  const timeFormatted = dateObj.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
 
-  // Construct "Type of Order" string
-  // e.g. "Delivery saliendo de - Ceibos" or "Retiro en local - San Marino"
-  let typeOfOrder = "";
+  // Location logic
+  let locationInfo = "";
   if (order.deliveryType === 'retiro') {
-    typeOfOrder = `Retiro en local - ${order.branch || 'S/N'}`;
+    locationInfo = `Retiro en local - ${order.branch || 'Principal'}`;
   } else {
-    typeOfOrder = `Delivery saliendo de - ${order.branch || 'S/N'}`;
+    const address = order.deliveryAddress || 'Dirección no especificada';
+    const link = order.googleMapsLink ? `\nLink: ${order.googleMapsLink}` : '';
+    locationInfo = `${address}${link}`;
   }
 
-  // Strict Format Matching Backend
-  return `
-CONFIRMACIÓN DE PEDIDO - NICOLE PASTRY
+  // Delivery/Retiro label
+  const deliveryTypeLabel = order.deliveryType === 'delivery' ? 'Entrega a domicilio' : 'Retiro en local';
 
-Tipo de Orden: ${typeOfOrder}
-
-Cliente: ${order.customerName}
-
-Cédula/RUC: ${order.invoiceData?.ruc || "N/A"}
-
-Correo: ${order.invoiceData?.email || "N/A"}
-
-Celular: ${order.customerPhone}
-
-Fecha de Entrega: ${deliveryDateFormatted}
-
-Hora de Entrega/Retiro: ${order.deliveryTime}
-
-Items (Nombre Contífico):
-
+  return `*⚜Confirmado su pedido⚜* 
+Nombre: ${order.customerName}
+Dirección factura: ${order.invoiceData?.address || "N/A"}
+Retiro/Entrega: ${deliveryTypeLabel}
+Pedido: 
 ${productsString}
-
-Dirección de Entrega: ${order.deliveryType === 'delivery' ? order.deliveryAddress : 'N/A (Retiro)'}
-
-Link Maps: ${order.googleMapsLink || 'N/A'}
-    `.trim();
+Fecha y Hora: ${dateFormatted}, ${timeFormatted}
+Celular: ${order.customerPhone || "N/A"}
+Cédula o RUC: ${order.invoiceData?.ruc || "N/A"}
+Correo: ${order.invoiceData?.email || "N/A"}
+Ubicación: ${locationInfo}`.trim();
 }
