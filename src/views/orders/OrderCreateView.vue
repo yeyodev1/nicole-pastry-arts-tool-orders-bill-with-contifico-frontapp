@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, watch } from 'vue'
 import OrderService from '@/services/order.service'
 import { useRouter } from 'vue-router'
 import type { Product, CartItem, OrderFormData } from '@/types/order'
@@ -9,12 +9,14 @@ import OrderProductSelector from './components/OrderProductSelector.vue'
 import OrderForm from './components/OrderForm.vue'
 import OrderCart from './components/OrderCart.vue'
 import OrderWhatsAppModal from './components/OrderWhatsAppModal.vue'
+import OrderConfirmationModal from './components/OrderConfirmationModal.vue'
 
 const router = useRouter()
 
 // UI State
 const isSubmitting = ref(false)
 const showWhatsAppModal = ref(false)
+const showConfirmationModal = ref(false)
 const generatedWhatsAppMessage = ref('')
 const isCourtesyMode = ref(false)
 
@@ -56,6 +58,19 @@ const formData = reactive<OrderFormData>({
 // Cart
 const cart = ref<CartItem[]>([])
 
+// Sync totalValue with Cart (Logic replicated from OrderCart)
+watch(cart, (newCart) => {
+  const subtotal = newCart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+
+  const iva = newCart.reduce((sum, item) => {
+    // Delivery items have 0% IVA
+    const isDelivery = item.name && item.name.toLowerCase().includes('delivery')
+    return sum + (isDelivery ? 0 : (item.price * item.quantity * 0.15))
+  }, 0)
+
+  formData.totalValue = Number((subtotal + iva).toFixed(2))
+}, { deep: true })
+
 const addToCart = (product: Product) => {
   const existing = cart.value.find(item => item.contifico_id === product.id)
 
@@ -91,7 +106,7 @@ const updateQuantity = (index: number, change: number) => {
   }
 }
 
-const submitOrder = async () => {
+const onCartSubmit = () => {
   if (cart.value.length === 0) {
     alert("El carrito está vacío.")
     return
@@ -113,7 +128,14 @@ const submitOrder = async () => {
     if (!formData.invoiceData.ruc) { alert("RUC/Cédula es obligatorio para factura"); return; }
   }
 
+  // Show Confirmation Modal
+  showConfirmationModal.value = true
+}
+
+const executeOrderCreation = async () => {
+  showConfirmationModal.value = false
   isSubmitting.value = true
+
   try {
     const payload = {
       ...formData,
@@ -181,10 +203,19 @@ const sendWhatsApp = () => {
           :isSubmitting="isSubmitting"
           @remove="removeFromCart"
           @update-quantity="updateQuantity"
-          @submit="submitOrder"
+          @submit="onCartSubmit"
         />
       </section>
     </main>
+
+    <!-- Confirmation Modal -->
+    <OrderConfirmationModal
+      :is-open="showConfirmationModal"
+      :order-data="formData"
+      :cart="cart"
+      @close="showConfirmationModal = false"
+      @confirm="executeOrderCreation"
+    />
 
     <!-- WhatsApp Modal -->
     <OrderWhatsAppModal 
