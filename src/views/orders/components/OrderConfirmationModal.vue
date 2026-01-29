@@ -351,7 +351,7 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
   background: $gray-100;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid darken($gray-100, 5%);
+  border: 1px solid $gray-200;
   cursor: pointer;
   user-select: none;
   -webkit-touch-callout: none;
