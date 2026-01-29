@@ -469,7 +469,7 @@ onMounted(() => {
 
     &:hover {
       background-color: rgba($success, 0.1);
-      color: darken($success, 10%);
+      color: darken-color($success, 10%);
     }
   }
 
