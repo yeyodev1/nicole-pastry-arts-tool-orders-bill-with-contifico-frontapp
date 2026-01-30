@@ -135,6 +135,27 @@ const handleDispatchConfirm = async (payload: any) => {
     isLoading.value = false
   }
 }
+
+const handleRevert = async (order: Order) => {
+  if (!confirm(`¿Estás seguro de devolver este ítem a producción? Se reiniciará el progreso.`)) return
+
+  try {
+    isLoading.value = true
+    await ProductionService.revertOrder(order._id)
+    await fetchOrders()
+    toastMessage.value = 'Ítem devuelto a producción.'
+    toastType.value = 'success'
+    showToast.value = true
+  } catch (err: any) {
+    console.error(err)
+    toastMessage.value = 'Error al devolver ítem. Reintente.'
+    toastType.value = 'error'
+    showToast.value = true
+  } finally {
+    isLoading.value = false
+  }
+}
+
 // ... (rest of utils same)
 // Helper to strip time for date comparison
 const isSameDay = (d1: Date, d2: Date) => {
@@ -449,6 +470,14 @@ const getDispatchBadge = (status?: string) => {
                   <button class="btn-dispatch" @click="openDispatchModal(order)">
                     <i class="fas fa-paper-plane"></i> Reportar Envío
                   </button>
+
+                  <button 
+                    v-if="order.productionStage === 'FINISHED'"
+                    class="btn-revert-inline" 
+                    @click="handleRevert(order)"
+                  >
+                    <i class="fas fa-undo-alt"></i> Devolver
+                  </button>
                 </div>
               </div>
             </td>
@@ -559,6 +588,27 @@ $color-primary: #8e44ad;
     &:hover {
       border-color: #bdc3c7;
       color: #2c3e50;
+    }
+  }
+
+  .btn-revert-inline {
+    background: white;
+    border: 1px solid #ffecec;
+    color: #e74c3c;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+    margin-top: 4px;
+
+    &:hover {
+      background: #fff5f5;
+      border-color: #e74c3c;
     }
   }
 }

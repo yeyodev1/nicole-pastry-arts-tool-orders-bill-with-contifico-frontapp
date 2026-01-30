@@ -39,13 +39,10 @@ const fetchHistory = async () => {
     error.value = ''
     const allOrders = await ProductionService.getAllOrders()
 
-    // Filter: Finished/Void AND Updated Today (Strict Local)
-    const todayStr = new Date().toISOString().split('T')[0] || ''
-
+    // Filter: Finished/Void that haven't been sent yet
+    // (matches logic of Routes view but for completed items)
     const filteredOrders = allOrders.filter(o =>
-      o.productionStage === filterMode.value &&
-      o.updatedAt &&
-      o.updatedAt.startsWith(todayStr)
+      o.productionStage === filterMode.value
     )
 
     // Group by Product Name
@@ -118,14 +115,12 @@ const handleRevertAction = async () => {
     }
 
     if (filterMode.value === 'VOID') {
-      // Use strict restore endpoint for voided items
+      // Use strict restore    if (filterMode.value === 'VOID') {
       const restorePromises = idsToRevert.map(id => ProductionService.restoreOrder(id))
       await Promise.all(restorePromises)
     } else {
-      // Use individual updates instead of batchUpdate (more consistent with Dashboard logic)
-      const revertPromises = idsToRevert.map(id =>
-        ProductionService.updateTask(id, { stage: 'PENDING' })
-      )
+      // Reverting finished items now uses a dedicated endpoint to reset progress
+      const revertPromises = idsToRevert.map(id => ProductionService.revertOrder(id))
       await Promise.all(revertPromises)
     }
 
@@ -169,7 +164,7 @@ onMounted(() => {
                         <i class="fas fa-ban"></i> Anulados
                     </button>
                 </div>
-               <span class="subtitle">Items {{ filterMode === 'FINISHED' ? 'completados' : 'anulados' }} hoy</span>
+               <span class="subtitle">Ítems {{ filterMode === 'FINISHED' ? 'completados' : 'anulados' }} (pendientes de envío)</span>
           </div>
           <button class="btn-close" @click="emit('close')">
               <i class="fas fa-times"></i> Cerrar
@@ -187,9 +182,9 @@ onMounted(() => {
       </div>
 
       <div v-else-if="historyItems.length === 0" class="state-msg empty">
-          <div class="icon-box"><i class="fas fa-clipboard-check"></i></div>
-          <p>No hay producción finalizada hoy.</p>
-          <span>Los items marcados como completos aparecerán aquí.</span>
+          <i class="fas fa-clipboard-check"></i>
+          <p>No hay producción finalizada pendiente de envío.</p>
+          <span>Los ítems completados aparecerán aquí para gestión.</span>
       </div>
 
       <div v-else class="history-list">

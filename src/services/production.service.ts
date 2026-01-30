@@ -107,6 +107,11 @@ class ProductionService extends APIBase {
     return response.data
   }
 
+  async revertOrder(orderId: string) {
+    const response = await this.patch(`production/${orderId}/revert`, {})
+    return response.data
+  }
+
   async restoreOrder(orderId: string) {
     const response = await this.patch(`production/${orderId}/restore`, {})
     return response.data
