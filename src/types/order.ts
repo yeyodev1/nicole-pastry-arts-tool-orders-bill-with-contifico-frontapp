@@ -46,6 +46,8 @@ export interface CartItem {
   name: string
   price: number
   quantity: number
+  category?: string // Grouping name (e.g., 'Tortas enteras')
+  categoryId?: string // Contifico ID
   isCourtesy?: boolean
 }
 
