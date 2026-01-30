@@ -83,19 +83,17 @@ export function useProductionSummary() {
       // We'll use YYYY-MM-DD strings for strict day comparison in EC time
       const toDayStr = (d: Date) => d.toISOString().split('T')[0] as string
 
-      const now = new Date()
-      // Adjust "now" to EC time for boundary calculation
-      const ecNow = new Date(now.getTime() - (5 * 3600 * 1000))
+      const getECTToday = () => {
+        const now = new Date()
+        const ecNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
+        return toDayStr(ecNow)
+      }
 
-      const today = toDayStr(ecNow)
+      const today = getECTToday()
 
-      const tomorrowDate = new Date(ecNow)
-      tomorrowDate.setDate(tomorrowDate.getDate() + 1)
-      const tomorrow = toDayStr(tomorrowDate)
-
-      const dayAfterTomorrowDate = new Date(tomorrowDate)
-      dayAfterTomorrowDate.setDate(dayAfterTomorrowDate.getDate() + 1)
-      const dayAfterTomorrow = toDayStr(dayAfterTomorrowDate)
+      const tDate = new Date(today + 'T12:00:00') // Use noon to avoid boundary issues
+      tDate.setDate(tDate.getDate() + 1)
+      const tomorrow = toDayStr(tDate)
 
       // 3. Buckets Storage
       const buckets: Record<string, Map<string, { category: string, orders: any[] }>> = {
@@ -149,18 +147,27 @@ export function useProductionSummary() {
 
         if (map) {
           map.forEach((val, key) => {
-            // Calculate urgency (min delivery date)
-            const minDate = val.orders.reduce((min: number, o: any) => {
-              const d = new Date(o.delivery).getTime()
+            // Filter out orders that are already finished or have 0 pending
+            const activeOrders = val.orders.filter(o => {
+              const isFinished = o.stage === 'FINISHED'
+              const qty = o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)
+              return !isFinished && qty > 0
+            })
+
+            if (activeOrders.length === 0) return
+
+            // Calculate urgency (min delivery date) using our utility
+            const minDate = activeOrders.reduce((min: number, o: any) => {
+              const d = parseECTDate(o.delivery).getTime()
               return d < min ? d : min
             }, Infinity)
 
             result.push({
               _id: key,
-              totalQuantity: val.orders.reduce((acc, o) => acc + (o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)), 0),
+              totalQuantity: activeOrders.reduce((acc, o) => acc + (o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)), 0),
               urgency: new Date(minDate).toISOString(),
               category: val.category,
-              orders: val.orders.map(o => ({
+              orders: activeOrders.map(o => ({
                 id: o.id,
                 quantity: o.pendingInOrder !== undefined ? o.pendingInOrder : o.quantity,
                 client: o.client,
