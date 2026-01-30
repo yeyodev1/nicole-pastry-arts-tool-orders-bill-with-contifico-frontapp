@@ -165,6 +165,7 @@ const toggleExpand = () => {
                     <ActionHoldButton 
                         v-if="urgencyType === 'today' || urgencyType === 'delayed'"
                         label="Completar" 
+                        :duration="1200"
                         :color="urgencyType === 'today' || urgencyType === 'delayed' ? '#e74c3c' : '#2ecc71'"
                         :disabled="!item.currentInput"
                         @trigger="triggerRegister"
