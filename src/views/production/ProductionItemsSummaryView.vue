@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import ProductionService from '@/services/production.service'
-import ProductionRegisterModal from './components/ProductionRegisterModal.vue'
+import ProductionRegisterModal from './components/ProductionRegisterModal.vue' // Keeping for fallback/advanced if needed, or removing usage
+import ActionHoldButton from '@/components/common/ActionHoldButton.vue'
 
 interface SummaryItem {
   _id: string // Product Name
   totalQuantity: number
   urgency: string
+  // Added category field
+  category?: string
   orders: {
     id: string
     quantity: number
@@ -15,15 +18,35 @@ interface SummaryItem {
     stage: string
   }[]
   isExpanded?: boolean
+  currentInput?: number // New field for inline input
+  mode?: 'all' | 'custom' // Mode selector
 }
 
-// const items = ref<SummaryItem[]>([]) // Removed in favor of specific refs
+// Grouping structure: Category -> Items
+interface CategoryGroup {
+  name: string
+  items: SummaryItem[]
+  isExpanded: boolean
+  id: string // simplified id for keys
+}
+
 const isLoading = ref(true)
 const error = ref('')
 
-// Modal State
+// Modal State (kept for detail view or fallback)
 const isRegisterModalOpen = ref(false)
 const selectedItem = ref<SummaryItem | null>(null)
+
+// Categories order definition
+const CATEGORY_ORDER = [
+  'cakes enteros',
+  'cakes porcion',
+  'pack de turrones',
+  'panetton',
+  'secos market',
+  'individual',
+  'panaderais'
+]
 
 onMounted(async () => {
   await fetchSummary()
@@ -33,23 +56,22 @@ const fetchSummary = async () => {
   try {
     isLoading.value = true
     const response = await ProductionService.getSummary()
-    // Assume response is { dashboard: { today: [], tomorrow: [], future: [] } } or similar
-    // Check service implementation to match
-    // Wait, ProductionService.getSummary() calls axios. Get full response?
-    // Let's assume ProductionService returns response.data or something. 
-    // In backend controller: res.send({ message, dashboard })
-    // In frontend service (checking next): likely returns response.data
+    const data = response.dashboard || response
 
-    // Actually, I should verify frontend service wrapper. 
-    // If I cannot verify, I will assume it returns the payload 'dashboard' directly if consistent with other services.
-    // For safety, I will handle both.
+    // Helper to init items
+    const processItems = (items: SummaryItem[]) => {
+      return items.map(i => ({
+        ...i,
+        currentInput: undefined, // Start empty
+        mode: 'custom' as const, // Default to custom
+        // Use category provided by backend
+        category: i.category || 'Otros'
+      }))
+    }
 
-    // For now, let's assume the service returns the data object.
-    const data = response.dashboard || response // Falback
-
-    todayItems.value = data.today || []
-    tomorrowItems.value = data.tomorrow || []
-    futureItems.value = data.future || []
+    todayItems.value = processItems(data.today || [])
+    tomorrowItems.value = processItems(data.tomorrow || [])
+    futureItems.value = processItems(data.future || [])
 
   } catch (err) {
     console.error(err)
@@ -63,27 +85,120 @@ const toggleExpand = (item: SummaryItem) => {
   item.isExpanded = !item.isExpanded
 }
 
+const toggleCategory = (categoryGroup: CategoryGroup) => {
+  // Toggle presence in the collapsed set
+  if (collapsedCategoryIds.value.has(categoryGroup.id)) {
+    collapsedCategoryIds.value.delete(categoryGroup.id)
+  } else {
+    collapsedCategoryIds.value.add(categoryGroup.id)
+  }
+}
+
 const formatDate = (dateString: string) => {
   const date = new Date(dateString)
   return new Intl.DateTimeFormat('es-EC', {
     weekday: 'short',
     day: 'numeric',
-    // month: 'short', 
     hour: '2-digit',
     minute: '2-digit'
   }).format(date)
 }
 
-// Data Refs (Server grouped)
+// Data Refs 
 const todayItems = ref<SummaryItem[]>([])
 const tomorrowItems = ref<SummaryItem[]>([])
 const futureItems = ref<SummaryItem[]>([])
 
-// Helper to check if empty
 const hasItems = computed(() => {
   return todayItems.value.length > 0 || tomorrowItems.value.length > 0 || futureItems.value.length > 0
 })
 
+// Collapsed state tracking (using ID set)
+const collapsedCategoryIds = ref<Set<string>>(new Set())
+
+// Grouping Logic
+const groupByCategory = (items: SummaryItem[], prefix: string): CategoryGroup[] => {
+  const groups: Record<string, SummaryItem[]> = {}
+
+  // Initialize with empty arrays to ensure order if we want to show empty sections (optional)
+  // For now, let's only show what exists
+
+  items.forEach(item => {
+    const cat = item.category || 'Otros'
+    if (!groups[cat]) groups[cat] = []
+    groups[cat].push(item)
+  })
+
+  // Map to array and sort based on predefined order
+  return Object.keys(groups)
+    .map(key => {
+      const id = `${prefix}-${key.replace(/\s+/g, '-').toLowerCase()}`
+      return {
+        name: key,
+        items: groups[key] || [],
+        isExpanded: !collapsedCategoryIds.value.has(id),
+        id: id
+      }
+    })
+    .sort((a, b) => {
+      const idxA = CATEGORY_ORDER.indexOf(a.name)
+      const idxB = CATEGORY_ORDER.indexOf(b.name)
+      // If not found in list, put at end
+      const posA = idxA === -1 ? 999 : idxA
+      const posB = idxB === -1 ? 999 : idxB
+      return posA - posB
+    })
+}
+
+const todayGroups = computed(() => groupByCategory(todayItems.value, 'today'))
+const tomorrowGroups = computed(() => groupByCategory(tomorrowItems.value, 'tomorrow'))
+const futureGroups = computed(() => groupByCategory(futureItems.value, 'future'))
+
+
+const handleQuickRegister = async (item: SummaryItem) => {
+  const qty = item.currentInput
+  if (!qty || qty <= 0) {
+    alert('Ingrese una cantidad válida') // Or use a toast
+    return
+  }
+
+  if (qty > item.totalQuantity) {
+    alert(`La cantidad no puede exceder ${item.totalQuantity}`)
+    item.currentInput = item.totalQuantity
+    return
+  }
+
+  try {
+    isLoading.value = true // Optional: global loading or per-item loading state
+    await ProductionService.registerProgress(item._id, qty)
+    await fetchSummary()
+    // item.currentInput = undefined // Reset handled by fetchSummary re-init
+  } catch (err) {
+    console.error(err)
+    alert('Error al registrar progreso')
+    isLoading.value = false
+  }
+}
+
+const setMode = (item: SummaryItem, mode: 'all' | 'custom') => {
+  item.mode = mode
+  if (mode === 'all') {
+    item.currentInput = item.totalQuantity
+  } else {
+    item.currentInput = undefined
+  }
+}
+
+const validateInput = (item: SummaryItem) => {
+  if (item.currentInput && item.currentInput > item.totalQuantity) {
+    item.currentInput = item.totalQuantity
+  }
+  if (item.currentInput && item.currentInput < 0) {
+    item.currentInput = undefined
+  }
+}
+
+// Keep modal just in case, but primary flow is now inline
 const openRegisterModal = (item: SummaryItem, event: Event) => {
   event.stopPropagation()
   selectedItem.value = item
@@ -91,13 +206,11 @@ const openRegisterModal = (item: SummaryItem, event: Event) => {
 }
 
 const handleRegisterConfirm = async (quantity: number) => {
+  // ... existing logic if modal is used
   if (!selectedItem.value) return
-
   isRegisterModalOpen.value = false
-
   try {
     await ProductionService.registerProgress(selectedItem.value._id, quantity)
-    // Refresh list
     await fetchSummary()
   } catch (err) {
     alert('Error al registrar progreso')
@@ -106,11 +219,37 @@ const handleRegisterConfirm = async (quantity: number) => {
   }
 }
 
-// Helper for card class logic
-const getCardClass = (type: 'today' | 'tomorrow' | 'future') => {
-  return type
+// --- Transition Hooks for Smooth Accordion ---
+const enter = (el: Element) => {
+  const element = el as HTMLElement
+  element.style.height = '0'
+  element.style.opacity = '0'
+  // Force reflow
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  element.offsetHeight
+
+  element.style.transition = 'height 0.3s ease-out, opacity 0.3s ease-out'
+  element.style.height = element.scrollHeight + 'px'
+  element.style.opacity = '1'
 }
 
+const afterEnter = (el: Element) => {
+  const element = el as HTMLElement
+  element.style.height = 'auto'
+}
+
+const leave = (el: Element) => {
+  const element = el as HTMLElement
+  element.style.height = element.scrollHeight + 'px'
+  element.style.opacity = '1'
+  // Force reflow
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  element.offsetHeight
+
+  element.style.transition = 'height 0.3s ease-in, opacity 0.3s ease-in'
+  element.style.height = '0'
+  element.style.opacity = '0'
+}
 </script>
 
 <template>
@@ -139,167 +278,137 @@ const getCardClass = (type: 'today' | 'tomorrow' | 'future') => {
 
     <div v-else class="content-wrapper">
       
-      <!-- TODAY SECTION -->
-      <section v-if="todayItems.length > 0" class="group-section today">
-        <div class="section-title urgent">
-          <div class="icon-box"><i class="fas fa-fire"></i></div>
-          <h2>Para Hoy / Urgente</h2>
-          <span class="count-badge">{{ todayItems.length }} items</span>
-        </div>
+      <!-- List Groups by Time -->
+      <div v-for="(timeGroup, type) in { today: todayGroups, tomorrow: tomorrowGroups, future: futureGroups }" :key="type">
         
-        <div class="items-grid">
-          <div 
-            v-for="item in todayItems" 
-            :key="item._id" 
-            class="summary-card urgent"
-            :class="{ expanded: item.isExpanded }"
-            @click="toggleExpand(item)"
-          >
-            <div class="card-header urgent">
-              <span class="due-label">VENCE:</span>
-              <span class="due-time">{{ formatDate(item.urgency) }}</span>
-            </div>
-            
-            <div class="card-body">
-              <div class="quantity-box urgent">
-                <span class="number">{{ item.totalQuantity }}</span>
-                <span class="label">PENDIENTES</span>
-              </div>
-              <h3 class="product-name">{{ item._id }}</h3>
+        <!-- Only show section if there are categories in it -->
+        <section v-if="timeGroup.length > 0" class="list-section" :class="type">
+            <div class="section-title" :class="type">
+                <h2>
+                    {{ type === 'today' ? 'Para Hoy / Urgente' : type === 'tomorrow' ? 'Para Mañana' : 'Futuro' }}
+                </h2>
+                <!-- Total count across all categories -->
+                 <!-- Note: Logic update to count items inside categories -->
+                <span class="count-badge">
+                  {{timeGroup.reduce((acc, cat) => acc + cat.items.length, 0)}} items
+                </span>
             </div>
 
-            <div class="card-actions">
-               <button class="btn-register urgent" @click="(e) => openRegisterModal(item, e)">
-                 <i class="fas fa-clipboard-check"></i>
-                 REGISTRAR
-               </button>
-               <button class="btn-expand" :class="{ rotated: item.isExpanded }">
-                 <i class="fas fa-chevron-down"></i>
-               </button>
+            <div class="list-container">
+                <!-- Category Accordions -->
+                 <div v-for="category in timeGroup" :key="category.id" class="category-group">
+                    
+                    <div class="category-header" @click="toggleCategory(category)">
+                       <div class="cat-title">
+                          <i class="fas fa-folder-open" v-if="category.isExpanded"></i>
+                          <i class="fas fa-folder" v-else></i>
+                          {{ category.name }}
+                       </div>
+                       <div class="cat-meta">
+                          <span class="cat-count">{{ category.items.length }} items</span>
+                          <i class="fas fa-chevron-down" :class="{ rotated: category.isExpanded }"></i>
+                       </div>
+                    </div>
+
+                    <Transition
+                      name="accordion"
+                      @enter="enter"
+                      @after-enter="afterEnter"
+                      @leave="leave"
+                    >
+                      <div v-show="category.isExpanded" class="category-items">
+                           <div 
+                              v-for="item in category.items" 
+                              :key="item._id" 
+                              class="list-row"
+                              :class="{ expanded: item.isExpanded }"
+                          >
+                              <div class="row-main">
+                                  <!-- Left: Info -->
+                                  <div class="info-col" @click="toggleExpand(item)">
+                                      <div class="urgency-tag" :class="type">
+                                          <i class="far fa-clock"></i>
+                                          {{ formatDate(item.urgency) }}
+                                      </div>
+                                      <h3 class="product-name">{{ item._id }}</h3>
+                                      <button class="btn-expand-mobile" @click.stop="toggleExpand(item)">
+                                          <i class="fas fa-chevron-down" :class="{ rotated: item.isExpanded }"></i>
+                                      </button>
+                                  </div>
+
+                                  <!-- Center: Stats -->
+                                  <div class="stats-col">
+                                      <span class="qty-total">{{ item.totalQuantity }}</span>
+                                      <span class="qty-label">PENDIENTES</span>
+                                  </div>
+
+                                  <!-- Right: Action -->
+                                  <div class="action-col">
+                                      <!-- Mode Toggles -->
+                                      <div class="mode-toggles">
+                                          <button 
+                                              class="mode-btn" 
+                                              :class="{ active: item.mode === 'all' }"
+                                              @click.stop="setMode(item, 'all')"
+                                          >
+                                              TODO
+                                          </button>
+                                          <button 
+                                              class="mode-btn" 
+                                              :class="{ active: item.mode === 'custom' }"
+                                              @click.stop="setMode(item, 'custom')"
+                                          >
+                                              MANUAL
+                                          </button>
+                                      </div>
+
+                                      <!-- Input Area -->
+                                      <div class="input-wrapper" v-if="item.mode === 'custom'">
+                                          <input 
+                                              type="number" 
+                                              v-model="item.currentInput" 
+                                              placeholder="#"
+                                              min="1"
+                                              :max="item.totalQuantity"
+                                              class="qty-input"
+                                              @click.stop
+                                              @input="validateInput(item)"
+                                          />
+                                      </div>
+                                      <!-- Static Label for 'All' mode -->
+                                      <div class="all-mode-label" v-else>
+                                          {{ item.totalQuantity }} Unid.
+                                      </div>
+
+                                      <div class="hold-btn-wrapper">
+                                          <ActionHoldButton 
+                                              label="Mantener" 
+                                              :color="type === 'today' ? '#e74c3c' : '#2ecc71'"
+                                              :disabled="!item.currentInput"
+                                              @trigger="handleQuickRegister(item)"
+                                          />
+                                      </div>
+                                  </div>
+                              </div>
+
+                              <!-- Details Drawer -->
+                              <div v-if="item.isExpanded" class="row-details">
+                                  <h4>Detalle de Pedidos</h4>
+                                  <div class="orders-list">
+                                      <div v-for="order in item.orders" :key="order.id" class="order-pill">
+                                          <b>{{ order.client }}</b>
+                                          <span>x{{ order.quantity }}</span>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                    </Transition>
+                 </div>
             </div>
-
-            <div v-if="item.isExpanded" class="breakdown">
-              <h4>Detalle de Pedidos</h4>
-              <ul>
-                <li v-for="order in item.orders" :key="order.id">
-                  <span class="client-name">{{ order.client }}</span>
-                  <span class="qty-pill">x{{ order.quantity }}</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <hr v-if="todayItems.length > 0 && tomorrowItems.length > 0" class="section-divider" />
-
-      <!-- TOMORROW SECTION -->
-      <section v-if="tomorrowItems.length > 0" class="group-section tomorrow">
-        <div class="section-title warning">
-          <div class="icon-box"><i class="fas fa-clock"></i></div>
-          <h2>Para Mañana</h2>
-          <span class="count-badge">{{ tomorrowItems.length }} items</span>
-        </div>
-
-        <div class="items-grid">
-          <div 
-            v-for="item in tomorrowItems" 
-            :key="item._id" 
-            class="summary-card warning"
-            :class="{ expanded: item.isExpanded }"
-            @click="toggleExpand(item)"
-          >
-            <div class="card-header warning">
-              <span class="due-label">ENTREGA:</span>
-              <span class="due-time">{{ formatDate(item.urgency) }}</span>
-            </div>
-            
-            <div class="card-body">
-              <div class="quantity-box warning">
-                <span class="number">{{ item.totalQuantity }}</span>
-                <span class="label">PENDIENTES</span>
-              </div>
-              <h3 class="product-name">{{ item._id }}</h3>
-            </div>
-            
-            <div class="card-actions">
-               <button class="btn-register warning" @click="(e) => openRegisterModal(item, e)">
-                 <i class="fas fa-clipboard-check"></i>
-                 AVANZAR
-               </button>
-               <button class="btn-expand" :class="{ rotated: item.isExpanded }">
-                 <i class="fas fa-chevron-down"></i>
-               </button>
-            </div>
-
-             <div v-if="item.isExpanded" class="breakdown">
-              <h4>Detalle de Pedidos</h4>
-              <ul>
-                <li v-for="order in item.orders" :key="order.id">
-                  <span class="client-name">{{ order.client }}</span>
-                  <span class="qty-pill">x{{ order.quantity }}</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <hr v-if="tomorrowItems.length > 0 && futureItems.length > 0" class="section-divider" />
-
-      <!-- FUTURE SECTION -->
-      <section v-if="futureItems.length > 0" class="group-section future">
-        <div class="section-title info">
-          <div class="icon-box"><i class="fas fa-calendar-alt"></i></div>
-          <h2>Futuro</h2>
-          <span class="count-badge">{{ futureItems.length }} items</span>
-        </div>
-
-        <div class="items-grid">
-          <div 
-            v-for="item in futureItems" 
-            :key="item._id" 
-            class="summary-card info"
-            :class="{ expanded: item.isExpanded }"
-            @click="toggleExpand(item)"
-          >
-             <div class="card-header info">
-              <span class="due-label">FECHA:</span>
-              <span class="due-time">{{ formatDate(item.urgency) }}</span>
-            </div>
-            <div class="card-body">
-              <div class="quantity-box info">
-                <span class="number">{{ item.totalQuantity }}</span>
-                <span class="label">PENDIENTES</span>
-              </div>
-              <h3 class="product-name">{{ item._id }}</h3>
-            </div>
-            
-            <!-- ACTIONS (Even future items can be advanced usually, but sticking to design) -->
-            <div class="card-actions">
-               <button class="btn-register info" @click="(e) => openRegisterModal(item, e)">
-                 <i class="fas fa-clipboard-check"></i>
-                 AVANZAR
-               </button>
-               <button class="btn-expand" :class="{ rotated: item.isExpanded }">
-                 <i class="fas fa-chevron-down"></i>
-               </button>
-            </div>
-
-            <div v-if="item.isExpanded" class="breakdown">
-              <h4>Detalle de Pedidos</h4>
-              <ul>
-                <li v-for="order in item.orders" :key="order.id">
-                  <span class="client-name">{{ order.client }}</span>
-                  <span class="qty-pill">x{{ order.quantity }}</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-
+        </section>
+        <hr v-if="timeGroup.length > 0" class="section-divider"/>
+      </div>
 
       <div v-if="!hasItems" class="empty-state">
         <i class="fas fa-check-circle"></i>
@@ -309,7 +418,7 @@ const getCardClass = (type: 'today' | 'tomorrow' | 'future') => {
 
     </div>
 
-    <!-- Production Register Modal -->
+    <!-- Production Register Modal (Fallback/Legacy) -->
     <ProductionRegisterModal 
       :is-open="isRegisterModalOpen"
       :product-name="selectedItem?._id || ''"
@@ -321,17 +430,10 @@ const getCardClass = (type: 'today' | 'tomorrow' | 'future') => {
 </template>
 
 <style lang="scss" scoped>
-/* VARIABLE FALLBACKS */
-$card-radius: 16px;
-$shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-$shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
 $font-stack: 'Inter', system-ui, -apple-system, sans-serif;
 $color-urgent: #e74c3c;
-$color-urgent-bg: #c0392b;
 $color-warning: #f39c12;
-$color-warning-bg: #d35400; // Gradient end
 $color-info: #3498db;
-$color-info-bg: #2980b9;
 
 .summary-view {
   min-height: 100vh;
@@ -345,13 +447,13 @@ $color-info-bg: #2980b9;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
 
   .header-content {
     h1 {
-      font-size: 1.75rem;
+      font-size: 1.5rem;
       color: #2c3e50;
-      margin: 0 0 0.5rem 0;
+      margin: 0;
       font-weight: 800;
       letter-spacing: -0.5px;
     }
@@ -359,14 +461,14 @@ $color-info-bg: #2980b9;
     p {
       color: #7f8c8d;
       margin: 0;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
   }
 
   .btn-refresh {
     background: white;
     border: 1px solid #e0e0e0;
-    padding: 0.6rem 1rem;
+    padding: 0.5rem 1rem;
     border-radius: 8px;
     color: #7f8c8d;
     cursor: pointer;
@@ -379,30 +481,22 @@ $color-info-bg: #2980b9;
     &:hover {
       border-color: #bdc3c7;
       color: #2c3e50;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+
     }
   }
 }
 
 .section-title {
+  margin-bottom: 1.5rem;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-
-  .icon-box {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1rem;
-    color: white;
-  }
+  gap: 1rem;
 
   h2 {
     font-size: 1.25rem;
-    font-weight: 700;
+    font-weight: 800;
     margin: 0;
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -410,320 +504,436 @@ $color-info-bg: #2980b9;
 
   .count-badge {
     background: #e0e0e0;
-    padding: 0.2rem 0.6rem;
+    padding: 2px 10px;
     border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-weight: 700;
     color: #555;
   }
 
-  /* Theme Variants */
-  &.urgent {
-    .icon-box {
-      background: linear-gradient(135deg, $color-urgent, $color-urgent-bg);
-    }
-
-    h2 {
-      color: $color-urgent;
-    }
+  &.today h2 {
+    color: $color-urgent;
   }
 
-  &.warning {
-    .icon-box {
-      background: linear-gradient(135deg, $color-warning, #e67e22);
-    }
-
-    h2 {
-      color: #d35400;
-    }
+  &.tomorrow h2 {
+    color: #d35400;
   }
 
-  &.info {
-    .icon-box {
-      background: linear-gradient(135deg, $color-info, $color-info-bg);
+  &.future h2 {
+    color: $color-info;
+  }
+}
+
+/* Category Styles */
+.category-group {
+  margin-bottom: 1.5rem;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  cursor: pointer;
+  background: $NICOLE-PRIMARY;
+  transition: background 0.2s;
+  user-select: none;
+
+
+
+  .cat-title {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: white;
+
+    i {
+      color: white;
+      font-size: 1rem;
     }
 
-    h2 {
-      color: $color-info;
+  }
+
+  .cat-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    .cat-count {
+      font-size: 0.85rem;
+      color: white;
+      font-weight: 600;
+    }
+
+    i {
+      color: white;
+      transition: transform 0.3s ease;
+
+      &.rotated {
+        transform: rotate(180deg);
+      }
     }
   }
 }
 
-.group-section {
-  margin-bottom: 2rem; // Reduced margin as divider adds space
+.category-items {
+  border-top: 1px solid #f1f2f6;
+  padding: 0.5rem;
+  background: #fcfcfc;
+}
+
+
+.list-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.list-row {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: all 0.2s;
+  margin-bottom: 0.8rem;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.06);
+  }
+
+  .row-main {
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap; // Responsive wrapping
+
+    @media (min-width: 768px) {
+      flex-wrap: nowrap;
+    }
+  }
+
+  /* Column Styles */
+  .info-col {
+    flex: 1;
+    min-width: 200px;
+    cursor: pointer;
+
+    .urgency-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+
+      &.today {
+        color: $color-urgent;
+        background: rgba($color-urgent, 0.1);
+      }
+
+      &.tomorrow {
+        color: #d35400;
+        background: rgba(#d35400, 0.1);
+      }
+
+      &.future {
+        color: $color-info;
+        background: rgba($color-info, 0.1);
+      }
+    }
+
+    .product-name {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #2c3e50;
+      line-height: 1.3;
+    }
+
+    .btn-expand-mobile {
+      display: none; // Hidden on desktop
+    }
+  }
+
+  .stats-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 80px;
+    padding: 0 1rem;
+    border-right: 1px solid #f1f2f6;
+    border-left: 1px solid #f1f2f6;
+
+    .qty-total {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: #2c3e50;
+      line-height: 1;
+    }
+
+    .qty-label {
+      font-size: 0.6rem;
+      color: #95a5a6;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+  }
+
+  .action-col {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-left: auto; // Push to right
+
+    .mode-toggles {
+      display: flex;
+      background: #f1f2f6;
+      padding: 3px;
+      border-radius: 8px;
+      margin-right: 0.5rem;
+
+      .mode-btn {
+        border: none;
+        background: transparent;
+        padding: 6px 10px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #95a5a6;
+        cursor: pointer;
+        border-radius: 6px;
+        transition: all 0.2s;
+
+        &.active {
+          background: white;
+          color: #2c3e50;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+      }
+    }
+
+    .input-wrapper {
+      width: 80px;
+
+      .qty-input {
+        width: 100%;
+        padding: 0.5rem;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 1.2rem;
+        font-weight: 800;
+        text-align: center;
+        transition: all 0.2s;
+        color: #2c3e50;
+
+        &:focus {
+          outline: none;
+          border-color: #3498db;
+          box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+      }
+    }
+
+    .all-mode-label {
+      font-size: 1rem;
+      font-weight: 800;
+      color: #2c3e50;
+      padding: 0 1rem;
+      background: #e8f6f3;
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      color: #16a085;
+    }
+
+    .hold-btn-wrapper {
+      width: 140px;
+      // Ensures button has consistent width
+    }
+  }
+}
+
+.row-details {
+  background: #fafbfc;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #f1f2f6;
+
+  h4 {
+    margin: 0 0 0.8rem 0;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: #95a5a6;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .orders-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+
+    .order-pill {
+      background: white;
+      border: 1px solid #e0e0e0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #34495e;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+
+      span {
+        color: #7f8c8d;
+        margin-left: 6px;
+        font-weight: 600;
+        background: #f5f6fa;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+      }
+    }
+  }
 }
 
 .section-divider {
   border: 0;
   height: 1px;
-  background: #dfe6e9; // Subtle divider color
-  margin: 2rem 0 3.5rem 0;
-}
-
-.items-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1.5rem;
-}
-
-.summary-card {
-  background: white;
-  border-radius: $card-radius;
-  box-shadow: $shadow-sm;
-  transition: transform 0.2s, box-shadow 0.2s;
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.03);
-  display: flex;
-  flex-direction: column;
-
-  &:hover {
-    transform: translateY(-4px);
-    box-shadow: $shadow-md;
-  }
-
-  /* Header Styles */
-  .card-header {
-    padding: 0.6rem 1rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: white;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-
-    &.urgent {
-      background: linear-gradient(90deg, $color-urgent, $color-urgent-bg);
-    }
-
-    &.warning {
-      background: linear-gradient(90deg, $color-warning, #e67e22);
-    }
-
-    &.info {
-      background: linear-gradient(90deg, $color-info, $color-info-bg);
-    }
-  }
-
-  /* Body Styles */
-  .card-body {
-    padding: 1.5rem 1rem 1rem 1rem;
-    text-align: center;
-    flex-grow: 1;
-  }
-
-  .quantity-box {
-    margin-bottom: 1rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-
-    .number {
-      font-size: 3rem;
-      font-weight: 800;
-      line-height: 1;
-      letter-spacing: -2px;
-    }
-
-    .label {
-      font-size: 0.65rem;
-      font-weight: 700;
-      color: #95a5a6;
-      letter-spacing: 1px;
-      margin-top: 4px;
-    }
-
-    &.urgent .number {
-      color: $color-urgent;
-    }
-
-    &.warning .number {
-      color: #d35400;
-    }
-
-    &.info .number {
-      color: $color-info;
-    }
-  }
-
-  .product-name {
-    font-size: 0.95rem;
-    color: #34495e;
-    margin: 0;
-    line-height: 1.4;
-    font-weight: 600;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  /* Actions */
-  .card-actions {
-    padding: 1rem;
-    display: flex;
-    gap: 0.5rem;
-    border-top: 1px solid #f1f2f6;
-
-    .btn-register {
-      flex-grow: 1;
-      border: none;
-      padding: 0.6rem;
-      border-radius: 8px;
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: white;
-      text-transform: uppercase;
-      cursor: pointer;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 0.4rem;
-      transition: opacity 0.2s;
-
-      &:hover {
-        opacity: 0.9;
-      }
-
-      &.urgent {
-        background: $color-urgent;
-      }
-
-      &.warning {
-        background: #f39c12;
-        color: white;
-      }
-
-      &.info {
-        background: $color-info;
-        color: white;
-      }
-    }
-
-    .btn-expand {
-      background: #f1f2f6;
-      border: none;
-      width: 32px;
-      border-radius: 8px;
-      color: #7f8c8d;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-
-      &:hover {
-        background: #e0e0e0;
-      }
-
-      &.rotated i {
-        transform: rotate(180deg);
-      }
-
-      i {
-        transition: transform 0.2s;
-        font-size: 0.8rem;
-      }
-    }
-  }
-
-  /* Breakdown */
-  .breakdown {
-    background: #fafbfc;
-    padding: 1rem;
-    border-top: 1px solid #eee;
-
-    h4 {
-      margin: 0 0 0.8rem 0;
-      font-size: 0.7rem;
-      text-transform: uppercase;
-      color: #95a5a6;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-    }
-
-    ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    li {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 0.5rem;
-      font-size: 0.85rem;
-
-      .client-name {
-        color: #2c3e50;
-        font-weight: 500;
-      }
-
-      .qty-pill {
-        background: #ecf0f1;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-weight: 600;
-        font-size: 0.75rem;
-        color: #7f8c8d;
-      }
-    }
-  }
+  background: transparent;
+  margin: 1rem 0;
 }
 
 .empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem;
+  text-align: center;
+  padding: 4rem 2rem;
   color: #bdc3c7;
 
   i {
     font-size: 4rem;
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
     color: #2ecc71;
+    opacity: 0.8;
   }
 
   p {
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-weight: 800;
     margin: 0;
+    font-size: 1.2rem;
     color: #7f8c8d;
-  }
-
-  span {
-    font-size: 1rem;
-    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
   }
 }
 
-.loading-state {
+.loading-state,
+.error-msg {
   text-align: center;
-  padding: 4rem;
+  padding: 4rem 2rem;
   color: #95a5a6;
+}
 
-  .loader {
-    width: 40px;
-    height: 40px;
-    border: 4px solid #f3f3f3;
-    border-top: 4px solid #3498db;
-    border-radius: 50%;
-    display: inline-block;
-    animation: spin 1s linear infinite;
-    margin-bottom: 1rem;
-  }
+/* Loader Animation */
+.loader {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db;
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
+  to {
     transform: rotate(360deg);
+  }
+}
+
+// Mobile Adjustments
+@media (max-width: 768px) {
+  .list-row {
+    .row-main {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 1.5rem;
+    }
+
+    .info-col {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      .btn-expand-mobile {
+        display: block; // Show only on mobile
+        background: none;
+        border: none;
+        padding: 0.5rem;
+        font-size: 1.2rem;
+        color: #bdc3c7;
+
+        i {
+          transition: transform 0.3s;
+
+          &.rotated {
+            transform: rotate(180deg);
+          }
+        }
+      }
+    }
+
+    .stats-col {
+      flex-direction: row;
+      justify-content: center;
+      gap: 1rem;
+      border: none;
+      background: #f8f9fa;
+      padding: 1rem;
+      border-radius: 8px;
+
+      .qty-total {
+        font-size: 1.8rem;
+      }
+    }
+
+    .action-col {
+      flex-direction: column;
+      width: 100%;
+      gap: 1rem;
+
+      .mode-toggles {
+        width: 100%;
+        justify-content: center;
+        margin: 0;
+
+        .mode-btn {
+          flex: 1;
+          text-align: center;
+          padding: 10px;
+        }
+      }
+
+      .input-wrapper {
+        width: 100%;
+      }
+
+      .qty-input {
+        padding: 0.8rem;
+        font-size: 1.5rem;
+      }
+
+      .hold-btn-wrapper {
+        width: 100%;
+      }
+    }
   }
 }
 </style>
