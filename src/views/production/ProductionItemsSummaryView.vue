@@ -277,34 +277,47 @@ $color-delayed: #e67e22;
 
 .header-section {
   background: white;
-  padding: 1.5rem 2rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  margin-bottom: 2rem;
+  padding: 1.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1.5rem;
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 1.25rem;
+
+  @media (min-width: 768px) {
+    padding: 1.5rem 2rem;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
 
   .header-content {
     h1 {
-      font-size: 1.8rem;
+      font-size: 1.5rem;
       color: #2c3e50;
-      margin: 0 0 0.5rem 0;
-      font-weight: 700;
+      margin: 0 0 0.25rem 0;
+      font-weight: 800;
       letter-spacing: -0.5px;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      gap: 1rem;
+      gap: 0.75rem;
+
+      @media (min-width: 768px) {
+        font-size: 1.8rem;
+      }
 
       .refreshing-badge {
-        font-size: 0.85rem;
+        font-size: 0.75rem;
         background: #e1f5fe;
         color: #0288d1;
-        padding: 0.3rem 0.8rem;
+        padding: 0.25rem 0.75rem;
         border-radius: 20px;
-        font-weight: 600;
+        font-weight: 700;
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.4rem;
         border: 1px solid #b3e5fc;
       }
     }
@@ -312,30 +325,46 @@ $color-delayed: #e67e22;
     p {
       color: #7f8c8d;
       margin: 0;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
   }
 
   .header-actions {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
+    width: 100%;
+
+    @media (min-width: 768px) {
+      width: auto;
+    }
 
     button {
+      flex: 1;
       background: white;
       border: 1px solid #e1e8ed;
-      padding: 0.6rem 1.2rem;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 0.9rem;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.85rem;
       color: #2c3e50;
       cursor: pointer;
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 0.5rem;
       transition: all 0.2s;
+      white-space: nowrap;
+
+      @media (min-width: 768px) {
+        flex: none;
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+      }
 
       &:hover {
-        background: #f1f3f5;
+        background: #f8fafc;
+        border-color: #cbd5e1;
         transform: translateY(-1px);
       }
 
@@ -355,6 +384,7 @@ $color-delayed: #e67e22;
 
         &:hover {
           background: rgba($color-info, 0.05);
+          border-color: $color-info;
         }
       }
     }

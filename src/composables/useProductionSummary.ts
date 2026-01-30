@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import ProductionService from '@/services/production.service'
 import type { SummaryItem, CategoryGroup } from '@/types/production'
+import { parseECTDate } from '@/utils/dateUtils'
 
 export function useProductionSummary() {
   const isLoading = ref(true)
@@ -78,16 +79,23 @@ export function useProductionSummary() {
         ...(data.future || [])
       ]
 
-      // 2. Define Date Boundaries (Strict Local Time)
+      // 2. Define Date Boundaries (Strict Local Day Comparison)
+      // We'll use YYYY-MM-DD strings for strict day comparison in EC time
+      const toDayStr = (d: Date) => d.toISOString().split('T')[0] as string
+
       const now = new Date()
-      const startOfToday = new Date(now)
-      startOfToday.setHours(0, 0, 0, 0)
+      // Adjust "now" to EC time for boundary calculation
+      const ecNow = new Date(now.getTime() - (5 * 3600 * 1000))
 
-      const startOfTomorrow = new Date(startOfToday)
-      startOfTomorrow.setDate(startOfTomorrow.getDate() + 1)
+      const today = toDayStr(ecNow)
 
-      const startOfFuture = new Date(startOfTomorrow)
-      startOfFuture.setDate(startOfFuture.getDate() + 1)
+      const tomorrowDate = new Date(ecNow)
+      tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+      const tomorrow = toDayStr(tomorrowDate)
+
+      const dayAfterTomorrowDate = new Date(tomorrowDate)
+      dayAfterTomorrowDate.setDate(dayAfterTomorrowDate.getDate() + 1)
+      const dayAfterTomorrow = toDayStr(dayAfterTomorrowDate)
 
       // 3. Buckets Storage
       const buckets: Record<string, Map<string, { category: string, orders: any[] }>> = {
@@ -102,14 +110,17 @@ export function useProductionSummary() {
         if (!item.orders || !Array.isArray(item.orders)) return
 
         item.orders.forEach((order: any) => {
-          const d = new Date(order.delivery)
+          // Parse using our EC utility which handles UTC midnight correctly
+          const d = parseECTDate(order.delivery)
+          const orderDayStr = toDayStr(d)
+
           let bucketKey = 'future'
 
-          if (d < startOfToday) {
+          if (orderDayStr < today) {
             bucketKey = 'delayed'
-          } else if (d >= startOfToday && d < startOfTomorrow) {
+          } else if (orderDayStr === today) {
             bucketKey = 'today'
-          } else if (d >= startOfTomorrow && d < startOfFuture) {
+          } else if (orderDayStr === tomorrow) {
             bucketKey = 'tomorrow'
           } else {
             bucketKey = 'future'
