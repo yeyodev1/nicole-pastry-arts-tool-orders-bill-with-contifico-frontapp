@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import ProductionService from '@/services/production.service'
-import DispatchByDestinationModal from './components/DispatchByDestinationModal.vue'
-import ToastNotification from '@/components/ToastNotification.vue'
 
 interface ReportStats {
   kpis: {
@@ -19,12 +17,6 @@ interface ReportStats {
 const stats = ref<ReportStats | null>(null)
 const isLoading = ref(true)
 const range = ref<'today' | 'week'>('today')
-const showBatchModal = ref(false)
-
-// Toast State
-const showToast = ref(false)
-const toastMessage = ref('')
-const toastType = ref<'success' | 'error'>('success')
 
 const fetchReports = async () => {
   try {
@@ -51,16 +43,6 @@ const getWidth = (val: number, total: number) => {
   if (!total) return '0%'
   return `${(val / total) * 100}%`
 }
-
-const handleBatchSuccess = () => {
-  // Refresh reports after successful batch dispatch
-  fetchReports()
-
-  // Show Toast
-  toastMessage.value = '¡Envío masivo registrado con éxito!'
-  toastType.value = 'success'
-  showToast.value = true
-}
 </script>
 
 <template>
@@ -72,10 +54,6 @@ const handleBatchSuccess = () => {
       </div>
       
       <div class="range-switch">
-        <button class="btn-primary" @click="showBatchModal = true">
-           <i class="fas fa-shipping-fast"></i> Nuevo Envío Masivo
-        </button>
-        <div class="separator"></div>
         <router-link to="/production/orders" class="btn-nav">
           <i class="fas fa-list"></i> Ver Lista
         </router-link>
@@ -172,19 +150,6 @@ const handleBatchSuccess = () => {
         </div>
       </div>
     </div>
-    
-    <DispatchByDestinationModal 
-      :is-open="showBatchModal"
-      @close="showBatchModal = false"
-      @success="handleBatchSuccess"
-    />
-    
-    <ToastNotification 
-       :show="showToast"
-       :message="toastMessage"
-       :type="toastType"
-       @close="showToast = false"
-    />
   </div>
 </template>
 
