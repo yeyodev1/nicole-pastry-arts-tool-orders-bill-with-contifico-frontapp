@@ -22,8 +22,8 @@ const handleLogout = () => {
       </button>
     </div>
     <nav class="sub-nav">
-      <router-link to="/production/summary" class="nav-item" active-class="active">Resumen</router-link>
-      <router-link to="/production/orders" class="nav-item" active-class="active">Órdenes</router-link>
+      <router-link to="/production/summary" class="nav-item" active-class="active">Órdenes</router-link>
+      <router-link to="/production/orders" class="nav-item" active-class="active">Rutas</router-link>
       <router-link to="/production/reports" class="nav-item" active-class="active">Reportes</router-link>
     </nav>
   </header>
@@ -66,18 +66,21 @@ const handleLogout = () => {
 
 .sub-nav {
   display: flex;
-  padding: 0 1.5rem;
-  gap: 1.5rem;
+  padding: 0;
+  width: 100%;
 
   .nav-item {
+    flex: 1;
+    text-align: center;
     text-decoration: none;
     color: $text-light;
     padding: 0.75rem 0;
     font-weight: 500;
-    border-bottom: 2px solid transparent;
+    border-bottom: 3px solid transparent; // Thicker border for better visibility active state
     transition: all 0.2s;
 
     &:hover {
+      background-color: rgba($NICOLE-PURPLE, 0.05); // Subtle hover effect
       color: $NICOLE-PURPLE;
     }
 
