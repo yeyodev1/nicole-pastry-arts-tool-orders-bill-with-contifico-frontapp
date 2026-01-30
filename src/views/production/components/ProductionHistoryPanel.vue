@@ -32,7 +32,7 @@ const fetchHistory = async () => {
     const allOrders = await ProductionService.getAllOrders()
 
     // Filter: Finished/Void AND Updated Today (Strict Local)
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = new Date().toISOString().split('T')[0] || ''
 
     const filteredOrders = allOrders.filter(o =>
       o.productionStage === filterMode.value &&
