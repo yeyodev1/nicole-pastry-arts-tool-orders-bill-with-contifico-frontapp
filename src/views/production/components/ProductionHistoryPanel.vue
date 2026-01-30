@@ -18,12 +18,20 @@ interface HistoryItem {
   }[]
 }
 
+import { useToast } from '@/composables/useToast'
+
 const emit = defineEmits(['close'])
+const { success, error: showError } = useToast()
 
 const isLoading = ref(true)
 const historyItems = ref<HistoryItem[]>([])
 const error = ref('')
 const filterMode = ref<'FINISHED' | 'VOID'>('FINISHED')
+
+// Confirmation Modal State
+const isConfirmModalOpen = ref(false)
+const isProcessingRevert = ref(false)
+const itemToRevert = ref<HistoryItem | null>(null)
 
 const fetchHistory = async () => {
   try {
@@ -87,43 +95,54 @@ const setFilter = (mode: 'FINISHED' | 'VOID') => {
   fetchHistory()
 }
 
-const handleRevert = async (item: HistoryItem) => {
-  const action = filterMode.value === 'FINISHED' ? 'devolver a producción' : 'restaurar item anulado'
-  if (!confirm(`¿Estás seguro de ${action}: "${item._id}"?`)) return
+const openConfirmModal = (item: HistoryItem) => {
+  itemToRevert.value = item
+  isConfirmModalOpen.value = true
+}
+
+const closeConfirmModal = () => {
+  if (isProcessingRevert.value) return
+  isConfirmModalOpen.value = false
+  itemToRevert.value = null
+}
+
+const handleRevertAction = async () => {
+  if (!itemToRevert.value || isProcessingRevert.value) return
 
   try {
-    isLoading.value = true
-    const idsToRevert = item.orders.map(o => o.id)
-
-    if (idsToRevert.length === 0) return
-
-    if (idsToRevert.length === 0) return
+    isProcessingRevert.value = true
+    const idsToRevert = itemToRevert.value.orders.map(o => o.id)
+    if (idsToRevert.length === 0) {
+      closeConfirmModal()
+      return
+    }
 
     if (filterMode.value === 'VOID') {
       // Use strict restore endpoint for voided items
       const restorePromises = idsToRevert.map(id => ProductionService.restoreOrder(id))
       await Promise.all(restorePromises)
     } else {
-      // Standard revert for finished items
-      await ProductionService.batchUpdate(idsToRevert, 'PENDING')
+      // Use individual updates instead of batchUpdate (more consistent with Dashboard logic)
+      const revertPromises = idsToRevert.map(id =>
+        ProductionService.updateTask(id, { stage: 'PENDING' })
+      )
+      await Promise.all(revertPromises)
     }
 
+    success(filterMode.value === 'VOID' ? 'Item restaurado exitosamente.' : 'Item devuelto a producción.')
+    isConfirmModalOpen.value = false
     await fetchHistory()
 
   } catch (err) {
     console.error(err)
-    alert('Error al revertir item')
+    showError('Error al procesar la solicitud. Reintente.')
   } finally {
-    isLoading.value = false
+    isProcessingRevert.value = false
   }
 }
 
 const canRevert = (item: HistoryItem): boolean => {
-  // If it's FINISHED, maybe we allow revert always (or standard rule)
-  // If it's VOID, strict 1 hour rule from the 'urgency' timestamp (which is updatedAt)
-
-  if (filterMode.value === 'FINISHED') return true // Or apply rule if needed
-
+  if (filterMode.value === 'FINISHED') return true
   if (filterMode.value === 'VOID') {
     const voidTime = new Date(item.urgency).getTime()
     const now = new Date().getTime()
@@ -177,8 +196,8 @@ onMounted(() => {
            <div v-for="item in historyItems" :key="item._id" class="history-card">
                
                <div class="card-left">
-                   <div class="status-icon">
-                       <i class="fas fa-check"></i>
+                   <div class="status-icon" :class="{ 'void': filterMode === 'VOID' }">
+                       <i class="fas" :class="filterMode === 'FINISHED' ? 'fa-check' : 'fa-ban'"></i>
                    </div>
                    <div class="info">
                        <h3 class="product-name">{{ item._id }}</h3>
@@ -193,13 +212,60 @@ onMounted(() => {
                </div>
 
                <div class="card-right">
-                   <button class="btn-revert" @click="handleRevert(item)" title="Devolver a Producción (Deshacer)">
+                   <button 
+                    class="btn-revert" 
+                    @click="openConfirmModal(item)" 
+                    :disabled="!canRevert(item)"
+                    :title="filterMode === 'VOID' ? 'Restaurar Orden' : 'Devolver a Producción'"
+                   >
                        <i class="fas fa-undo-alt"></i>
-                       <span>Devolver</span>
+                       <span>{{ filterMode === 'VOID' ? 'Restaurar' : 'Devolver' }}</span>
                    </button>
                </div>
            </div>
       </div>
+
+      <!-- Custom Confirmation Modal -->
+      <Transition name="modal-fade">
+        <div v-if="isConfirmModalOpen" class="modal-overlay">
+            <div class="modal-content" :class="{ 'danger-top': filterMode === 'VOID', 'success-top': filterMode === 'FINISHED' }">
+                <div class="modal-header">
+                    <i class="fas" :class="filterMode === 'FINISHED' ? 'fa-undo-alt' : 'fa-history'"></i>
+                    <h2>Confirma Acción</h2>
+                </div>
+
+                <div class="modal-body" v-if="itemToRevert">
+                    <p>
+                        ¿Estás seguro de 
+                        <strong>{{ filterMode === 'FINISHED' ? 'devolver a producción' : 'restaurar' }}</strong> 
+                        el item:
+                    </p>
+                    <div class="target-item-info">
+                        <strong>{{ itemToRevert._id }}</strong>
+                        <span>{{ itemToRevert.totalQuantity }} unidades</span>
+                    </div>
+                    <p class="warning-text" v-if="filterMode === 'FINISHED'">
+                        El item volverá a aparecer en el tablero principal como pendiente.
+                    </p>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-cancel" @click="closeConfirmModal" :disabled="isProcessingRevert">
+                        Cancelar
+                    </button>
+                    <button 
+                        class="btn-confirm" 
+                        :class="{ 'btn-revert-action': filterMode === 'FINISHED', 'btn-restore-action': filterMode === 'VOID' }" 
+                        @click="handleRevertAction" 
+                        :disabled="isProcessingRevert"
+                    >
+                        <i class="fas" :class="isProcessingRevert ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                        {{ isProcessingRevert ? 'Procesando...' : 'Sí, confirmar' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+      </Transition>
   </div>
 </template>
 
@@ -241,15 +307,6 @@ $color-danger: #e74c3c;
   padding-bottom: 1rem;
 
   .title-group {
-    h2 {
-      margin: 0;
-      font-size: 1.5rem;
-      color: $color-success;
-      display: flex;
-      align-items: center;
-      gap: 0.8rem;
-    }
-
     .toggle-group {
       display: flex;
       gap: 0.5rem;
@@ -271,10 +328,6 @@ $color-danger: #e74c3c;
         display: flex;
         align-items: center;
         gap: 6px;
-
-        i {
-          font-size: 0.9rem;
-        }
 
         &.active {
           background: white;
@@ -362,6 +415,11 @@ $color-danger: #e74c3c;
       color: white;
       font-size: 1.1rem;
       box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3);
+
+      &.void {
+        background: linear-gradient(135deg, $color-danger, #c0392b);
+        box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3);
+      }
     }
 
     .info {
@@ -413,14 +471,16 @@ $color-danger: #e74c3c;
       gap: 0.5rem;
       transition: all 0.2s;
 
-      &:hover {
+      &:hover:not(:disabled) {
         background: #fff5f5;
         border-color: $color-danger;
         transform: translateX(-2px);
       }
 
-      i {
-        font-size: 0.9rem;
+      &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        filter: grayscale(1);
       }
     }
   }
@@ -445,7 +505,6 @@ $color-danger: #e74c3c;
   }
 
   .loader {
-    /* Standard loader styles - or import spinner */
     width: 30px;
     height: 30px;
     border: 3px solid #f3f3f3;
@@ -453,6 +512,167 @@ $color-danger: #e74c3c;
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 0 auto 1rem;
+  }
+}
+
+/* Custom Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+  padding: 1rem;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  padding: 2rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  border-top: 6px solid #f1f2f6;
+
+  &.success-top {
+    border-top-color: $color-success;
+  }
+
+  &.danger-top {
+    border-top-color: $color-danger;
+  }
+
+  .modal-header {
+    margin-bottom: 1.5rem;
+
+    i {
+      font-size: 2.5rem;
+      color: $color-sub;
+      margin-bottom: 0.8rem;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 1.4rem;
+      color: $color-text;
+    }
+  }
+
+  .modal-body {
+    margin-bottom: 2rem;
+
+    p {
+      color: $color-sub;
+      font-size: 0.95rem;
+      margin-bottom: 1rem;
+    }
+
+    .target-item-info {
+      background: $color-bg;
+      padding: 1rem;
+      border-radius: 12px;
+      margin: 1rem 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+
+      strong {
+        color: $color-text;
+        font-size: 1.1rem;
+      }
+
+      span {
+        color: $color-sub;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+    }
+
+    .warning-text {
+      font-size: 0.8rem;
+      color: $color-danger;
+      font-weight: 600;
+      font-style: italic;
+    }
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+
+    button {
+      padding: 0.8rem 1.5rem;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+    }
+
+    .btn-cancel {
+      background: #f1f2f6;
+      color: $color-sub;
+
+      &:hover:not(:disabled) {
+        background: #e0e0e0;
+      }
+    }
+
+    .btn-confirm {
+      color: white;
+
+      &.btn-revert-action {
+        background: $color-success;
+
+        &:hover:not(:disabled) {
+          background: #27ae60;
+        }
+      }
+
+      &.btn-restore-action {
+        background: $color-danger;
+
+        &:hover:not(:disabled) {
+          background: #c0392b;
+        }
+      }
+    }
+  }
+}
+
+/* Modal Transitions */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+
+  .modal-content {
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+
+  .modal-content {
+    transform: scale(0.9) translateY(20px);
   }
 }
 

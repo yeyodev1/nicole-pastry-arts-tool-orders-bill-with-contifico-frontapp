@@ -95,7 +95,7 @@ export interface Order extends OrderFormData {
   totalValue: number // Required here
   deliveryValue: number
   invoiceStatus?: 'PENDING' | 'PROCESSED' | 'ERROR'
-  productionStage: 'PENDING' | 'IN_PROCESS' | 'FINISHED'
+  productionStage: 'PENDING' | 'IN_PROCESS' | 'FINISHED' | 'VOID'
   productionNotes: string
   createdAt: string
   updatedAt: string

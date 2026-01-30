@@ -62,7 +62,6 @@ const loop = () => {
   progress.value = p * 100
 
   if (p >= 1) {
-    console.log('ActionHoldButton: Hold complete, emitting trigger')
     emit('trigger')
     endHold()
   } else {

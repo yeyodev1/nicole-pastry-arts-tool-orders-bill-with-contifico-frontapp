@@ -85,15 +85,17 @@ const handleVoidItem = (itm: Item) => {
             @leave="leave"
         >
             <div v-show="category.isExpanded" class="category-items">
-                <ProductionItemRow 
-                    v-for="item in category.items" 
-                    :key="item._id" 
-                    :item="item"
-                    :urgency-type="urgencyType"
-                    @toggle-expand="(itm) => emit('toggle-item', itm)"
-                    @register="(itm) => emit('register-item', itm)"
-                    @void-item="handleVoidItem"
-                />
+                <TransitionGroup name="list-fade">
+                    <ProductionItemRow 
+                        v-for="item in category.items" 
+                        :key="item._id" 
+                        :item="item"
+                        :urgency-type="urgencyType"
+                        @toggle-expand="(itm) => emit('toggle-item', itm)"
+                        @register="(itm) => emit('register-item', itm)"
+                        @void-item="handleVoidItem"
+                    />
+                </TransitionGroup>
             </div>
         </Transition>
     </div>
@@ -159,5 +161,28 @@ const handleVoidItem = (itm: Item) => {
   border-top: 1px solid #f1f2f6;
   padding: 0.5rem;
   background: #fcfcfc;
+}
+
+/* List Transitions */
+.list-fade-enter-active,
+.list-fade-leave-active {
+  transition: all 0.4s ease;
+}
+
+.list-fade-enter-from,
+.list-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.list-fade-leave-active {
+  position: absolute;
+  width: calc(100% - 1rem);
+  /* Maintain width during leave */
+}
+
+/* Move Transition */
+.list-fade-move {
+  transition: transform 0.4s ease;
 }
 </style>

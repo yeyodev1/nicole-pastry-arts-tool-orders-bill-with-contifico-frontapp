@@ -65,9 +65,9 @@ export function useProductionSummary() {
     return delayedItems.value.length > 0 || todayItems.value.length > 0 || tomorrowItems.value.length > 0 || futureItems.value.length > 0
   })
 
-  const fetchSummary = async () => {
+  const fetchSummary = async (background = false) => {
     try {
-      isLoading.value = true
+      if (!background) isLoading.value = true
       const response = await ProductionService.getSummary()
       const data = response.dashboard || response
 
@@ -173,7 +173,7 @@ export function useProductionSummary() {
       console.error(err)
       error.value = 'No se pudo cargar el resumen de producción.'
     } finally {
-      isLoading.value = false
+      if (!background) isLoading.value = false
     }
   }
 
@@ -191,19 +191,14 @@ export function useProductionSummary() {
   }
 
   const voidItem = async (item: SummaryItem) => {
-    if (!confirm(`¿Estás seguro de ANULAR todo el pendiente de "${item._id}"?`)) return
-
     try {
-      isLoading.value = true
       // Void item by item (or batch if service supported it, but we have strict orders)
       const voidPromises = item.orders.map(o => ProductionService.voidOrder(o.id))
       await Promise.all(voidPromises)
-
-      await fetchSummary()
     } catch (err) {
       console.error(err)
       error.value = 'Error al anular item'
-      isLoading.value = false
+      throw err // Re-throw to allow component to handle UX
     }
   }
 
@@ -220,7 +215,7 @@ export function useProductionSummary() {
     toggleCategory,
     toggleExpand,
     voidItem,
-    showHistory, // History logic to be implemented fully if needed or kept separate
+    showHistory,
     completedItems
   }
 }
