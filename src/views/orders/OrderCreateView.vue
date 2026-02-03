@@ -44,6 +44,7 @@ const formData = reactive<OrderFormData>({
   totalValue: 0,
   // Default Payment at Creation
   registerPaymentNow: false,
+  isCredit: false,
   paymentDetails: {
     forma_cobro: 'TRA',
     monto: 0,
@@ -139,6 +140,16 @@ const executeOrderCreation = async () => {
   try {
     const payload = {
       ...formData,
+      // Handle Credit Sale override
+      ...(formData.isCredit ? {
+        registerPaymentNow: true,
+        paymentDetails: {
+          ...formData.paymentDetails,
+          forma_cobro: 'CR',
+          monto: formData.totalValue,
+          fecha: new Date().toISOString().split('T')[0]
+        }
+      } : {}),
       products: cart.value.map(item => ({
         contifico_id: item.contifico_id,
         name: item.name,
@@ -180,6 +191,7 @@ const resetForm = () => {
     invoiceData: { ruc: '', businessName: '', email: '', address: '' },
     totalValue: 0,
     registerPaymentNow: false,
+    isCredit: false,
     paymentDetails: {
       forma_cobro: 'TRA',
       monto: 0,
