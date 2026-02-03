@@ -115,12 +115,16 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
          
          <div class="divider"></div>
          
-         <div class="row highlight" :class="{ 'is-credit': orderData.isCredit }">
+         <div class="row highlight" :class="{ 'is-credit': orderData.isCredit, 'is-settled': orderData.settledInIsland }">
             <span v-if="orderData.isCredit">Venta a Crédito:</span>
+            <span v-else-if="orderData.settledInIsland">Facturado en Isla:</span>
             <span v-else>Pago Inicial:</span>
 
             <strong v-if="orderData.isCredit" class="text-danger">
                {{ formatMoney(orderData.totalValue || 0) }} (Pendiente)
+            </strong>
+            <strong v-else-if="orderData.settledInIsland" class="text-purple">
+               {{ formatMoney(orderData.totalValue || 0) }} ({{ orderData.settledIslandName }})
             </strong>
             <strong v-else :class="{ 'text-success': orderData.registerPaymentNow, 'text-warning': !orderData.registerPaymentNow }">
                {{ orderData.registerPaymentNow ? formatMoney(Number(orderData.paymentDetails?.monto || 0)) : '$0.00 (Por confirmar)' }}
@@ -325,9 +329,18 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
     color: #dc2626;
   }
 
+  .text-purple {
+    color: $NICOLE-PURPLE;
+  }
+
   .is-credit {
     background: #fff1f2 !important;
     border-color: #fecaca !important;
+  }
+
+  .is-settled {
+    background: rgba($NICOLE-PURPLE, 0.05) !important;
+    border-color: rgba($NICOLE-PURPLE, 0.2) !important;
   }
 }
 
