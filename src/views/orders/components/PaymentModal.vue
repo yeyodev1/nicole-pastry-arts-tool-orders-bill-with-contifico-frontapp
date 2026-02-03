@@ -79,6 +79,11 @@ const submitPayment = async () => {
   const [year, month, day] = formData.fecha.split('-')
   const formattedDate = `${day}/${month}/${year}`
 
+  if (formData.forma_cobro === 'CR') {
+    const confirmed = confirm("¿Estás seguro que quieres hacer esta transacción a crédito? Tendrás que registrar los cobros en el futuro.")
+    if (!confirmed) return
+  }
+
   const payload: any = {
     forma_cobro: formData.forma_cobro,
     monto: formData.monto.toFixed(2),

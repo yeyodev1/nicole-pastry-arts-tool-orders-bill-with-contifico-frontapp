@@ -104,6 +104,16 @@ class OrderService extends APIBase {
       throw error
     }
   }
+
+  async settleOrderInIsland(id: string, islandName: string): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/settle-island`, { islandName })
+      return response.data
+    } catch (error) {
+      console.error('Error settling order in island:', error)
+      throw error
+    }
+  }
 }
 
 export default new OrderService()

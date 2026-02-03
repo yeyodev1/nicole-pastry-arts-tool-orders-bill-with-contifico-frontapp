@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import PaymentFields from './PaymentFields.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 import CustomTimeSelect from '@/components/ui/CustomTimeSelect.vue'
+import OrderPaymentSelector from './OrderPaymentSelector.vue'
 
 const props = defineProps<{
   modelValue: OrderFormData
@@ -215,21 +216,11 @@ const selectTime = (time: string) => {
       </div>
     </div>
 
-    <!-- Payment at Creation Section -->
-    <div class="payment-toggle">
-        <label>
-            <input type="checkbox" v-model="props.modelValue.registerPaymentNow" />
-             Registrar Cobro Ahora
-        </label>
-    </div>
-    
-    <div v-if="props.modelValue.registerPaymentNow" class="payment-fields-section">
-        <h3>Datos del Cobro</h3>
-        <PaymentFields 
-          v-model="props.modelValue.paymentDetails" 
-          :totalToPay="props.modelValue.totalValue"
-        />
-    </div>
+    <!-- Refactored Payment Options -->
+    <OrderPaymentSelector 
+      v-model="props.modelValue" 
+      :branches="BRANCHES"
+    />
   </div>
 </template>
 
@@ -406,8 +397,7 @@ const selectTime = (time: string) => {
   }
 }
 
-.invoice-toggle,
-.payment-toggle {
+.invoice-toggle {
   margin: 2rem 0 1rem;
   padding: 1rem;
   background: white;
@@ -438,26 +428,8 @@ const selectTime = (time: string) => {
   }
 }
 
-.payment-toggle {
-  background: rgba($success, 0.05);
-  border-color: rgba($success, 0.3);
 
-  &:hover {
-    border-color: $success;
-    background: rgba($success, 0.1);
-  }
-
-  label {
-    color: darken-color($success, 15%);
-
-    input[type="checkbox"] {
-      accent-color: $success;
-    }
-  }
-}
-
-.invoice-fields,
-.payment-fields-section {
+.invoice-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
