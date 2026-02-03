@@ -4,22 +4,11 @@ import { computed } from 'vue'
 import PaymentFields from './PaymentFields.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 import CustomTimeSelect from '@/components/ui/CustomTimeSelect.vue'
+import OrderPaymentSelector from './OrderPaymentSelector.vue'
 
 const props = defineProps<{
   modelValue: OrderFormData
 }>()
-
-const toggleCredit = () => {
-  if (props.modelValue.isCredit) {
-    props.modelValue.registerPaymentNow = false
-  }
-}
-
-const togglePayment = () => {
-  if (props.modelValue.registerPaymentNow) {
-    props.modelValue.isCredit = false
-  }
-}
 
 const BRANCHES = ['San Marino', 'Mall del Sol', 'Centro de Producción'] as const
 
@@ -227,37 +216,11 @@ const selectTime = (time: string) => {
       </div>
     </div>
 
-    <!-- Payment Options -->
-    <div class="payment-options-row">
-        <!-- Credit Toggle -->
-        <div class="payment-toggle credit" :class="{ active: props.modelValue.isCredit }">
-            <label>
-                <input type="checkbox" v-model="props.modelValue.isCredit" @change="toggleCredit" />
-                 Venta a Crédito (Pendiente)
-            </label>
-        </div>
-
-        <!-- Payment Toggle -->
-        <div class="payment-toggle success" :class="{ active: props.modelValue.registerPaymentNow }">
-            <label>
-                <input type="checkbox" v-model="props.modelValue.registerPaymentNow" @change="togglePayment" />
-                 Registrar Cobro Ahora
-            </label>
-        </div>
-    </div>
-    
-    <div v-if="props.modelValue.registerPaymentNow" class="payment-fields-section">
-        <h3>Datos del Cobro</h3>
-        <PaymentFields 
-          v-model="props.modelValue.paymentDetails" 
-          :totalToPay="props.modelValue.totalValue"
-        />
-    </div>
-
-    <div v-if="props.modelValue.isCredit" class="credit-info-box">
-       <i class="fa-solid fa-circle-info"></i>
-       <p>Se registrará como una venta a crédito por el total de <strong>${{ props.modelValue.totalValue?.toFixed(2) }}</strong>.</p>
-    </div>
+    <!-- Refactored Payment Options -->
+    <OrderPaymentSelector 
+      v-model="props.modelValue" 
+      :branches="BRANCHES"
+    />
   </div>
 </template>
 
@@ -465,102 +428,8 @@ const selectTime = (time: string) => {
   }
 }
 
-.payment-options-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin: 1.5rem 0;
 
-  @media(max-width: 600px) {
-    grid-template-columns: 1fr;
-  }
-}
-
-.payment-toggle {
-  padding: 1.25rem;
-  background: white;
-  border: 2px solid $border-light;
-  border-radius: 12px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
-
-  &:hover {
-    border-color: darken-color($border-light, 10%);
-  }
-
-  &.active {
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
-  }
-
-  label {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    cursor: pointer;
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: $text-dark;
-    width: 100%;
-
-    input[type="checkbox"] {
-      width: 1.25rem;
-      height: 1.25rem;
-      cursor: pointer;
-    }
-  }
-
-  &.credit {
-    &.active {
-      background: #f8fafc;
-      border-color: #64748b;
-
-      label {
-        color: #334155;
-      }
-    }
-  }
-
-  &.success {
-    &.active {
-      background: rgba($success, 0.03);
-      border-color: $success;
-
-      label {
-        color: darken-color($success, 10%);
-      }
-    }
-  }
-}
-
-.credit-info-box {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem;
-  background: #f1f5f9;
-  border-radius: 10px;
-  color: #475569;
-  font-size: 0.9rem;
-  margin-top: 1rem;
-  border: 1px solid #e2e8f0;
-  animation: slideDown 0.3s ease;
-
-  i {
-    font-size: 1.1rem;
-    color: #64748b;
-  }
-
-  p {
-    margin: 0;
-  }
-
-  strong {
-    color: $text-dark;
-  }
-}
-
-.invoice-fields,
-.payment-fields-section {
+.invoice-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1.5rem;
