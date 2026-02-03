@@ -39,7 +39,8 @@ const emit = defineEmits(['open-modal'])
               {{ pay.forma_cobro === 'TRA' ? 'Transferencia' :
                 pay.forma_cobro === 'EF' ? 'Efectivo' :
                   pay.forma_cobro === 'TC' ? 'Tarjeta' :
-                    pay.forma_cobro === 'CQ' ? 'Cheque' : pay.forma_cobro }}
+                    pay.forma_cobro === 'CQ' ? 'Cheque' :
+                      pay.forma_cobro === 'CR' ? 'Crédito' : pay.forma_cobro }}
            </span>
          </div>
          
@@ -202,6 +203,12 @@ const emit = defineEmits(['open-modal'])
   &.CQ {
     background: #fae8ff;
     color: #86198f;
+  }
+
+  &.CR {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
   }
 }
 
