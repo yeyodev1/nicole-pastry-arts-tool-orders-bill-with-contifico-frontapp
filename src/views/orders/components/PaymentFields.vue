@@ -15,9 +15,8 @@ const emit = defineEmits(['update:modelValue'])
 // Payment Methods
 const paymentMethods = [
   { value: 'TRA', label: 'Transferencia' },
-  { value: 'EF', label: 'Efectivo' },
-  { value: 'TC', label: 'Tarjeta de Crédito' },
-  { value: 'CQ', label: 'Cheque' }
+  { value: 'TC', label: 'Tarjeta' },
+  { value: 'CR', label: 'Crédito' }
 ]
 
 const localData = computed({
@@ -34,9 +33,15 @@ watch([() => isAbono.value, () => props.totalToPay], ([newIsAbono, newTotal]) =>
   }
 }, { immediate: true })
 
-const isTransferOrCheque = computed(() => ['TRA', 'CQ'].includes(localData.value.forma_cobro))
-const IsTransfer = computed(() => localData.value.forma_cobro === 'TRA')
+const isTransfer = computed(() => localData.value.forma_cobro === 'TRA')
 const isCreditCard = computed(() => localData.value.forma_cobro === 'TC')
+const isCreditLine = computed(() => localData.value.forma_cobro === 'CR')
+
+const referenceLabel = computed(() => {
+  if (localData.value.forma_cobro === 'TRA') return 'Número de Transferencia'
+  if (localData.value.forma_cobro === 'TC') return 'Número de Lote / Autorización'
+  return 'Comprobante / Lote'
+})
 </script>
 
 <template>
@@ -51,7 +56,7 @@ const isCreditCard = computed(() => localData.value.forma_cobro === 'TC')
 
     <!-- Bank Account Input (Manual Text) -->
     <BaseInput
-        v-if="IsTransfer"
+        v-if="isTransfer"
         label="Banco de Destino"
         v-model="localData.cuenta_bancaria_id"
         placeholder="Ej: Banco Pichincha"
@@ -85,14 +90,19 @@ const isCreditCard = computed(() => localData.value.forma_cobro === 'TC')
         :disabled="isLoading"
     />
 
-    <!-- Conditional: Transfer/Cheque/TC Reference -->
+    <!-- Conditional: Transfer/TC Reference -->
     <BaseInput
-        v-if="isTransferOrCheque || isCreditCard"
-        :label="localData.forma_cobro === 'CQ' ? 'Número Cheque' : 'Comprobante / Lote'"
+        v-if="isTransfer || isCreditCard"
+        :label="referenceLabel"
         v-model="localData.numero_comprobante"
-        placeholder="Ej: 123456"
+        :placeholder="localData.forma_cobro === 'TRA' ? 'Ej: 987654' : 'Ej: 123456'"
         :disabled="isLoading"
     />
+
+    <div v-if="isCreditLine" class="credit-warning">
+       <i class="fa-solid fa-triangle-exclamation"></i>
+       <span>Recordar que este saldo queda pendiente por cobrar.</span>
+    </div>
 
     <!-- Conditional: Credit Card -->
     <template v-if="isCreditCard">
@@ -156,6 +166,23 @@ const isCreditCard = computed(() => localData.value.forma_cobro === 'TC')
     color: $text-light;
     font-size: 0.85rem;
     margin-left: 1.85rem;
+  }
+}
+
+.credit-warning {
+  background: #fff7ed;
+  color: #c2410c;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #ffedd5;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+
+  i {
+    font-size: 1rem;
   }
 }
 </style>
