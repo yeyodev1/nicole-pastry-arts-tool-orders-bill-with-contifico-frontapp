@@ -11,6 +11,7 @@ import OrderWhatsAppModal from './components/OrderWhatsAppModal.vue'
 import PaymentModal from './components/PaymentModal.vue'
 import InvoiceEditModal from './components/InvoiceEditModal.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
+import SettleInIslandModal from './components/SettleInIslandModal.vue'
 
 const router = useRouter()
 const { success, error: showError, info } = useToast()
@@ -31,6 +32,9 @@ const showPaymentModal = ref(false)
 const selectedOrderForPayment = ref<any>(null)
 const showInvoiceEditModal = ref(false)
 const selectedOrderForInvoice = ref<any>(null)
+const showSettleModal = ref(false)
+const selectedOrderForSettle = ref<any>(null)
+const isSettling = ref(false)
 
 // --- FETCHING ---
 const fetchOrders = async () => {
@@ -140,6 +144,27 @@ const openInvoiceEditModal = (order: any) => {
   }
   selectedOrderForInvoice.value = order
   showInvoiceEditModal.value = true
+}
+
+const openSettleModal = (order: any) => {
+  selectedOrderForSettle.value = order
+  showSettleModal.value = true
+}
+
+const handleSettleInIsland = async (islandName: string) => {
+  if (!selectedOrderForSettle.value) return
+  isSettling.value = true
+  try {
+    await OrderService.settleOrderInIsland(selectedOrderForSettle.value._id, islandName)
+    success(`Pedido registrado como facturado en ${islandName}`)
+    showSettleModal.value = false
+    fetchOrders()
+  } catch (err: any) {
+    console.error("Settle error", err)
+    showError(err.response?.data?.message || 'Error al registrar facturación en isla')
+  } finally {
+    isSettling.value = false
+  }
 }
 
 const handleInvoiceSaved = (updatedOrder: any) => {
@@ -331,8 +356,13 @@ onMounted(() => {
                   <span class="amount">${{ order.totalValue.toFixed(2) }}</span>
                </div>
                <div class="status-group">
+                  <!-- Settlement / Payment Badge -->
+                  <div v-if="order.settledInIsland" class="settled-badge" :title="'Facturado en ' + order.settledIslandName">
+                     <i class="fas fa-store"></i>
+                     <span>{{ order.settledIslandName }}</span>
+                  </div>
                   <!-- Payment Icon -->
-                  <div class="payment-status" :class="{ paid: order.paymentDetails?.monto }" title="Estado Pago">
+                  <div v-else class="payment-status" :class="{ paid: order.paymentDetails?.monto }" title="Estado Pago">
                      <i :class="order.paymentDetails?.monto ? 'fas fa-check-circle' : 'far fa-circle'"></i>
                      {{ order.paymentDetails?.monto ? 'Pagado' : 'Pendiente' }}
                   </div>
@@ -361,6 +391,14 @@ onMounted(() => {
                   title="Facturación"
                  >
                     <i class="fa-solid fa-file-invoice"></i>
+                 </button>
+                 <button 
+                  v-if="!order.settledInIsland"
+                  class="btn-icon btn-settle" 
+                  @click="openSettleModal(order)"
+                  title="Registrar Facturación en Isla"
+                 >
+                    <i class="fa-solid fa-store"></i>
                  </button>
               </div>
             </div>
@@ -401,6 +439,14 @@ onMounted(() => {
       :current-invoice-data="selectedOrderForInvoice.invoiceData"
       @close="showInvoiceEditModal = false"
       @saved="handleInvoiceSaved"
+    />
+
+    <SettleInIslandModal
+      :is-open="showSettleModal"
+      :order-id="selectedOrderForSettle?._id"
+      :is-loading="isSettling"
+      @close="showSettleModal = false"
+      @confirm="handleSettleInIsland"
     />
   </div>
 </template>
@@ -700,6 +746,7 @@ onMounted(() => {
 
       /* Line Clamping */
       display: -webkit-box;
+      line-clamp: 2;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
@@ -752,6 +799,23 @@ onMounted(() => {
 
       &.paid {
         color: $success;
+      }
+    }
+
+    .settled-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.08);
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      border: 1px solid rgba($NICOLE-PURPLE, 0.15);
+
+      i {
+        font-size: 0.8rem;
       }
     }
   }
@@ -820,6 +884,14 @@ onMounted(() => {
           color: $success;
           border-color: $success;
           background: #f0fdf4;
+        }
+
+        &.btn-settle {
+          &:hover {
+            color: $NICOLE-SECONDARY;
+            border-color: $NICOLE-SECONDARY;
+            background: rgba($NICOLE-SECONDARY, 0.04);
+          }
         }
       }
     }
