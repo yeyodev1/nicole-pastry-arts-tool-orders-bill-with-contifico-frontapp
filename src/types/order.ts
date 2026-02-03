@@ -76,6 +76,8 @@ export interface OrderFormData {
   // New Payment Fields
   registerPaymentNow?: boolean
   isCredit?: boolean
+  settledInIsland?: boolean
+  settledIslandName?: string
   paymentDetails?: {
     forma_cobro: string
     monto: number
