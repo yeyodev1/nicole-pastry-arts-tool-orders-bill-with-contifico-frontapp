@@ -60,7 +60,7 @@ const calendarDays = computed(() => {
 
     // Check constraints
     let isDisabled = false
-    if (min && fullDate < min) isDisabled = true
+    if (props.minDate && fullDate < props.minDate) isDisabled = true
 
     calendar.push({ day: d, fullDate, disabled: isDisabled })
   }
