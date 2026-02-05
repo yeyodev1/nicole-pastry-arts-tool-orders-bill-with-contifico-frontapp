@@ -276,7 +276,8 @@ onMounted(async () => {
         invoiceData: order.invoiceData || { ruc: '', businessName: '', email: '', address: '' },
         totalValue: order.totalValue,
         settledInIsland: order.settledInIsland || false,
-        settledIslandName: order.settledIslandName || 'San Marino'
+        settledIslandName: order.settledIslandName || 'San Marino',
+        payments: order.payments || []
       })
 
       // Map back to cart
@@ -310,6 +311,17 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Warning for Paid Orders -->
+    <div v-if="isEditMode && formData.payments && formData.payments.length > 0" class="container">
+      <div class="warning-banner">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <div class="warning-content">
+          <strong>Advertencia: Este pedido tiene pagos registrados.</strong>
+          <p>Cualquier cambio en los productos o valores debe ser revisado manualmente en la sección de pagos.</p>
+        </div>
+      </div>
+    </div>
+
     <main class="container main-content">
       <!-- Left Column: Product Selection -->
       <section class="left-column">
@@ -337,6 +349,7 @@ onMounted(async () => {
           :cart="cart" 
           :isSubmitting="isSubmitting"
           :hasRider="!!formData.deliveryPerson?.personId"
+          :is-edit-mode="isEditMode"
           @remove="removeFromCart"
           @update-quantity="updateQuantity"
           @submit="onCartSubmit"
@@ -541,6 +554,43 @@ onMounted(async () => {
     content: '\f05a'; // Info circle
     font-family: 'Font Awesome 6 Free';
     font-weight: 900;
+  }
+}
+</style>
+
+<style lang="scss" scoped>
+.warning-banner {
+  background-color: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f97316;
+  color: #c2410c;
+  padding: 1rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  animation: fadeIn 0.3s ease;
+
+  i {
+    font-size: 1.25rem;
+    margin-top: 2px;
+  }
+
+  .warning-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    strong {
+      font-size: 1rem;
+    }
+
+    p {
+      margin: 0;
+      font-size: 0.9rem;
+      opacity: 0.9;
+    }
   }
 }
 </style>
