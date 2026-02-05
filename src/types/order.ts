@@ -89,6 +89,12 @@ export interface OrderFormData {
   }
   // Added for Form Validation
   totalValue?: number
+  deliveryValue?: number
+  deliveryPerson?: {
+    name: string
+    identification: string
+    personId?: string
+  }
 }
 
 export interface Order extends OrderFormData {
