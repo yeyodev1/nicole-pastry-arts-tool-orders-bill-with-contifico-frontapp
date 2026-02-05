@@ -130,6 +130,19 @@ const onCartSubmit = () => {
   if (formData.deliveryType === 'delivery') {
     if (!formData.deliveryAddress) { showError("Dirección de entrega es obligatoria para Delivery"); return; }
     if (!formData.googleMapsLink) { showError("Link de Google Maps es obligatorio para Delivery"); return; }
+    if (!formData.deliveryPerson?.personId) { showError("Debe seleccionar un motorizado para pedidos con envío."); return; }
+  }
+
+  // Double check if there's a delivery product but type is pickup
+  const hasDeliveryProduct = cart.value.find(item =>
+    item.name.toLowerCase().includes('delivery') || item.name.toLowerCase().includes('envío')
+  )
+  if (hasDeliveryProduct && formData.deliveryType !== 'delivery') {
+    formData.deliveryType = 'delivery'
+    if (!formData.deliveryPerson?.personId) {
+      showError("Se detectó un costo de envío. Por favor asigne un motorizado.")
+      return
+    }
   }
 
   if (formData.invoiceNeeded) {
@@ -323,6 +336,7 @@ onMounted(async () => {
         <OrderCart 
           :cart="cart" 
           :isSubmitting="isSubmitting"
+          :hasRider="!!formData.deliveryPerson?.personId"
           @remove="removeFromCart"
           @update-quantity="updateQuantity"
           @submit="onCartSubmit"
