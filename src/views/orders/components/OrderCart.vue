@@ -5,6 +5,7 @@ import type { CartItem } from '@/types/order'
 const props = defineProps<{
   cart: CartItem[]
   isSubmitting: boolean
+  hasRider: boolean
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +34,12 @@ const cartIVA = computed(() => {
 })
 
 const finalTotal = computed(() => cartSubtotal.value + cartIVA.value)
+
+const needsRider = computed(() => {
+  return props.cart.some(item =>
+    item.name.toLowerCase().includes('delivery') || item.name.toLowerCase().includes('envío')
+  )
+})
 
 const onDecrease = (item: CartItem, index: number) => {
   if (item.quantity > 1) {
@@ -65,6 +72,12 @@ const onDecrease = (item: CartItem, index: number) => {
       <div v-if="cart.length === 0" class="empty-cart">
         No hay items en el pedido
       </div>
+    </div>
+
+    <!-- Alerta de Motorizado Falta -->
+    <div v-if="needsRider && !hasRider" class="rider-warning">
+       <i class="fa-solid fa-triangle-exclamation"></i>
+       <span>Este pedido incluye envío. Por favor asigne un <strong>Motorizado o Transporte</strong> en los datos del pedido.</span>
     </div>
 
     <div class="totals">
@@ -288,5 +301,28 @@ const onDecrease = (item: CartItem, index: number) => {
   background: $gray-50;
   border-radius: 8px;
   border: 1px dashed $border-light;
+}
+
+.rider-warning {
+  margin-bottom: 1.5rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  color: #9a3412;
+  font-size: 0.9rem;
+  line-height: 1.4;
+
+  i {
+    font-size: 1.2rem;
+    color: #ea580c;
+  }
+
+  strong {
+    color: #7c2d12;
+  }
 }
 </style>
