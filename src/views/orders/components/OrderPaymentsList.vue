@@ -57,6 +57,10 @@ const emit = defineEmits(['open-modal'])
        </div>
 
        <div class="payment-summary">
+          <div v-if="payments.some(p => p.forma_cobro === 'ISLA')" class="island-notice">
+            <i class="fa-solid fa-store"></i>
+            Esta orden ha sido liquidada en un punto de venta físico.
+          </div>
           <div class="summary-row">
             <span class="label">Total Pagado:</span>
             <span class="value success">${{ totalPaid.toFixed(2) }}</span>
@@ -241,6 +245,24 @@ const emit = defineEmits(['open-modal'])
 
     .danger {
       color: #dc2626;
+    }
+  }
+
+  .island-notice {
+    background: rgba($NICOLE-PURPLE, 0.05);
+    border: 1px solid rgba($NICOLE-PURPLE, 0.1);
+    color: $NICOLE-PURPLE;
+    padding: 0.75rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+
+    i {
+      font-size: 1rem;
     }
   }
 }
