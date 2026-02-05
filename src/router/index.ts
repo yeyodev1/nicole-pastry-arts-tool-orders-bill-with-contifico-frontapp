@@ -30,10 +30,27 @@ const router = createRouter({
       meta: { requiresAuth: true, title: 'Lista de Pedidos' }
     },
     {
+      path: '/orders/create',
+      redirect: to => ({ name: 'create-order', query: to.query })
+    },
+    {
+      path: '/orders/new',
+      name: 'create-order',
+      component: OrderCreateView,
+      meta: { requiresAuth: true, title: 'Nuevo Pedido' }
+    },
+    {
       path: '/orders/:id',
       name: 'order-detail',
       component: () => import('../views/orders/OrderDetailView.vue'),
-      meta: { requiresAuth: true, title: 'Detalle de Pedido' }
+      meta: { requiresAuth: true, title: 'Detalle de Pedido' },
+      beforeEnter: (to, from, next) => {
+        if (to.params.id === 'create' || to.params.id === 'new') {
+          next({ name: 'create-order', query: to.query });
+        } else {
+          next();
+        }
+      }
     },
     {
       path: '/reports/sales-by-responsible',
@@ -46,12 +63,6 @@ const router = createRouter({
       name: 'login',
       component: LoginView,
       meta: { title: 'Iniciar Sesión' }
-    },
-    {
-      path: '/orders/new',
-      name: 'create-order',
-      component: OrderCreateView,
-      meta: { requiresAuth: true, title: 'Nuevo Pedido' }
     },
     {
       path: '/production',
