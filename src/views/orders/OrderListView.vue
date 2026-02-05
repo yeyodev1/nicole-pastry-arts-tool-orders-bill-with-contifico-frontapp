@@ -12,6 +12,7 @@ import PaymentModal from './components/PaymentModal.vue'
 import InvoiceEditModal from './components/InvoiceEditModal.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 import SettleInIslandModal from './components/SettleInIslandModal.vue'
+import OrderDeleteModal from './components/OrderDeleteModal.vue'
 
 const router = useRouter()
 const { success, error: showError, info } = useToast()
@@ -35,6 +36,8 @@ const selectedOrderForInvoice = ref<any>(null)
 const showSettleModal = ref(false)
 const selectedOrderForSettle = ref<any>(null)
 const isSettling = ref(false)
+const showDeleteModal = ref(false)
+const orderToDelete = ref<any>(null)
 
 // --- FETCHING ---
 const fetchOrders = async () => {
@@ -187,8 +190,59 @@ const handlePaymentRegister = async (payload: any) => {
   }
 }
 
+// Logic for calculating pay status in list
+const getPaymentStatus = (order: any) => {
+  if (order.settledInIsland) return 'settled'
+
+  const totalPaid = (order.payments || []).reduce((sum: number, p: any) => sum + (p.monto || 0), 0)
+  const totalValue = order.totalValue || 0
+
+  if (totalPaid >= totalValue - 0.05) return 'paid'
+  if (totalPaid > 0) return 'partial'
+  return 'pending'
+}
+
 const goToDetail = (id: string) => {
   router.push(`/orders/${id}`)
+}
+
+const handleEditOrder = (order: any) => {
+  if (order.invoiceStatus === 'PROCESSED') {
+    info('No se puede editar una orden ya facturada.')
+    return
+  }
+  // Redirect to create view but with order data for editing
+  router.push({
+    name: 'create-order',
+    query: { edit: order._id }
+  })
+}
+const handleDeleteOrder = (order: any) => {
+  if (order.invoiceStatus === 'PROCESSED') {
+    info('No se puede eliminar una orden ya facturada.')
+    return
+  }
+
+  orderToDelete.value = order
+  showDeleteModal.value = true
+}
+
+const executeDeleteOrder = async () => {
+  if (!orderToDelete.value) return
+
+  const orderId = orderToDelete.value._id
+  showDeleteModal.value = false
+
+  try {
+    await OrderService.deleteOrder(orderId)
+    success('Pedido eliminado correctamente')
+    fetchOrders()
+  } catch (err: any) {
+    console.error('Delete error', err)
+    showError(err.response?.data?.message || 'Error al eliminar el pedido')
+  } finally {
+    orderToDelete.value = null
+  }
 }
 
 const formatOrderTime = (order: any) => {
@@ -362,9 +416,16 @@ onMounted(() => {
                      <span>{{ order.settledIslandName }}</span>
                   </div>
                   <!-- Payment Icon -->
-                  <div v-else class="payment-status" :class="{ paid: order.paymentDetails?.monto }" title="Estado Pago">
-                     <i :class="order.paymentDetails?.monto ? 'fas fa-check-circle' : 'far fa-circle'"></i>
-                     {{ order.paymentDetails?.monto ? 'Pagado' : 'Pendiente' }}
+                  <div v-else class="payment-status" :class="getPaymentStatus(order)" title="Estado Pago">
+                     <i :class="{
+                      'fas fa-check-circle': getPaymentStatus(order) === 'paid',
+                      'fas fa-adjust': getPaymentStatus(order) === 'partial',
+                      'far fa-circle': getPaymentStatus(order) === 'pending'
+                    }"></i>
+                     {{
+                      getPaymentStatus(order) === 'paid' ? 'Pagado' :
+                        getPaymentStatus(order) === 'partial' ? 'Pago Parcial' : 'Pendiente'
+                    }}
                   </div>
                </div>
             </div>
@@ -375,17 +436,20 @@ onMounted(() => {
                   <i class="fa-brands fa-whatsapp"></i> Copiar Pedido
                </button>
               
-               <div class="icon-actions">
+                <div class="icon-actions">
+                  <button 
+                     class="btn-icon" 
+                     @click="openPaymentModal(order)"
+                     :class="{
+                      'is-paid': getPaymentStatus(order) === 'paid',
+                      'is-partial': getPaymentStatus(order) === 'partial'
+                    }"
+                     title="Registrar Cobro"
+                  >
+                     <i class="fa-solid fa-dollar-sign"></i>
+                  </button>
                  <button 
-                    class="btn-icon" 
-                    @click="openPaymentModal(order)"
-                    :class="{ 'is-paid': order.paymentDetails?.monto }"
-                    title="Registrar Cobro"
-                 >
-                    <i class="fa-solid fa-dollar-sign"></i>
-                 </button>
-                 <button 
-                  v-if="order.invoiceStatus !== 'PROCESSED'"
+                  v-if="order.invoiceStatus !== 'PROCESSED' && getPaymentStatus(order) !== 'paid' && getPaymentStatus(order) !== 'settled'"
                   class="btn-icon" 
                   @click="openInvoiceEditModal(order)"
                   title="Facturación"
@@ -399,6 +463,23 @@ onMounted(() => {
                   title="Registrar Facturación en Isla"
                  >
                     <i class="fa-solid fa-store"></i>
+                 </button>
+                 <!-- Edit & Delete -->
+                 <button 
+                  v-if="order.invoiceStatus !== 'PROCESSED' && getPaymentStatus(order) !== 'paid' && getPaymentStatus(order) !== 'settled'"
+                  class="btn-icon btn-edit" 
+                  @click="handleEditOrder(order)"
+                  title="Editar Pedido"
+                 >
+                    <i class="fa-solid fa-pen-to-square"></i>
+                 </button>
+                 <button 
+                  v-if="order.invoiceStatus !== 'PROCESSED' && getPaymentStatus(order) !== 'paid' && getPaymentStatus(order) !== 'settled'"
+                  class="btn-icon btn-delete" 
+                  @click="handleDeleteOrder(order)"
+                  title="Eliminar Pedido"
+                 >
+                    <i class="fa-solid fa-trash-can"></i>
                  </button>
               </div>
             </div>
@@ -447,6 +528,15 @@ onMounted(() => {
       :is-loading="isSettling"
       @close="showSettleModal = false"
       @confirm="handleSettleInIsland"
+    />
+
+    <OrderDeleteModal
+      v-if="orderToDelete"
+      :is-open="showDeleteModal"
+      :order-id="orderToDelete._id"
+      :customer-name="orderToDelete.customerName"
+      @close="showDeleteModal = false"
+      @confirm="executeDeleteOrder"
     />
   </div>
 </template>
@@ -800,6 +890,10 @@ onMounted(() => {
       &.paid {
         color: $success;
       }
+
+      &.partial {
+        color: $warning;
+      }
     }
 
     .settled-badge {
@@ -821,15 +915,19 @@ onMounted(() => {
   }
 
   /* Actions */
-  /* Actions */
   .card-actions {
     margin-top: auto;
-    /* Push to bottom */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
     padding-top: 1rem;
+    border-top: 1px solid $gray-50;
+
+    @media (max-width: 480px) {
+      flex-direction: column;
+      align-items: stretch;
+    }
 
     .btn-whatsapp-copy {
       flex: 1;
@@ -858,7 +956,14 @@ onMounted(() => {
 
     .icon-actions {
       display: flex;
-      gap: 0.5rem;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+
+      @media (max-width: 480px) {
+        justify-content: center;
+        margin-top: 0.5rem;
+      }
 
       .btn-icon {
         width: 36px;
@@ -886,11 +991,33 @@ onMounted(() => {
           background: #f0fdf4;
         }
 
+        &.is-partial {
+          color: $warning;
+          border-color: $warning;
+          background: #fffbeb;
+        }
+
         &.btn-settle {
           &:hover {
             color: $NICOLE-SECONDARY;
             border-color: $NICOLE-SECONDARY;
             background: rgba($NICOLE-SECONDARY, 0.04);
+          }
+        }
+
+        &.btn-edit {
+          &:hover {
+            color: #2563eb;
+            border-color: #2563eb;
+            background: #eff6ff;
+          }
+        }
+
+        &.btn-delete {
+          &:hover {
+            color: $error;
+            border-color: $error;
+            background: #fef2f2;
           }
         }
       }
