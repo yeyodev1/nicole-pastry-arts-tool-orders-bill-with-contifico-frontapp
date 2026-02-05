@@ -295,6 +295,31 @@ const selectTime = (time: string) => {
       </div>
     </div>
 
+
+    <div v-if="props.modelValue.payments && props.modelValue.payments.length > 0" class="invoice-fields">
+      <h3>Historial de Pagos</h3>
+      <div class="payment-history-list">
+        <div v-for="(payment, index) in props.modelValue.payments" :key="index" class="payment-card">
+          <div class="payment-header">
+            <span class="payment-method">{{ payment.forma_cobro }}</span>
+            <span class="payment-date">{{ new Date(payment.fecha).toLocaleDateString() }}</span>
+          </div>
+          <div class="payment-details">
+            <div class="input-wrapper" style="margin-bottom: 0.5rem;">
+               <label style="font-size: 0.8rem; display: block; margin-bottom: 2px;">Monto</label>
+               <input type="number" v-model.number="payment.monto" step="0.01" class="custom-input" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 6px; width: 100%;" />
+            </div>
+            <div v-if="payment.reference || payment.numero_comprobante" class="payment-ref">
+               Ref: {{ payment.reference || payment.numero_comprobante }}
+            </div>
+          </div>
+          <button type="button" class="btn-delete-payment" @click="props.modelValue.payments.splice(index, 1)">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <OrderPaymentSelector 
       v-model="props.modelValue" 
       :branches="BRANCHES"
@@ -655,6 +680,77 @@ const selectTime = (time: string) => {
 
   to {
     opacity: 1;
+  }
+}
+
+.payment-history-list {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  .payment-card {
+    background: white;
+    border: 1px solid $border-light;
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: $NICOLE-PURPLE;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .payment-header {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      min-width: 120px;
+
+      .payment-method {
+        font-weight: 700;
+        color: $text-dark;
+        font-size: 0.9rem;
+      }
+
+      .payment-date {
+        font-size: 0.8rem;
+        color: $text-light;
+      }
+    }
+
+    .payment-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+
+      .payment-ref {
+        font-size: 0.8rem;
+        color: $text-light;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    .btn-delete-payment {
+      background: none;
+      border: none;
+      color: #ef4444;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 6px;
+      transition: background 0.2s;
+
+      &:hover {
+        background: #fee2e2;
+      }
+    }
   }
 }
 </style>
