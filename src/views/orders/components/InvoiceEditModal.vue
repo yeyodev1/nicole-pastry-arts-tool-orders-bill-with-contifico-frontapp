@@ -72,7 +72,7 @@ const save = async () => {
     const payload = {
       invoiceNeeded: form.invoiceNeeded,
       invoiceData: form.invoiceNeeded ? {
-        ruc: form.ruc,
+        ruc: form.ruc.trim(),
         businessName: form.businessName,
         email: form.email,
         address: form.address

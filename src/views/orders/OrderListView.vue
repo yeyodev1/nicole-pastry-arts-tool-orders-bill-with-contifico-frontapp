@@ -21,7 +21,7 @@ const orders = ref<any[]>([])
 const isLoading = ref(false)
 
 // Filter State
-const filterMode = ref<'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom'>('today')
+const filterMode = ref<'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError'>('today')
 const dateType = ref<'deliveryDate' | 'createdAt'>('deliveryDate')
 const customDate = ref('')
 const searchQuery = ref('')
@@ -77,6 +77,13 @@ const fetchOrders = async () => {
       } else if (filterMode.value === 'custom' && customDate.value) {
         filters.startDate = customDate.value
         filters.endDate = customDate.value
+      } else if (filterMode.value === 'custom' && customDate.value) {
+        filters.startDate = customDate.value
+        filters.endDate = customDate.value
+      } else if (filterMode.value === 'invoiceError') {
+        filters.invoiceStatus = 'ERROR'
+        // For errors, we likely want to see ALL of them, regardless of date, or maybe recent ones.
+        // Let's NOT set startDate/endDate to fetch all historical errors.
       }
     }
 
@@ -187,6 +194,22 @@ const handlePaymentRegister = async (payload: any) => {
   } catch (error: any) {
     console.error("Payment error", error)
     showError(error.response?.data?.message || 'Error registrando cobro')
+  }
+}
+
+const handleRetryInvoice = async (order: any) => {
+  if (!confirm(`¿Reintentar facturación para la orden de ${order.customerName}?`)) return
+
+  try {
+    isLoading.value = true
+    await OrderService.generateInvoice(order._id)
+    success('Factura generada exitosamente')
+    fetchOrders()
+  } catch (error: any) {
+    console.error("Retry Invoice error", error)
+    showError(error.response?.data?.message || 'Error al reintentar facturación')
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -351,8 +374,15 @@ onMounted(() => {
                :class="{ active: filterMode === 'custom' }"
                @click="filterMode = 'custom'"
              >
-               Fecha...
-             </button>
+                Fecha...
+              </button>
+              <button 
+                class="filter-pill error" 
+                :class="{ active: filterMode === 'invoiceError' }"
+                @click="filterMode = 'invoiceError'"
+              >
+                Errores Facturación
+              </button>
           </div>
 
           <div class="date-picker-wrapper" v-if="filterMode === 'custom'">
@@ -365,7 +395,7 @@ onMounted(() => {
       </div>
 
       <!-- Loading State -->
-      <div v-if="isLoading && orders.length === 0" class="loading-state">
+      <div v-if="isLoading" class="loading-state">
         <div class="spinner"></div>
         <span>Cargando pedidos...</span>
       </div>
@@ -456,6 +486,14 @@ onMounted(() => {
                  >
                     <i class="fa-solid fa-file-invoice"></i>
                  </button>
+                  <button 
+                   v-if="order.invoiceStatus === 'ERROR'"
+                   class="btn-icon btn-retry-invoice" 
+                   @click="handleRetryInvoice(order)"
+                   title="Reintentar Facturación"
+                  >
+                     <i class="fa-solid fa-rotate-right"></i>
+                  </button>
                  <button 
                   v-if="!order.settledInIsland"
                   class="btn-icon btn-settle" 
