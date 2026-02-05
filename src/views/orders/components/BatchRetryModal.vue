@@ -4,7 +4,9 @@ import ActionHoldButton from '@/components/common/ActionHoldButton.vue';
 const props = defineProps<{
   isOpen: boolean
   count: number
+  skippedCount?: number
 }>()
+
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -25,9 +27,15 @@ const emit = defineEmits<{
         ¿Verificaste si los datos son correctos?
       </p>
       
+      <div v-if="skippedCount && skippedCount > 0" class="warning-box">
+         <i class="fas fa-exclamation-triangle"></i>
+         <p><strong>Atención:</strong> {{ skippedCount }} ordenes fueron omitidas por falta de RUC/Email.</p>
+      </div>
+
       <p class="sub-description">
-        Esta acción enviará las facturas al SRI en segundo plano. Podrás revisar el estado de cada una aquí pronto.
+        Esta acción enviará {{ count }} facturas al SRI en segundo plano.
       </p>
+
 
       <div class="actions">
         <button class="btn-cancel" @click="emit('close')">Cancelar</button>
@@ -150,6 +158,29 @@ h3 {
   to {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+.warning-box {
+  background: #ffffff;
+  border: 1px solid #fecaca;
+  background-color: #fef2f2;
+  color: #b91c1c;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+
+  i {
+    color: #dc2626;
+  }
+
+  p {
+    margin: 0;
   }
 }
 </style>
