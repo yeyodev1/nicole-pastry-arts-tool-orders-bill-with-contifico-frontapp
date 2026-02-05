@@ -13,6 +13,7 @@ import InvoiceEditModal from './components/InvoiceEditModal.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 import SettleInIslandModal from './components/SettleInIslandModal.vue'
 import OrderDeleteModal from './components/OrderDeleteModal.vue'
+import BatchRetryModal from './components/BatchRetryModal.vue'
 
 const router = useRouter()
 const { success, error: showError, info } = useToast()
@@ -26,6 +27,11 @@ const dateType = ref<'deliveryDate' | 'createdAt'>('deliveryDate')
 const customDate = ref('')
 const searchQuery = ref('')
 
+
+// Batch Selection State
+const selectedOrderIds = ref<Set<string>>(new Set())
+const isBatchProcessing = ref(false)
+
 // Modal States
 const showWhatsAppModal = ref(false)
 const whatsAppModalMessage = ref('')
@@ -38,6 +44,7 @@ const selectedOrderForSettle = ref<any>(null)
 const isSettling = ref(false)
 const showDeleteModal = ref(false)
 const orderToDelete = ref<any>(null)
+const showBatchRetryModal = ref(false)
 
 // --- FETCHING ---
 const fetchOrders = async () => {
@@ -82,8 +89,28 @@ const fetchOrders = async () => {
         filters.endDate = customDate.value
       } else if (filterMode.value === 'invoiceError') {
         filters.invoiceStatus = 'ERROR'
-        // For errors, we likely want to see ALL of them, regardless of date, or maybe recent ones.
-        // Let's NOT set startDate/endDate to fetch all historical errors.
+        // Enable date filtering for errors too, default to 'today' if not custom
+        if (customDate.value) {
+          filters.startDate = customDate.value
+          filters.endDate = customDate.value
+        } else {
+          // If user just clicked "Errores", maybe default to ALL or TODAY? 
+          // User asked: "errores de facturacion tambien peudan tener fecha, por defecto" -> implies default to current filter date logic
+          // Let's reuse the logic from 'today'/'yesterday'/etc if we can, but UI has `filterMode` as the switch.
+          // Actually, if filterMode is 'invoiceError', we lose the 'today/yesterday' granularity unless we add a secondary date filter.
+          // BUT the user said "poner fecha". 
+          // Simplest robust way: When in 'invoiceError', default to showing ALL errors (no date) unless a date is picked? 
+          // OR, assume the user wants to see errors for "Today" by default? 
+          // Let's default to *Today* for consistency with the app, but allow picking a date.
+
+          // However, `filterMode` IS the date selector in this UI (Yesterday/Today/Tomorrow).
+          // If I switch to 'invoiceError', I lose the date context. 
+          // Refinement: Allow date picking *while* in invoiceError mode. 
+          // For now, let's just make sure if they pick a custom date it works. 
+          // If no custom date, let's fetch ALL errors to be safe/visible, or user might miss them.
+          // *User said*: "por defecto ayudame con esto" -> likely wants to see errors relevant to *now* or *all*.
+          // Let's stick to ALL errors if no date specified for maximum visibility, as errors are critical.
+        }
       }
     }
 
@@ -100,6 +127,7 @@ const fetchOrders = async () => {
 // Watchers for filtering
 import { watch } from 'vue'
 watch([filterMode, customDate, dateType], () => {
+  selectedOrderIds.value.clear() // Clear selection on filter change
   if (filterMode.value !== 'custom' || customDate.value) {
     fetchOrders()
   }
@@ -287,6 +315,103 @@ const formatOrderTime = (order: any) => {
   return new Intl.DateTimeFormat('es-EC', timeOpts).format(date).toUpperCase()
 }
 
+// --- BATCH LOGIC ---
+const toggleSelection = (orderId: string) => {
+  if (selectedOrderIds.value.has(orderId)) {
+    selectedOrderIds.value.delete(orderId)
+  } else {
+    selectedOrderIds.value.add(orderId)
+  }
+}
+
+const toggleSelectAll = () => {
+  if (selectedOrderIds.value.size === filteredOrders.value.length) {
+    selectedOrderIds.value.clear()
+  } else {
+    filteredOrders.value.forEach(order => selectedOrderIds.value.add(order._id))
+  }
+}
+
+// --- CONCURRENCY HELPER ---
+const chunkArray = (arr: any[], size: number) => {
+  const chunks = []
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size))
+  }
+  return chunks
+}
+
+const handleBatchRetry = async () => {
+  const ids = Array.from(selectedOrderIds.value)
+  if (ids.length === 0) return
+
+  // 1. Validation
+  const ordersToRetry = ids.map(id => orders.value.find(o => o._id === id)).filter(Boolean)
+
+  const validOrders = ordersToRetry.filter(o =>
+    o.invoiceData?.ruc?.trim() &&
+    o.invoiceData?.email?.trim() &&
+    o.invoiceData?.businessName?.trim()
+  )
+
+  const skippedCount = ordersToRetry.length - validOrders.length
+
+  if (skippedCount > 0) {
+    if (!confirm(`${skippedCount} ordenes no tienen datos completos (RUC/Email). ¿Continuar con las ${validOrders.length} validas?`)) {
+      return
+    }
+  }
+
+  if (validOrders.length === 0) {
+    showError('Ninguna orden valida seleccionada.')
+    return
+  }
+
+  // Open Modal instead of immediate execution
+  showBatchRetryModal.value = true
+}
+
+const executeBatchRetry = async () => {
+  showBatchRetryModal.value = false
+
+  const ids = Array.from(selectedOrderIds.value)
+  // Re-validate (rare edge case but safe)
+  const validOrders = ids.map(id => orders.value.find(o => o._id === id))
+    .filter(o => o && o.invoiceData?.ruc?.trim())
+  // Simple check, assumed validated in handleBatchRetry
+
+  if (validOrders.length === 0) return
+
+  // 2. Background Processing with Concurrency Limit
+  isBatchProcessing.value = true
+  selectedOrderIds.value.clear()
+  info(`Procesando ${validOrders.length} facturas... (Lotes de 5)`)
+
+  const BATCH_SIZE = 5
+  const chunks = chunkArray(validOrders, BATCH_SIZE)
+
+  let successCount = 0
+  let failCount = 0
+
+  // Process chunks sequentially
+  for (const chunk of chunks) {
+    const promises = chunk.map(order => OrderService.generateInvoice(order._id))
+    const results = await Promise.allSettled(promises)
+
+    successCount += results.filter(r => r.status === 'fulfilled').length
+    failCount += results.filter(r => r.status === 'rejected').length
+  }
+
+  isBatchProcessing.value = false
+
+  if (failCount === 0) {
+    success(`Proceso finalizado. ${successCount} facturas exitosas.`)
+  } else {
+    showError(`Finalizado: ${successCount} exitosas, ${failCount} fallidas.`)
+  }
+  fetchOrders()
+}
+
 onMounted(() => {
   fetchOrders()
 })
@@ -308,6 +433,19 @@ onMounted(() => {
 
       <!-- Filter Bar -->
       <div class="filter-bar">
+        <!-- Sticky Batch Action Bar (Top) -->
+        <div v-if="selectedOrderIds.size > 0" class="batch-action-bar">
+           <div class="batch-info">
+             <span class="count">{{ selectedOrderIds.size }} seleccionados</span>
+             <button class="btn-text-clear" @click="selectedOrderIds.clear()">Cancelar</button>
+           </div>
+           
+           <button class="btn-batch-primary" @click="handleBatchRetry" :disabled="isBatchProcessing">
+             <i class="fas fa-rotate-right" :class="{ 'fa-spin': isBatchProcessing }"></i>
+             {{ isBatchProcessing ? 'Procesando...' : `Reintentar (${selectedOrderIds.size})` }}
+           </button>
+        </div>
+
         <div class="filter-upper-row">
           <!-- Search Input -->
           <div class="search-wrapper">
@@ -382,15 +520,23 @@ onMounted(() => {
                 @click="filterMode = 'invoiceError'"
               >
                 Errores Facturación
-              </button>
-          </div>
+               </button>
+           </div>
+           
+           <!-- Date Picker for Errors (Enable when invoiceError is active too) -->
+           <div class="date-picker-wrapper" v-if="filterMode === 'custom' || filterMode === 'invoiceError'">
+               <CustomDatePicker 
+                 v-model="customDate" 
+                 :placeholder="filterMode === 'invoiceError' ? 'Filtrar x Fecha (Opcional)' : 'Seleccionar Fecha'"
+               />
+           </div>
 
-          <div class="date-picker-wrapper" v-if="filterMode === 'custom'">
-             <CustomDatePicker 
-                v-model="customDate" 
-                placeholder="Seleccionar Fecha"
-             />
-          </div>
+           <!-- Old Select All moved to top bar logic or kept here as convenience -->
+           <div v-if="filterMode === 'invoiceError' && orders.length > 0" class="batch-select-actions">
+              <button class="btn-text" @click="toggleSelectAll">
+                {{ selectedOrderIds.size === filteredOrders.length ? 'Deseleccionar' : 'Todos' }}
+              </button>
+           </div>
         </div>
       </div>
 
@@ -406,8 +552,18 @@ onMounted(() => {
             v-for="order in filteredOrders" 
             :key="order._id" 
             class="order-card"
-            @click="goToDetail(order._id)"
+            :class="{ 'selecting': selectedOrderIds.has(order._id) }"
+            @click="filterMode === 'invoiceError' ? toggleSelection(order._id) : goToDetail(order._id)"
          >
+            <!-- Checkbox for Batch Selection -->
+            <div v-if="filterMode === 'invoiceError'" class="batch-checkbox">
+               <input 
+                 type="checkbox" 
+                 :checked="selectedOrderIds.has(order._id)"
+                 @click.stop="toggleSelection(order._id)"
+               >
+            </div>
+
             <!-- Card Header: Time & Type -->
             <div class="card-header">
                <div class="date-badge">
@@ -576,6 +732,15 @@ onMounted(() => {
       @close="showDeleteModal = false"
       @confirm="executeDeleteOrder"
     />
+
+    <BatchRetryModal 
+      :is-open="showBatchRetryModal"
+      :count="selectedOrderIds.size" 
+      @close="showBatchRetryModal = false"
+      @confirm="executeBatchRetry"
+    />
+
+    <!-- Removed Bottom FAB -->
   </div>
 </template>
 
@@ -798,14 +963,19 @@ onMounted(() => {
   cursor: pointer;
   display: flex;
   flex-direction: column;
+  position: relative; // For checkbox positioning
   gap: 1rem;
   overflow: hidden;
   /* Added to contain long content */
 
+  &.selecting {
+    border-color: $NICOLE-PURPLE;
+    background: #fdf4ff; // Light purple bg when selected
+  }
+
   &:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
-    border-color: rgba($NICOLE-PURPLE, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   }
 
   /* Header */
@@ -1071,8 +1241,129 @@ onMounted(() => {
   color: $text-light;
   display: flex;
   flex-direction: column;
+  position: relative;
+  gap: 1rem;
+  overflow: hidden;
+
+  &.selecting {
+    border-color: $NICOLE-PURPLE;
+    background: #fdf4ff; // Light purple bg when active
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.batch-checkbox {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+
+  input {
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+    accent-color: $NICOLE-PURPLE;
+  }
+}
+
+.batch-action-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: $NICOLE-PURPLE;
+  color: white;
+  padding: 0.75rem 1.25rem;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  animation: slideDown 0.3s ease;
+
+  .batch-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    .count {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .btn-text-clear {
+      background: transparent;
+      border: none;
+      color: rgba(255, 255, 255, 0.8);
+      cursor: pointer;
+      font-size: 0.85rem;
+      text-decoration: underline;
+
+      &:hover {
+        color: white;
+      }
+    }
+  }
+
+  .btn-batch-primary {
+    background: white;
+    color: $NICOLE-PURPLE;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: transform 0.1s;
+
+    &:active {
+      transform: scale(0.98);
+    }
+
+    &:disabled {
+      opacity: 0.8;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.batch-select-actions {
+  margin-left: auto;
+
+  .btn-text {
+    background: none;
+    border: none;
+    color: $NICOLE-PURPLE;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9rem;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 1rem;
+  padding: 4rem 0;
 
   i {
     font-size: 2rem;
