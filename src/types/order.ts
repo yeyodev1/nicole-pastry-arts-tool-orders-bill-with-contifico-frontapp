@@ -58,6 +58,15 @@ export interface InvoiceData {
   address: string
 }
 
+export interface Payment {
+  forma_cobro: string
+  monto: number
+  fecha: string
+  status?: string
+  numero_comprobante?: string
+  reference?: string
+}
+
 export interface OrderFormData {
   customerName: string
   customerPhone: string
@@ -87,6 +96,9 @@ export interface OrderFormData {
     cuenta_bancaria_id: string
     tipo_ping: string
   }
+  // Existing Payments for Edit Mode
+  payments?: Payment[]
+
   // Added for Form Validation
   totalValue?: number
   deliveryValue?: number
@@ -109,10 +121,5 @@ export interface Order extends OrderFormData {
   createdAt: string
   updatedAt: string
   // History of payments
-  payments?: Array<{
-    forma_cobro: string
-    monto: number
-    fecha: string
-    status: string
-  }>
+  payments?: Payment[]
 }
