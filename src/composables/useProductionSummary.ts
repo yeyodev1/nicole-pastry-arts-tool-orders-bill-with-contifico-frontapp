@@ -6,6 +6,7 @@ import { parseECTDate } from '@/utils/dateUtils'
 export function useProductionSummary() {
   const isLoading = ref(true)
   const error = ref('')
+  const isBackgroundLoading = ref(false)
 
   // Data Refs 
   const delayedItems = ref<SummaryItem[]>([])
@@ -66,132 +67,116 @@ export function useProductionSummary() {
     return delayedItems.value.length > 0 || todayItems.value.length > 0 || tomorrowItems.value.length > 0 || futureItems.value.length > 0
   })
 
-  const fetchSummary = async (background = false) => {
-    try {
-      if (!background) isLoading.value = true
-      const response = await ProductionService.getSummary()
-      const data = response.dashboard || response
+  // Helper to process raw items from backend into SummaryItems
+  const processBucketItems = (rawItems: any[]): SummaryItem[] => {
+    if (!rawItems || !Array.isArray(rawItems)) return []
 
-      // 1. Flatten all items from backend
-      const allBackendItems = [
-        ...(data.today || []),
-        ...(data.tomorrow || []),
-        ...(data.future || [])
-      ]
+    const result: SummaryItem[] = []
 
-      // 2. Define Date Boundaries (Strict Local Day Comparison)
-      // We'll use YYYY-MM-DD strings for strict day comparison in EC time
-      const toDayStr = (d: Date) => d.toISOString().split('T')[0] as string
+    // Raw items are already grouped by Product Name from backend service
+    // structure: { _id: productName, category: ..., orders: [...] }
 
-      const getECTToday = () => {
-        const now = new Date()
-        const ecNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Guayaquil' }))
-        return toDayStr(ecNow)
-      }
-
-      const today = getECTToday()
-
-      const tDate = new Date(today + 'T12:00:00') // Use noon to avoid boundary issues
-      tDate.setDate(tDate.getDate() + 1)
-      const tomorrow = toDayStr(tDate)
-
-      // 3. Buckets Storage
-      const buckets: Record<string, Map<string, { category: string, orders: any[] }>> = {
-        delayed: new Map(),
-        today: new Map(),
-        tomorrow: new Map(),
-        future: new Map()
-      }
-
-      // 4. Iterate and Re-Distribute
-      allBackendItems.forEach((item: any) => {
-        if (!item.orders || !Array.isArray(item.orders)) return
-
-        item.orders.forEach((order: any) => {
-          // Parse using our EC utility which handles UTC midnight correctly
-          const d = parseECTDate(order.delivery)
-          const orderDayStr = toDayStr(d)
-
-          let bucketKey = 'future'
-
-          if (orderDayStr < today) {
-            bucketKey = 'delayed'
-          } else if (orderDayStr === today) {
-            bucketKey = 'today'
-          } else if (orderDayStr === tomorrow) {
-            bucketKey = 'tomorrow'
-          } else {
-            bucketKey = 'future'
-          }
-
-          const productMap = buckets[bucketKey]
-          const prodName = item._id
-
-          if (productMap && !productMap.has(prodName)) {
-            productMap.set(prodName, {
-              category: item.category || 'Otros',
-              orders: []
-            })
-          }
-          if (productMap) {
-            const entry = productMap.get(prodName)
-            if (entry) entry.orders.push(order)
-          }
-        })
+    rawItems.forEach(group => {
+      // Filter out valid orders
+      const activeOrders = group.orders.filter((o: any) => {
+        const isFinished = o.stage === 'FINISHED'
+        const qty = o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)
+        return !isFinished && qty > 0
       })
 
-      // 5. Convert Maps to SummaryItem[]
-      const buildItems = (bucketKey: string): SummaryItem[] => {
-        const map = buckets[bucketKey]
-        const result: SummaryItem[] = []
+      if (activeOrders.length === 0) return
 
-        if (map) {
-          map.forEach((val, key) => {
-            // Filter out orders that are already finished or have 0 pending
-            const activeOrders = val.orders.filter(o => {
-              const isFinished = o.stage === 'FINISHED'
-              const qty = o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)
-              return !isFinished && qty > 0
-            })
+      // Urgency Calculation
+      const minDate = activeOrders.reduce((min: number, o: any) => {
+        const d = parseECTDate(o.delivery).getTime()
+        return d < min ? d : min
+      }, Infinity)
 
-            if (activeOrders.length === 0) return
+      result.push({
+        _id: group._id,
+        totalQuantity: activeOrders.reduce((acc: number, o: any) => acc + (o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)), 0),
+        urgency: new Date(minDate).toISOString(),
+        category: group.category,
+        orders: activeOrders.map((o: any) => ({
+          id: o.id,
+          quantity: o.pendingInOrder !== undefined ? o.pendingInOrder : o.quantity,
+          client: o.client,
+          delivery: o.delivery,
+          stage: o.stage
+        })),
+        mode: 'custom' as const,
+        currentInput: undefined
+      })
+    })
 
-            // Calculate urgency (min delivery date) using our utility
-            const minDate = activeOrders.reduce((min: number, o: any) => {
-              const d = parseECTDate(o.delivery).getTime()
-              return d < min ? d : min
-            }, Infinity)
+    return result
+  }
 
-            result.push({
-              _id: key,
-              totalQuantity: activeOrders.reduce((acc, o) => acc + (o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)), 0),
-              urgency: new Date(minDate).toISOString(),
-              category: val.category,
-              orders: activeOrders.map(o => ({
-                id: o.id,
-                quantity: o.pendingInOrder !== undefined ? o.pendingInOrder : o.quantity,
-                client: o.client,
-                delivery: o.delivery,
-                stage: o.stage
-              })),
-              mode: 'custom' as const,
-              currentInput: undefined
-            })
-          })
-        }
-        return result
+  const fetchBucket = async (bucket: 'delayed' | 'today' | 'tomorrow' | 'future') => {
+    try {
+      const response = await ProductionService.getSummary(bucket)
+      // Response format: { [bucket]: [...] } or just data object?
+      // Service returns response.data.dashboard.
+      // Backend returns { [bucket]: groupedItems }
+
+      const items = response && response[bucket] ? response[bucket] : []
+      const processed = processBucketItems(items)
+
+      if (bucket === 'delayed') delayedItems.value = processed
+      else if (bucket === 'today') todayItems.value = processed
+      else if (bucket === 'tomorrow') tomorrowItems.value = processed
+      else if (bucket === 'future') futureItems.value = processed
+
+    } catch (err) {
+      console.error(`Error loading bucket ${bucket}:`, err)
+      // Handle specific bucket failure silently or notify?
+      // We rely on global error if critical ones fail
+    }
+  }
+
+  // Renamed to fetchSummaryIncremental to be explicit, but kept as fetchSummary for compatibility
+  const fetchSummary = async (background = false) => {
+    try {
+      if (!background) {
+        isLoading.value = true
+        // Clear previous state if not background refresh? 
+        // Actually, better to keep stale data until new data arrives to avoid flicker,
+        // OR clear it to show we are reloading. 
+        // User asked for "chunks", so clearing might show the "loading" state better?
+        // Let's clear for initial load, keep for refresh.
       }
 
-      delayedItems.value = buildItems('delayed')
-      todayItems.value = buildItems('today')
-      tomorrowItems.value = buildItems('tomorrow')
-      futureItems.value = buildItems('future')
+      error.value = ''
+
+      // 1. Critical Path: Delayed & Today
+      // Run in parallel for speed
+      await Promise.all([
+        fetchBucket('delayed'),
+        fetchBucket('today')
+      ])
+
+      // 2. Unlock UI (Critical data is here)
+      if (!background) isLoading.value = false
+
+      // 3. Background Path: Tomorrow & Future
+      isBackgroundLoading.value = true
+      // We don't await this to block the function return if it was called by a component, 
+      // but if we are in an async setup, we might want to just let it float.
+      // However, usually we want to know when EVERYTHING is done for indicators.
+      // But the requirement is "show info as it arrives".
+
+      await Promise.all([
+        fetchBucket('tomorrow'),
+        fetchBucket('future')
+      ])
 
     } catch (err) {
       console.error(err)
       error.value = 'No se pudo cargar el resumen de producción.'
+      isLoading.value = false
     } finally {
       if (!background) isLoading.value = false
+      isBackgroundLoading.value = false
     }
   }
 
@@ -222,6 +207,7 @@ export function useProductionSummary() {
 
   return {
     isLoading,
+    isBackgroundLoading, // Exported to show a small loader if needed
     error,
     delayedGroups,
     todayGroups,

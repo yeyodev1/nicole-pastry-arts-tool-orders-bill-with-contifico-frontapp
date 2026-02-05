@@ -17,7 +17,8 @@ const {
   toggleCategory,
   toggleExpand,
   voidItem,
-  showHistory
+  showHistory,
+  isBackgroundLoading
 } = useProductionSummary()
 
 import { useToast } from '@/composables/useToast'
@@ -129,9 +130,9 @@ onMounted(async () => {
       <div class="header-content">
         <h1>
           Resumen de Producción
-          <span v-if="isRefreshing" class="refreshing-badge">
+          <span v-if="isRefreshing || isBackgroundLoading" class="refreshing-badge">
             <i class="fas fa-sync-alt fa-spin"></i>
-            Actualizando...
+            {{ isBackgroundLoading ? 'Cargando futuro...' : 'Actualizando...' }}
           </span>
         </h1>
         <p>Control de items pendientes y registro de progreso</p>
@@ -141,8 +142,8 @@ onMounted(async () => {
           <i class="fas" :class="showHistory ? 'fa-arrow-left' : 'fa-history'"></i>
           {{ showHistory ? 'Volver' : 'Ver Completados' }}
         </button>
-        <button class="btn-refresh" @click="fetchSummary(false)" :disabled="isLoading" v-if="!showHistory">
-          <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
+        <button class="btn-refresh" @click="fetchSummary(false)" :disabled="isLoading || isBackgroundLoading" v-if="!showHistory">
+          <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading || isBackgroundLoading }"></i>
           Actualizar
         </button>
       </div>
