@@ -466,7 +466,7 @@ onMounted(() => {
                  </button>
                  <!-- Edit & Delete -->
                  <button 
-                  v-if="order.invoiceStatus !== 'PROCESSED' && getPaymentStatus(order) !== 'paid' && getPaymentStatus(order) !== 'settled'"
+                  v-if="order.invoiceStatus !== 'PROCESSED'"
                   class="btn-icon btn-edit" 
                   @click="handleEditOrder(order)"
                   title="Editar Pedido"

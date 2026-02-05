@@ -154,6 +154,15 @@ onMounted(() => {
           <router-link to="/orders" class="back-link">← Volver</router-link>
           <h1>Detalle del Pedido</h1>
         </div>
+        <div class="header-actions">
+           <button 
+             v-if="order && order.invoiceStatus !== 'PROCESSED'" 
+             class="btn-edit-header" 
+             @click="router.push({ name: 'create-order', query: { edit: order._id } })"
+           >
+             <i class="fa-solid fa-pen"></i> Editar
+           </button>
+        </div>
       </div>
     </header>
 
@@ -286,9 +295,40 @@ onMounted(() => {
   .container {
     display: flex;
     align-items: center;
+    justify-content: space-between; // Ensure spacing between left and right
     margin: 0 auto;
     padding: 0 1rem;
     max-width: 1280px;
+  }
+}
+
+.header-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.btn-edit-header {
+  background: white;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+
+  &:hover {
+    border-color: #3b82f6;
+    color: #2563eb;
+    background: #eff6ff;
+  }
+  
+  i {
+    font-size: 0.9rem;
   }
 }
 

@@ -6,6 +6,7 @@ const props = defineProps<{
   cart: CartItem[]
   isSubmitting: boolean
   hasRider: boolean
+  isEditMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -100,7 +101,7 @@ const onDecrease = (item: CartItem, index: number) => {
       @click="emit('submit')" 
       :disabled="cart.length === 0 || isSubmitting"
     >
-      {{ isSubmitting ? 'Procesando...' : 'Generar Pedido' }}
+      {{ isSubmitting ? 'Procesando...' : (isEditMode ? 'Actualizar Orden' : 'Generar Pedido') }}
     </button>
   </div>
 </template>
