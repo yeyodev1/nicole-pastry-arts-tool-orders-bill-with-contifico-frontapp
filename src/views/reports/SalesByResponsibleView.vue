@@ -2,6 +2,9 @@
 import { ref, onMounted } from 'vue'
 import AnalyticsService from '@/services/analytics.service'
 
+const monthlyGoal = ref(0)
+const totalSales = ref(0)
+
 const stats = ref<any[]>([])
 const isLoading = ref(false)
 const dateRange = ref({
@@ -26,6 +29,9 @@ const fetchStats = async () => {
   try {
     const data = await AnalyticsService.getSalesByResponsible(dateRange.value.from, dateRange.value.to)
     stats.value = data.stats
+    monthlyGoal.value = data.monthlyGoal || 13000
+    // Calculate total explicitly for progress bar
+    totalSales.value = data.stats.reduce((acc: number, curr: any) => acc + curr.totalSales, 0)
   } catch (error) {
     console.error('Error fetching stats:', error)
   } finally {
@@ -64,10 +70,29 @@ onMounted(() => {
       </div>
 
       <div v-else class="results-grid">
+        <!-- Goal Progress Card -->
+        <div class="summary-card goal-card">
+          <div class="goal-header">
+            <h3>Objetivo Mensual</h3>
+            <span class="goal-value">${{ monthlyGoal.toLocaleString() }}</span>
+          </div>
+          <div class="progress-container">
+             <div 
+               class="progress-bar" 
+               :style="{ width: Math.min((totalSales / monthlyGoal) * 100, 100) + '%' }"
+               :class="{ 'success': totalSales >= monthlyGoal }"
+             ></div>
+          </div>
+          <div class="goal-details">
+             <span>Progreso: <strong>{{ ((totalSales / monthlyGoal) * 100).toFixed(1) }}%</strong></span>
+             <span>Faltante: <strong>${{ Math.max(monthlyGoal - totalSales, 0).toLocaleString() }}</strong></span>
+          </div>
+        </div>
+
         <!-- Summary Cards -->
          <div class="summary-card total">
             <h3>Venta Total (Periodo)</h3>
-            <p class="value">${{stats.reduce((acc, curr) => acc + curr.totalSales, 0).toFixed(2)}}</p>
+            <p class="value">${{ totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
          </div>
          <div class="summary-card count">
             <h3>Total Pedidos</h3>
@@ -80,6 +105,7 @@ onMounted(() => {
           <thead>
             <tr>
               <th>Responsable</th>
+              <th>Rol</th>
               <th>Cantidad Pedidos</th>
               <th>Total Ventas</th>
               <th>% del Total</th>
@@ -91,16 +117,21 @@ onMounted(() => {
                  <span class="avatar-circle">{{ stat._id.charAt(0) }}</span>
                  {{ stat._id }}
                </td>
+               <td>
+                 <span class="role-badge" :class="stat.role.toLowerCase()">{{ stat.role }}</span>
+               </td>
                <td>{{ stat.count }}</td>
                <td class="amount">${{ stat.totalSales.toFixed(2) }}</td>
                <td>
                  {{
-                  ((stat.totalSales / stats.reduce((acc, curr) => acc + curr.totalSales, 0)) * 100).toFixed(1)
+                  totalSales > 0
+                    ? ((stat.totalSales / totalSales) * 100).toFixed(1)
+                    : '0.0'
                 }}%
                </td>
             </tr>
             <tr v-if="stats.length === 0">
-              <td colspan="4" class="empty-cell">No hay datos en este rango de fechas</td>
+              <td colspan="5" class="empty-cell">No hay datos en este rango de fechas</td>
             </tr>
           </tbody>
         </table>
@@ -169,7 +200,7 @@ onMounted(() => {
 
 .results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); // Wider cards
   gap: 1.5rem;
   margin-bottom: 2rem;
 }
@@ -180,6 +211,9 @@ onMounted(() => {
   border-radius: 12px;
   border: 1px solid $border-light;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 
   h3 {
     margin: 0 0 0.5rem 0;
@@ -193,6 +227,62 @@ onMounted(() => {
     font-weight: 700;
     color: $NICOLE-PURPLE;
     margin: 0;
+  }
+
+  /* Goal Card Specifics */
+  &.goal-card {
+    grid-column: span 2; // Make goal card wider if desired or keep regular
+    gap: 0.8rem;
+
+    @media(max-width: 768px) {
+      grid-column: span 1;
+    }
+
+    .goal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+
+      h3 {
+        margin: 0;
+      }
+
+      .goal-value {
+        font-weight: 700;
+        color: $text-dark;
+        font-size: 1.1rem;
+      }
+    }
+
+    .progress-container {
+      height: 12px;
+      background: #f1f5f9;
+      border-radius: 6px;
+      overflow: hidden;
+      width: 100%;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, $NICOLE-PURPLE);
+      border-radius: 6px;
+      transition: width 0.6s ease;
+
+      &.success {
+        background: #22c55e; // Green if reached
+      }
+    }
+
+    .goal-details {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      color: $text-light;
+
+      strong {
+        color: $text-dark;
+      }
+    }
   }
 }
 
@@ -273,6 +363,29 @@ onMounted(() => {
     justify-content: center;
     font-size: 0.9rem;
     font-weight: 700;
+  }
+}
+
+.role-badge {
+  padding: 0.25rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+
+  &.digital {
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+
+  &.comercial {
+    background: #f0fdf4;
+    color: #15803d;
+  }
+
+  &.vendedor {
+    background: #f3f4f6;
+    color: #4b5563;
   }
 }
 
