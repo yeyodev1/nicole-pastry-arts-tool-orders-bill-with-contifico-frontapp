@@ -205,6 +205,58 @@ export function useProductionSummary() {
     }
   }
 
+  const selectedItemIds = ref<Set<string>>(new Set())
+
+  const toggleSelection = (item: SummaryItem) => {
+    if (selectedItemIds.value.has(item._id)) {
+      selectedItemIds.value.delete(item._id)
+    } else {
+      selectedItemIds.value.add(item._id)
+    }
+  }
+
+  const clearSelection = () => {
+    selectedItemIds.value.clear()
+  }
+
+  const batchRegister = async () => {
+    if (selectedItemIds.value.size === 0) return
+
+    try {
+      isLoading.value = true
+
+      // Prepare Payload
+      // We need to find the items to get their quantities (we default to ALL pending for batch)
+      const itemsToRegister: { productName: string; quantity: number }[] = []
+
+      // Helper to find item across all lists
+      const findItem = (id: string) => {
+        const all = [...delayedItems.value, ...todayItems.value, ...tomorrowItems.value, ...futureItems.value]
+        return all.find(i => i._id === id)
+      }
+
+      for (const id of selectedItemIds.value) {
+        const item = findItem(id)
+        if (item) {
+          itemsToRegister.push({
+            productName: item._id,
+            quantity: item.totalQuantity // Batch always full amount for simplicity
+          })
+        }
+      }
+
+      await ProductionService.batchRegisterProgress(itemsToRegister)
+
+      clearSelection()
+      await fetchSummary()
+
+    } catch (err) {
+      console.error(err)
+      error.value = 'Error al registrar lote'
+      isLoading.value = false
+    }
+  }
+
   return {
     isLoading,
     isBackgroundLoading, // Exported to show a small loader if needed
@@ -220,6 +272,11 @@ export function useProductionSummary() {
     toggleExpand,
     voidItem,
     showHistory,
-    completedItems
+    completedItems,
+    // Selection
+    selectedItemIds,
+    toggleSelection,
+    clearSelection,
+    batchRegister
   }
 }
