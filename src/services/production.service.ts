@@ -92,6 +92,10 @@ class ProductionService extends APIBase {
     await this.post('production/progress', { productName, quantity })
   }
 
+  async batchRegisterProgress(items: { productName: string; quantity: number }[]) {
+    await this.post('production/progress/batch', { items })
+  }
+
   async getSummary(bucket?: 'delayed' | 'today' | 'tomorrow' | 'future'): Promise<any> {
     const query = bucket ? `?bucket=${bucket}` : ''
     const response = await this.get<{ dashboard: any }>(`production/summary${query}`)

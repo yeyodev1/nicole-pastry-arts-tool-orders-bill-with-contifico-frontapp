@@ -30,52 +30,51 @@ interface CategoryGroup {
 defineProps<{
   category: CategoryGroup
   urgencyType: string
+  selectedIds?: Set<string>
 }>()
 
-const emit = defineEmits(['toggle-category', 'toggle-item', 'register-item', 'void-item'])
+const emit = defineEmits(['toggle-category', 'toggle-item', 'register-item', 'void-item', 'toggle-selection'])
+// ... (transitions stay same)
+const handleVoidItem = (item: any) => {
+  emit('void-item', item)
+}
 
 const enter = (el: Element) => {
   const element = el as HTMLElement
+  element.style.height = 'auto'
+  const height = getComputedStyle(element).height
   element.style.height = '0'
-  element.style.opacity = '0'
-  element.offsetHeight // Reflow
-  element.style.transition = 'height 0.3s ease-out, opacity 0.3s ease-out'
-  element.style.height = element.scrollHeight + 'px'
-  element.style.opacity = '1'
+
+  // Force reflow
+  getComputedStyle(element).height
+
+  requestAnimationFrame(() => {
+    element.style.height = height
+  })
 }
 
 const afterEnter = (el: Element) => {
-  (el as HTMLElement).style.height = 'auto'
+  const element = el as HTMLElement
+  element.style.height = 'auto'
 }
 
 const leave = (el: Element) => {
   const element = el as HTMLElement
-  element.style.height = element.scrollHeight + 'px'
-  element.style.opacity = '1'
-  element.offsetHeight // Reflow
-  element.style.transition = 'height 0.3s ease-in, opacity 0.3s ease-in'
-  element.style.height = '0'
-  element.style.opacity = '0'
-}
+  element.style.height = getComputedStyle(element).height
 
-const handleVoidItem = (itm: Item) => {
-  console.log('CategoryGroup: Re-emitting void-item via handler', itm._id)
-  emit('void-item', itm)
+  // Force reflow
+  getComputedStyle(element).height
+
+  requestAnimationFrame(() => {
+    element.style.height = '0'
+  })
 }
 </script>
 
 <template>
     <div class="category-group">
         <div class="category-header" @click="emit('toggle-category', category)">
-            <div class="cat-title">
-                <i class="fas fa-folder-open" v-if="category.isExpanded"></i>
-                <i class="fas fa-folder" v-else></i>
-                {{ category.name }}
-            </div>
-            <div class="cat-meta">
-                <span class="cat-count">{{ category.items.length }} items</span>
-                <i class="fas fa-chevron-down" :class="{ rotated: category.isExpanded }"></i>
-            </div>
+<!-- ... (header stays same) -->
         </div>
 
         <Transition
@@ -91,9 +90,11 @@ const handleVoidItem = (itm: Item) => {
                         :key="item._id" 
                         :item="item"
                         :urgency-type="urgencyType"
+                        :is-selected="selectedIds ? selectedIds.has(item._id) : false"
                         @toggle-expand="(itm) => emit('toggle-item', itm)"
                         @register="(itm) => emit('register-item', itm)"
                         @void-item="handleVoidItem"
+                        @toggle-selection="(itm) => emit('toggle-selection', itm)"
                     />
                 </TransitionGroup>
             </div>

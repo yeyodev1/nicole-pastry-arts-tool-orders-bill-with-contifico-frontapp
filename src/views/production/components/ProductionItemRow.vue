@@ -24,9 +24,11 @@ interface Item {
 const props = defineProps<{
   item: Item
   urgencyType: string // 'delayed' | 'today' | 'tomorrow' | 'future'
+  isSelected?: boolean
+  selectionMode?: boolean
 }>()
 
-const emit = defineEmits(['register', 'toggle-expand', 'void-item'])
+const emit = defineEmits(['register', 'toggle-expand', 'void-item', 'toggle-selection'])
 
 const formatDisplayDate = (dateString: string) => {
   if (!dateString) return '-'
@@ -96,8 +98,15 @@ const toggleExpand = () => {
 </script>
 
 <template>
-    <div class="list-row" :class="{ expanded: item.isExpanded }">
+    <div class="list-row" :class="{ expanded: item.isExpanded, selected: isSelected }">
         <div class="row-main">
+            <!-- Left: Checkbox -->
+            <div class="select-col" @click.stop="emit('toggle-selection', item)">
+                <div class="custom-checkbox" :class="{ checked: isSelected }">
+                    <i class="fas fa-check" v-if="isSelected"></i>
+                </div>
+            </div>
+
             <!-- Left: Info -->
             <div class="info-col" @click="toggleExpand">
                 <div class="urgency-tag" :class="urgencyType">
@@ -204,6 +213,13 @@ $color-info: #3498db;
   overflow: hidden;
   transition: all 0.2s;
   margin-bottom: 0.8rem;
+  display: flex;
+  flex-direction: column;
+
+  &.selected {
+    border: 2px solid $color-info;
+    background: #f0f9ff;
+  }
 
   &:hover {
     transform: translateY(-2px);
@@ -220,6 +236,36 @@ $color-info: #3498db;
       flex-direction: row;
       align-items: center;
       gap: 1rem;
+    }
+  }
+
+  .select-col {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-right: 0.5rem;
+    cursor: pointer;
+
+    .custom-checkbox {
+      width: 24px;
+      height: 24px;
+      border: 2px solid #cbd5e1;
+      border-radius: 6px;
+      background: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+
+      &.checked {
+        background: $color-info;
+        border-color: $color-info;
+        color: white;
+      }
+
+      i {
+        font-size: 14px;
+      }
     }
   }
 

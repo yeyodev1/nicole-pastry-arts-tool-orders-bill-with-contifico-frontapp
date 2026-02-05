@@ -18,15 +18,36 @@ const {
   toggleExpand,
   voidItem,
   showHistory,
-  isBackgroundLoading
+  isBackgroundLoading,
+  selectedItemIds,
+  toggleSelection,
+  clearSelection,
+  batchRegister
 } = useProductionSummary()
 
 import { useToast } from '@/composables/useToast'
+import ActionHoldButton from '@/components/common/ActionHoldButton.vue'
 
 // ... existing refs ...
 const { success, error: showError } = useToast()
 
-const isRegisterModalOpen = ref(false)
+const isBatchModalOpen = ref(false)
+
+const openBatchModal = () => {
+  isBatchModalOpen.value = true
+}
+
+const handleBatchConfirm = async () => {
+  try {
+    await batchRegister()
+    success('Lote producido exitosamente')
+    isBatchModalOpen.value = false
+  } catch (err) {
+    showError('Falló el proceso por lote')
+  }
+}
+
+// ... existing code ...
 const selectedItem = ref<SummaryItem | null>(null)
 
 // Void Modal State
@@ -125,7 +146,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="summary-view">
+  <div class="summary-view" :class="{ 'has-selection': selectedItemIds.size > 0 }">
     <div class="header-section">
       <div class="header-content">
         <h1>
@@ -192,10 +213,12 @@ onMounted(async () => {
               :key="cat.id"
               :category="cat"
               :urgency-type="String(type)"
+              :selected-ids="selectedItemIds"
               @toggle-category="toggleCategory"
               @toggle-item="toggleExpand"
               @register-item="handleRegisterItem"
               @void-item="openVoidModal"
+              @toggle-selection="toggleSelection"
             />
           </div>
 
@@ -209,6 +232,63 @@ onMounted(async () => {
         <span>Buen trabajo, el tablero está limpio.</span>
       </div>
     </div>
+
+    <!-- Floating Action Bar for Batch Selection -->
+    <Transition name="slide-up">
+        <div v-if="selectedItemIds.size > 0" class="floating-batch-bar">
+            <div class="batch-info">
+                <span class="count">{{ selectedItemIds.size }}</span>
+                <span class="label">items seleccionados</span>
+            </div>
+            <div class="batch-actions">
+                <button class="btn-clear" @click="clearSelection">Cancelar</button>
+                <button class="btn-process" @click="openBatchModal">
+                    PROCESAR LOTE
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </Transition>
+
+    <!-- Batch Confirmation Modal -->
+    <Transition name="modal-fade">
+        <div v-if="isBatchModalOpen" class="modal-overlay">
+            <div class="modal-content batch-modal">
+                <div class="modal-header">
+                    <i class="fas fa-layer-group"></i>
+                    <h2>Confirmar Producción Masiva</h2>
+                </div>
+                
+                <p>
+                    Vas a marcar como <strong>TERMINADOS</strong> {{ selectedItemIds.size }} items.
+                    <br>
+                    <small>Se registrará la cantidad total pendiente para cada uno.</small>
+                </p>
+
+                <div class="batch-summary">
+                    <ul>
+                       <li v-for="id in Array.from(selectedItemIds).slice(0, 5)" :key="id">
+                           {{ id }}
+                       </li>
+                       <li v-if="selectedItemIds.size > 5">... y {{ selectedItemIds.size - 5 }} más</li>
+                    </ul>
+                </div>
+        
+                <div class="modal-actions centered">
+                    <button class="btn-cancel" @click="isBatchModalOpen = false">Cancelar</button>
+                    
+                    <div class="hold-wrapper">
+                         <ActionHoldButton 
+                            label="MANTENER 2S PARA CONFIRMAR"
+                            :duration="2000"
+                            color="#2ecc71"
+                            @trigger="handleBatchConfirm"
+                         />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </Transition>
 
     <!-- Void Confirmation Modal -->
     <Transition name="modal-fade">
@@ -274,6 +354,10 @@ $color-delayed: #e67e22;
   color: #2c3e50;
   padding-bottom: 4rem;
   font-family: $font-stack-system;
+
+  &.has-selection {
+    padding-bottom: 7rem; // Extra space for FAB
+  }
 }
 
 .header-section {
@@ -644,6 +728,122 @@ $color-delayed: #e67e22;
   }
 }
 
+.floating-batch-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 600px;
+  background: #1e293b;
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 1000;
+
+  .batch-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    .count {
+      background: $color-info;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+
+    .label {
+      font-weight: 600;
+    }
+  }
+
+  .batch-actions {
+    display: flex;
+    gap: 1rem;
+
+    .btn-clear {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    }
+
+    .btn-process {
+      background: white;
+      color: #1e293b;
+      border: none;
+      padding: 0.5rem 1.2rem;
+      border-radius: 8px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+
+      i {
+        color: $color-info;
+      }
+
+      &:hover {
+        transform: translateY(-2px);
+      }
+    }
+  }
+}
+
+.batch-modal {
+  .batch-summary {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    text-align: left;
+    max-height: 150px;
+    overflow-y: auto;
+
+    ul {
+      margin: 0;
+      padding-left: 1.5rem;
+
+      li {
+        margin-bottom: 0.3rem;
+        font-weight: 600;
+        color: #475569;
+      }
+    }
+  }
+
+  .modal-actions.centered {
+    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+
+    .hold-wrapper {
+      width: 100%;
+      max-width: 300px;
+    }
+  }
+}
+
 @keyframes spin {
   0% {
     transform: rotate(0deg);
@@ -681,5 +881,16 @@ $color-delayed: #e67e22;
   .modal-content {
     transform: scale(0.9) translateY(20px);
   }
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s;
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  transform: translateX(-50%) translateY(100px); // keep centered X but move Y
+  opacity: 0;
 }
 </style>

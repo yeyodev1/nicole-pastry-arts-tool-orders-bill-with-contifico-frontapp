@@ -97,6 +97,7 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .action-hold-btn {
+  width: 100%;
   position: relative;
   overflow: hidden;
   border: none;
