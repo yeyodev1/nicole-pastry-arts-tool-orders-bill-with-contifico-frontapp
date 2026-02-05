@@ -6,10 +6,12 @@ interface SalesByResponsibleResponse {
     from: string
     to: string
   }
+  monthlyGoal?: number
   stats: Array<{
     _id: string
     totalSales: number
     count: number
+    role: string
   }>
 }
 
