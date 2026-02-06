@@ -3,7 +3,7 @@ import OrderService from '@/services/order.service'
 import { getECTTodayString } from '@/utils/dateUtils'
 import { useToast } from '@/composables/useToast'
 
-export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError'
+export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError' | 'returns'
 export type DateType = 'deliveryDate' | 'createdAt'
 
 export function useOrderFilters() {
@@ -42,34 +42,40 @@ export function useOrderFilters() {
       const [y, m, d] = todayStr.split('-').map(Number) as [number, number, number]
       const todayDate = new Date(y, m - 1, d)
 
-      if (filterMode.value !== 'all') {
-        if (filterMode.value === 'today') {
-          filters.startDate = todayStr
-          filters.endDate = todayStr
-        } else if (filterMode.value === 'yesterday') {
-          const target = new Date(todayDate)
-          target.setDate(target.getDate() - 1)
-          const dateStr = formatDate(target)
-          filters.startDate = dateStr
-          filters.endDate = dateStr
-        } else if (filterMode.value === 'tomorrow') {
-          const target = new Date(todayDate)
-          target.setDate(target.getDate() + 1)
-          const dateStr = formatDate(target)
-          filters.startDate = dateStr
-          filters.endDate = dateStr
-        } else if (filterMode.value === 'custom' && customDate.value) {
+      if (filterMode.value === 'today') {
+        filters.startDate = todayStr
+        filters.endDate = todayStr
+      } else if (filterMode.value === 'yesterday') {
+        const target = new Date(todayDate)
+        target.setDate(target.getDate() - 1)
+        const dateStr = formatDate(target)
+        filters.startDate = dateStr
+        filters.endDate = dateStr
+      } else if (filterMode.value === 'tomorrow') {
+        const target = new Date(todayDate)
+        target.setDate(target.getDate() + 1)
+        const dateStr = formatDate(target)
+        filters.startDate = dateStr
+        filters.endDate = dateStr
+      } else if (filterMode.value === 'custom' && customDate.value) {
+        filters.startDate = customDate.value
+        filters.endDate = customDate.value
+      } else if (filterMode.value === 'invoiceError') {
+        filters.invoiceStatus = 'ERROR'
+        // Optional date filter for errors
+        if (customDate.value) {
           filters.startDate = customDate.value
           filters.endDate = customDate.value
-        } else if (filterMode.value === 'invoiceError') {
-          filters.invoiceStatus = 'ERROR'
-          // Optional date filter for errors
-          if (customDate.value) {
-            filters.startDate = customDate.value
-            filters.endDate = customDate.value
-          }
+        }
+      } else if (filterMode.value === 'returns') {
+        filters.dispatchStatus = 'RETURNED'
+        // Optional: we might want to see all returns regardless of date
+        if (customDate.value) {
+          filters.startDate = customDate.value
+          filters.endDate = customDate.value
         }
       }
+      // 'all' mode does not add any date filters by default (unless search is present)
 
       const data = await OrderService.getOrders(filters)
       orders.value = data

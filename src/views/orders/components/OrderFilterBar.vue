@@ -4,7 +4,7 @@
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 
 // Types should match composable
-export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError'
+export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError' | 'returns'
 export type DateType = 'deliveryDate' | 'createdAt'
 
 const props = defineProps<{
@@ -105,6 +105,13 @@ const emit = defineEmits<{
             @click="emit('update:filterMode', 'invoiceError')"
           >
             Errores Facturación
+          </button>
+          <button 
+            class="filter-pill warning" 
+            :class="{ active: filterMode === 'returns' }"
+            @click="emit('update:filterMode', 'returns')"
+          >
+            Devoluciones
           </button>
       </div>
         

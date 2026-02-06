@@ -139,11 +139,34 @@ const executeDeleteOrder = async () => {
   } finally {
     isLoading.value = false
   }
-}
 
-onMounted(() => {
-  fetchOrder()
-})
+
+  const handleReturnOrder = async () => {
+    if (!order.value) return
+
+    const notes = prompt(`Motivo de la devolución para "${order.value.customerName}":\n(El pedido saldrá de producción y quedará marcado como devuelto)`)
+    if (notes === null) return // Cancel
+    if (!notes.trim()) {
+      alert("Debes ingresar un motivo.")
+      return
+    }
+
+    isLoading.value = true
+    try {
+      await OrderService.returnOrder(order.value._id, notes)
+      success('Pedido marcado como devuelto.')
+      fetchOrder() // Refresh to update status
+    } catch (err: any) {
+      console.error('Return error', err)
+      showError(err.response?.data?.message || 'Error al devolver el pedido')
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  onMounted(() => {
+    fetchOrder()
+  })
 </script>
 
 <template>
@@ -326,7 +349,7 @@ onMounted(() => {
     color: #2563eb;
     background: #eff6ff;
   }
-  
+
   i {
     font-size: 0.9rem;
   }
@@ -513,5 +536,27 @@ onMounted(() => {
       box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
     }
   }
+
+  .btn-warning-outline {
+    background: transparent;
+    border: 2px solid #f59e0b;
+    color: #f59e0b;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+
+    &:hover {
+      background: #f59e0b;
+      color: white;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.2);
+    }
+  }
+}
+
+.mb-4 {
+  margin-bottom: 1rem;
 }
 </style>

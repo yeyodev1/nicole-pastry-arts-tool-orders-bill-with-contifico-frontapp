@@ -39,7 +39,10 @@ interface Order {
 const orders = ref<Order[]>([])
 const isLoading = ref(true)
 const error = ref('')
+
+// Filter State
 const filterMode = ref('today') // Default to Today for focus
+const filterBranch = ref<string | null>(null) // 'sanMarino', 'mallDelSol', 'centroProduccion', 'delivery'
 
 // Collapse State
 const isPendingExpanded = ref(true)
@@ -81,6 +84,20 @@ const toggleSelectAll = () => {
     selectedIds.value = []
   } else {
     selectedIds.value = filteredOrders.value.map(o => o._id)
+  }
+}
+
+const fetchOrders = async () => {
+  try {
+    isLoading.value = true
+    const response = await ProductionService.getAllOrders()
+    // Service now returns the array directly
+    orders.value = response as any
+  } catch (err) {
+    console.error(err)
+    error.value = 'No se pudieron cargar las órdenes.'
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -151,51 +168,6 @@ const handleDispatchConfirm = async (payload: any) => {
   }
 }
 
-const handleRevert = async (order: Order) => {
-  if (!confirm(`¿Estás seguro de devolver este ítem a producción? Se reiniciará el progreso.`)) return
-
-  try {
-    isLoading.value = true
-    await ProductionService.revertOrder(order._id)
-    await fetchOrders()
-    toastMessage.value = 'Ítem devuelto a producción.'
-    toastType.value = 'success'
-    showToast.value = true
-  } catch (err: any) {
-    console.error(err)
-    toastMessage.value = 'Error al devolver ítem. Reintente.'
-    toastType.value = 'error'
-    showToast.value = true
-  } finally {
-    isLoading.value = false
-  }
-}
-
-const handleReturn = async (order: Order) => {
-  const notes = prompt(`Motivo de la devolución para "${order.customerName}":\n(El pedido regresará a la lista de pendientes para enviar)`)
-  if (notes === null) return // Cancelled
-  if (!notes.trim()) {
-    alert("Debes ingresar un motivo para la devolución.")
-    return
-  }
-
-  try {
-    isLoading.value = true
-    await ProductionService.returnOrder(order._id, notes)
-    await fetchOrders()
-    toastMessage.value = 'Pedido devuelto. Regresó a pendientes por enviar.'
-    toastType.value = 'success'
-    showToast.value = true
-  } catch (err: any) {
-    console.error(err)
-    toastMessage.value = 'Error al registrar devolución: ' + (err.response?.data?.message || err.message)
-    toastType.value = 'error'
-    showToast.value = true
-  } finally {
-    isLoading.value = false
-  }
-}
-
 // Helper to strip time for date comparison
 const isSameDay = (d1: Date, d2: Date) => {
   return d1.getFullYear() === d2.getFullYear() &&
@@ -203,7 +175,8 @@ const isSameDay = (d1: Date, d2: Date) => {
     d1.getDate() === d2.getDate()
 }
 
-const filteredOrders = computed(() => {
+// 1. First: Filter by Date (Time) - This is the "Base" for the view
+const ordersByDate = computed(() => {
   if (filterMode.value === 'all') return orders.value
 
   const now = new Date()
@@ -239,6 +212,28 @@ const filteredOrders = computed(() => {
   })
 })
 
+// 2. Second: Filter by Branch/Type if selected (The Clickable Cards)
+const filteredOrders = computed(() => {
+  let result = ordersByDate.value // Use the date-filtered list!
+
+  if (filterBranch.value) {
+    result = result.filter(o => {
+      if (filterBranch.value === 'delivery') {
+        return o.deliveryType === 'delivery'
+      }
+
+      const branch = (o.branch || '').toLowerCase()
+      if (filterBranch.value === 'sanMarino') return branch.includes('marino')
+      if (filterBranch.value === 'mallDelSol') return branch.includes('mall') || branch.includes('sol')
+      if (filterBranch.value === 'centroProduccion') return branch.includes('centro') || branch.includes('producci')
+
+      return false
+    })
+  }
+
+  return result
+})
+
 const pendingDispatchOrders = computed(() => {
   return filteredOrders.value.filter(o => !o.dispatchStatus || o.dispatchStatus === 'NOT_SENT' || o.dispatchStatus === 'PARTIAL')
 })
@@ -255,8 +250,9 @@ const stats = computed(() => {
     delivery: 0
   }
 
-  // Calculate stats based on FILTERED views to match what the user sees
-  filteredOrders.value.forEach(o => {
+  // Calculate stats based on orders filtered by DATE.
+  // This ensures that when "Today" is selected, the stats show counts for Today.
+  ordersByDate.value.forEach(o => {
     // If delivery, count as delivery
     if (o.deliveryType === 'delivery') {
       s.delivery++
@@ -274,23 +270,17 @@ const stats = computed(() => {
   return s
 })
 
+const toggleBranchFilter = (branch: string) => {
+  if (filterBranch.value === branch) {
+    filterBranch.value = null // Deselect
+  } else {
+    filterBranch.value = branch
+  }
+}
+
 onMounted(async () => {
   await fetchOrders()
 })
-
-const fetchOrders = async () => {
-  try {
-    isLoading.value = true
-    const response = await ProductionService.getAllOrders()
-    // Service now returns the array directly
-    orders.value = response as any
-  } catch (err) {
-    console.error(err)
-    error.value = 'No se pudieron cargar las órdenes.'
-  } finally {
-    isLoading.value = false
-  }
-}
 
 const formatDate = (dateString: string, timeString?: string) => {
   if (!dateString) return '-'
@@ -303,11 +293,6 @@ const formatDate = (dateString: string, timeString?: string) => {
   }
 
   const formattedDate = new Intl.DateTimeFormat('es-EC', options).format(date)
-
-  // Logic for Time:
-  // 1. If we have a explicit deliveryTime (HH:mm), use it.
-  // 2. If not, and date has a time that isn't midnight, use that.
-  // 3. Otherwise, just show the date.
 
   if (timeString && timeString.includes(':')) {
     return `${formattedDate}, ${timeString}`
@@ -329,7 +314,6 @@ const formatDate = (dateString: string, timeString?: string) => {
 
 const getChannelParams = (channel: string) => {
   const norm = (channel || '').toLowerCase()
-  // User Rule: Currently all "Web" orders are actually "WhatsApp"
   if (norm.includes('whatsapp') || norm.includes('wsp') || norm.includes('ws') || norm.includes('web')) {
     return { class: 'whatsapp', label: 'WhatsApp', icon: 'fab fa-whatsapp' }
   }
@@ -347,7 +331,6 @@ const getDestination = (order: Order) => {
     }
   }
 
-  // Retiro
   return {
     type: 'RETIRO',
     label: `Retiro - ${order.branch || 'Local desconocida'}`,
@@ -395,39 +378,7 @@ const getDispatchBadge = (status?: string) => {
       </div>
     </div>
 
-    <!-- Stats Summary -->
-    <div class="stats-grid" v-if="orders.length > 0">
-      <div class="stat-card">
-        <div class="icon-box sm"><i class="fas fa-store-alt"></i></div>
-        <div class="info">
-          <span class="count">{{ stats.sanMarino }}</span>
-          <span class="label">San Marino</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="icon-box mds"><i class="fas fa-shopping-bag"></i></div>
-        <div class="info">
-          <span class="count">{{ stats.mallDelSol }}</span>
-          <span class="label">Mall del Sol</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="icon-box cp"><i class="fas fa-industry"></i></div>
-        <div class="info">
-          <span class="count">{{ stats.centroProduccion }}</span>
-          <span class="label">Centro Prod.</span>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="icon-box del"><i class="fas fa-motorcycle"></i></div>
-        <div class="info">
-          <span class="count">{{ stats.delivery }}</span>
-          <span class="label">Delivery</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Filter Bar -->
+    <!-- Filter Bar (Moved Top) -->
     <div class="filter-bar-container">
       <div class="filter-bar">
         <button 
@@ -443,6 +394,54 @@ const getDispatchBadge = (status?: string) => {
           <span v-else-if="mode === 'future'">Próximos Días</span>
           <span v-else>Todos</span>
         </button>
+      </div>
+    </div>
+
+    <!-- Stats Summary (Clickable Filters) -->
+    <div class="stats-grid" v-if="orders.length > 0">
+      <div 
+        class="stat-card" 
+        :class="{ active: filterBranch === 'sanMarino' }"
+        @click="toggleBranchFilter('sanMarino')"
+      >
+        <div class="icon-box sm"><i class="fas fa-store-alt"></i></div>
+        <div class="info">
+          <span class="count">{{ stats.sanMarino }}</span>
+          <span class="label">San Marino</span>
+        </div>
+      </div>
+      <div 
+        class="stat-card"
+        :class="{ active: filterBranch === 'mallDelSol' }"
+        @click="toggleBranchFilter('mallDelSol')"
+      >
+        <div class="icon-box mds"><i class="fas fa-shopping-bag"></i></div>
+        <div class="info">
+          <span class="count">{{ stats.mallDelSol }}</span>
+          <span class="label">Mall del Sol</span>
+        </div>
+      </div>
+      <div 
+        class="stat-card"
+        :class="{ active: filterBranch === 'centroProduccion' }"
+        @click="toggleBranchFilter('centroProduccion')"
+      >
+        <div class="icon-box cp"><i class="fas fa-industry"></i></div>
+        <div class="info">
+          <span class="count">{{ stats.centroProduccion }}</span>
+          <span class="label">Centro Prod.</span>
+        </div>
+      </div>
+      <div 
+        class="stat-card"
+        :class="{ active: filterBranch === 'delivery' }"
+        @click="toggleBranchFilter('delivery')"
+      >
+        <div class="icon-box del"><i class="fas fa-motorcycle"></i></div>
+        <div class="info">
+          <span class="count">{{ stats.delivery }}</span>
+          <span class="label">Delivery</span>
+        </div>
       </div>
     </div>
 
@@ -566,13 +565,6 @@ const getDispatchBadge = (status?: string) => {
                         <button class="btn-dispatch" @click="openDispatchModal(order)">
                           <i class="fas fa-paper-plane"></i> Reportar Envío
                         </button>
-                        <button 
-                          v-if="order.productionStage === 'FINISHED'"
-                          class="btn-revert-inline" 
-                          @click="handleRevert(order)"
-                        >
-                          <i class="fas fa-undo-alt"></i> Devolver
-                        </button>
                       </div>
                     </div>
                   </td>
@@ -676,20 +668,7 @@ const getDispatchBadge = (status?: string) => {
                         </span>
                       </div>
                       <div class="action-col">
-                        <button 
-                          v-if="order.dispatchStatus === 'SENT'"
-                          class="btn-return-inline" 
-                          @click="handleReturn(order)"
-                        >
-                          <i class="fas fa-undo"></i> Devolución
-                        </button>
-                        <button 
-                          v-if="order.productionStage === 'FINISHED'"
-                          class="btn-revert-inline" 
-                          @click="handleRevert(order)"
-                        >
-                          <i class="fas fa-redo"></i> Rehacer Prod.
-                        </button>
+                        <!-- Actions removed for production view -->
                       </div>
                     </div>
                   </td>
@@ -839,10 +818,25 @@ $color-danger: #e74c3c;
     align-items: center;
     gap: 1rem;
     border: 1px solid rgba(0, 0, 0, 0.03);
-    transition: transform 0.2s;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
 
     &:hover {
       transform: translateY(-3px);
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.05);
+    }
+
+    &.active {
+      border: 2px solid $color-primary;
+      background: #fdfaff; // Very subtle purple tint
+      box-shadow: 0 4px 12px rgba($color-primary, 0.15);
+
+      .icon-box {
+        background: $color-primary !important;
+        color: white !important;
+      }
     }
 
     .icon-box {
@@ -1417,36 +1411,7 @@ $color-danger: #e74c3c;
   }
 }
 
-.btn-revert-inline,
-.btn-return-inline {
-  background: white;
-  border: 1px solid #ffecec;
-  color: $color-danger;
-  padding: 7px 12px;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  transition: all 0.2s;
 
-  &:hover {
-    background: #fff5f5;
-    border-color: $color-danger;
-  }
-}
-
-.btn-return-inline {
-  border-color: #e8f5e9;
-  color: #2ecc71;
-
-  &:hover {
-    background: #f1f9f2;
-    border-color: #2ecc71;
-  }
-}
 
 @keyframes pulse {
   0% {
