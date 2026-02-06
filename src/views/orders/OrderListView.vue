@@ -165,10 +165,6 @@ const handleSettleInIsland = async (islandName: string) => {
 
 // Edit & Delete
 const handleEditOrder = (order: any) => {
-  if (order.invoiceStatus === 'PROCESSED') {
-    info('No se puede editar una orden ya facturada.')
-    return
-  }
   // Redirect to create view but with order data for editing
   router.push({
     name: 'create-order',
@@ -176,10 +172,6 @@ const handleEditOrder = (order: any) => {
   })
 }
 const handleDeleteOrder = (order: any) => {
-  if (order.invoiceStatus === 'PROCESSED') {
-    info('No se puede eliminar una orden ya facturada.')
-    return
-  }
   orderToDelete.value = order
   showDeleteModal.value = true
 }

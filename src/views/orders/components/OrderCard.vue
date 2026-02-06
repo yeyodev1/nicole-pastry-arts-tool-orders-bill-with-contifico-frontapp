@@ -185,7 +185,6 @@ const handleRetry = () => emit('retry-invoice')
          </button>
          <!-- Edit & Delete -->
          <button 
-          v-if="order.invoiceStatus !== 'PROCESSED'"
           class="btn-icon btn-edit" 
           @click="emit('edit')"
           title="Editar Pedido"
@@ -193,13 +192,13 @@ const handleRetry = () => emit('retry-invoice')
             <i class="fa-solid fa-pen-to-square"></i>
          </button>
          <button 
-          v-if="order.invoiceStatus !== 'PROCESSED' && getPaymentStatus(order) !== 'paid' && getPaymentStatus(order) !== 'settled'"
           class="btn-icon btn-delete" 
           @click="emit('delete')"
           title="Eliminar Pedido"
          >
             <i class="fa-solid fa-trash-can"></i>
          </button>
+
       </div>
     </div>
   </article>
