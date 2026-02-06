@@ -191,6 +191,25 @@ const executeDeleteOrder = async () => {
   }
 }
 
+// Return Order
+const handleReturnOrder = async (order: any) => {
+  const notes = prompt(`Motivo de la devolución para "${order.customerName}":\n(El pedido saldrá de producción y quedará marcado como devuelto)`)
+  if (notes === null) return // Cancel
+  if (!notes.trim()) {
+    alert("Debes ingresar un motivo.")
+    return
+  }
+
+  try {
+    await OrderService.returnOrder(order._id, notes)
+    success('Pedido marcado como devuelto y retirado de producción.')
+    fetchOrders()
+  } catch (err: any) {
+    console.error('Return error', err)
+    showError(err.response?.data?.message || 'Error al devolver el pedido')
+  }
+}
+
 onMounted(() => {
   // If we want to ensure data is fetched on mount.
   // The composable watchers might handle it if filterMode changes, 
@@ -263,6 +282,7 @@ onMounted(() => {
             @settle="openSettleModal(order)"
             @edit="handleEditOrder(order)"
             @delete="handleDeleteOrder(order)"
+            @return="handleReturnOrder(order)"
          />
       </TransitionGroup>
 
