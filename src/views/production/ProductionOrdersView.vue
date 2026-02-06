@@ -4,6 +4,7 @@ import ProductionService from '@/services/production.service'
 import { parseECTDate } from '@/utils/dateUtils'
 import DispatchReportModal from './components/DispatchReportModal.vue'
 import DispatchByDestinationModal from './components/DispatchByDestinationModal.vue'
+import HoldToConfirmModal from './components/HoldToConfirmModal.vue'
 import ToastNotification from '@/components/ToastNotification.vue'
 
 interface Order {
@@ -51,6 +52,7 @@ const isSentExpanded = ref(true)
 // Modal State
 const showDispatchModal = ref(false)
 const showGlobalBatchModal = ref(false)
+const showBatchConfirmModal = ref(false)
 const selectedOrder = ref<Order | null>(null)
 const dispatchDestination = ref('')
 
@@ -101,10 +103,13 @@ const fetchOrders = async () => {
   }
 }
 
-const handleBatchDispatch = async () => {
+const handleBatchDispatch = () => {
   if (selectedIds.value.length === 0) return
-  if (!confirm(`¿Estás seguro de marcar como ENVIADOS ${selectedIds.value.length} órdenes?`)) return
+  showBatchConfirmModal.value = true
+}
 
+const executeBatchDispatch = async () => {
+  showBatchConfirmModal.value = false
   try {
     isLoading.value = true
     await ProductionService.registerBatchDispatch(selectedIds.value)
@@ -704,6 +709,15 @@ const getDispatchBadge = (status?: string) => {
       :is-open="showGlobalBatchModal"
       @close="showGlobalBatchModal = false"
       @success="handleGlobalBatchSuccess"
+    />
+
+    <HoldToConfirmModal
+      :is-open="showBatchConfirmModal"
+      title="Confirmar Envío Masivo"
+      :message="`¿Estás seguro de marcar ${selectedIds.length} órdenes como ENVIADAS? Esta acción no se puede deshacer fácilmente.`"
+      confirm-text="ENVIAR ÓRDENES"
+      @close="showBatchConfirmModal = false"
+      @confirm="executeBatchDispatch"
     />
 
     <ToastNotification 
