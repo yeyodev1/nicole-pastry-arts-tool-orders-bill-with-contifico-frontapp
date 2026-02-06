@@ -19,6 +19,7 @@ const emit = defineEmits<{
   (e: 'settle'): void
   (e: 'edit'): void
   (e: 'delete'): void
+  (e: 'return'): void
 }>()
 
 // Helper Logic moved from ListView
@@ -191,6 +192,16 @@ const handleRetry = () => emit('retry-invoice')
          >
             <i class="fa-solid fa-pen-to-square"></i>
          </button>
+         <!-- Return Action -->
+         <button 
+          v-if="['SENT', 'PARTIAL', 'PROBLEM'].includes(order.dispatchStatus || '')"
+          class="btn-icon btn-return" 
+          @click="emit('return')"
+          title="Devolver Pedido"
+         >
+            <i class="fa-solid fa-undo"></i>
+         </button>
+
          <button 
           class="btn-icon btn-delete" 
           @click="emit('delete')"
