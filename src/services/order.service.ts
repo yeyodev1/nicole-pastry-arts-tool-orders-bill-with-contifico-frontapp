@@ -46,7 +46,7 @@ class OrderService extends APIBase {
     }
   }
 
-  async getOrders(filters?: { search?: string, startDate?: string, endDate?: string, dateType?: 'deliveryDate' | 'createdAt' }): Promise<any[]> {
+  async getOrders(filters?: { search?: string, startDate?: string, endDate?: string, dateType?: 'deliveryDate' | 'createdAt', dispatchStatus?: string }): Promise<any[]> {
     try {
       const response = await this.get<any[]>('orders', undefined, { params: filters })
       return response.data
@@ -151,6 +151,16 @@ class OrderService extends APIBase {
       return response.data
     } catch (error) {
       console.error('Error deleting order:', error)
+      throw error
+    }
+  }
+
+  async returnOrder(id: string, notes: string): Promise<any> {
+    try {
+      const response = await this.put<any>(`orders/${id}/return`, { notes })
+      return response.data
+    } catch (error) {
+      console.error('Error returning order:', error)
       throw error
     }
   }
