@@ -14,7 +14,9 @@ const router = createRouter({
           try {
             const user = JSON.parse(userInfoStr)
             if (user?.role === 'production') return { name: 'production-summary' }
+            if (user?.role === 'production') return { name: 'production-summary' }
             if (user?.role === 'RetailManager') return { name: 'pos-shipments' }
+            if (user?.role === 'SUPPLY_CHAIN_MANAGER') return { name: 'providers-list' }
             return { name: 'create-order' }
           } catch (e) {
             return { name: 'login' }
@@ -92,6 +94,35 @@ const router = createRouter({
       component: () => import('../views/production/ProductionReportsView.vue'),
       meta: { requiresAuth: true, role: 'production', title: 'Reportes de Producción' }
     },
+    // Supply Chain Routes
+    {
+      path: '/supply-chain',
+      redirect: '/supply-chain/summary',
+    },
+    {
+      path: '/supply-chain/summary',
+      name: 'inventory-summary',
+      component: () => import('../views/SupplyChain/InventorySummaryView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Resumen de Inventario' }
+    },
+    {
+      path: '/supply-chain/providers',
+      name: 'providers-list',
+      component: () => import('../views/SupplyChain/ProvidersView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Proveedores' }
+    },
+    {
+      path: '/supply-chain/materials',
+      name: 'materials-list',
+      component: () => import('../views/SupplyChain/RawMaterialsView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Materia Prima' }
+    },
+    {
+      path: '/supply-chain/warehouse',
+      name: 'warehouse',
+      component: () => import('../views/SupplyChain/WarehouseView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Bodega' }
+    },
     // POS / RetailManager Routes
     {
       path: '/pos/shipments',
@@ -130,7 +161,9 @@ router.beforeEach((to, from, next) => {
   // 2. Redirect authenticated users away from login page
   if (to.name === 'login' && isAuthenticated) {
     if (role === 'production') next({ name: 'production-summary' })
+    if (role === 'production') next({ name: 'production-summary' })
     else if (role === 'RetailManager') next({ name: 'pos-shipments' })
+    else if (role === 'SUPPLY_CHAIN_MANAGER') next({ name: 'providers-list' })
     else next({ name: 'create-order' })
     return
   }
@@ -146,6 +179,12 @@ router.beforeEach((to, from, next) => {
     // RetailManager user should stick to /pos
     if (role === 'RetailManager' && !to.path.startsWith('/pos')) {
       next({ name: 'pos-shipments' })
+      return
+    }
+
+    // Supply Chain user
+    if (role === 'SUPPLY_CHAIN_MANAGER' && !to.path.startsWith('/supply-chain')) {
+      next({ name: 'providers-list' })
       return
     }
 
