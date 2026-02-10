@@ -31,7 +31,11 @@ watch(() => props.modelValue, (newVal) => {
 }, { immediate: true })
 
 const monthName = computed(() => {
-  return new Date(currentYear.value, currentMonth.value).toLocaleString('es-EC', { month: 'long', year: 'numeric' })
+  return new Intl.DateTimeFormat('es-EC', {
+    timeZone: 'America/Guayaquil',
+    month: 'long',
+    year: 'numeric'
+  }).format(new Date(currentYear.value, currentMonth.value))
 })
 
 const days = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
@@ -51,7 +55,17 @@ const calendarDays = computed(() => {
   }
 
   const now = new Date()
-  const todayStr = now.toISOString().split('T')[0]
+  const todayParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Guayaquil',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now)
+
+  const yPart = todayParts.find(p => p.type === 'year')?.value
+  const mPart = todayParts.find(p => p.type === 'month')?.value
+  const dPart = todayParts.find(p => p.type === 'day')?.value
+  const todayStr = `${yPart}-${mPart}-${dPart}`
   const min = props.minDate || todayStr // Default min is today if not provided? Or can be empty.
 
   // Real Days
@@ -106,17 +120,17 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 
 const displayValue = computed(() => {
   if (!props.modelValue) return props.placeholder || 'Seleccionar fecha'
-  // Format friendly
-  const parts = props.modelValue.split('-')
-  const y = Number(parts[0])
-  const m = Number(parts[1])
-  const d = Number(parts[2])
 
+  // Create date object treating it as Ecuador local time
+  const [y, m, d] = props.modelValue.split('-').map(Number)
   if (!y || !m || !d) return props.modelValue
 
+  // We use the Intl formatter to show it nicely in es-EC
   const dateObj = new Date(y, m - 1, d)
-  if (isNaN(dateObj.getTime())) return props.modelValue
-  return dateObj.toLocaleDateString('es-EC', { dateStyle: 'long' })
+  return new Intl.DateTimeFormat('es-EC', {
+    timeZone: 'America/Guayaquil',
+    dateStyle: 'long'
+  }).format(dateObj)
 })
 </script>
 
