@@ -107,6 +107,8 @@ export interface OrderFormData {
     identification: string
     personId?: string
   }
+  globalDiscountPercentage?: number
+  isGlobalCourtesy?: boolean
 }
 
 export interface Order extends OrderFormData {

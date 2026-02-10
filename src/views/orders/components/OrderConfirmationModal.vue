@@ -109,6 +109,18 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
          <div class="divider"></div>
 
          <div class="row">
+           <span>Total Bruto:</span>
+           <strong>{{formatMoney(cart.reduce((s, i) => s + (i.price * i.quantity), 0) * 1.15)}}</strong>
+         </div>
+
+         <div v-if="orderData.isGlobalCourtesy || (orderData.globalDiscountPercentage || 0) > 0" class="row text-success">
+           <span>Descuento Global:</span>
+           <strong>
+             {{ orderData.isGlobalCourtesy ? '-100%' : `-${orderData.globalDiscountPercentage}%` }}
+           </strong>
+         </div>
+
+         <div class="row">
            <span>Total del Pedido:</span>
            <strong class="total-text">{{ formatMoney(orderData.totalValue || 0) }}</strong>
          </div>

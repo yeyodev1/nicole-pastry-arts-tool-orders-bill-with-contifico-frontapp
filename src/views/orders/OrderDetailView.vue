@@ -47,15 +47,8 @@ const totalPaid = computed(() => {
 })
 
 const computedTotal = computed(() => {
-  if (!order.value || !order.value.products) return 0
-
-  // Robust calculation: Sum of products (price * qty) excluding courtesy
-  const productSum = order.value.products.reduce((sum: number, p: any) => {
-    if (p.isCourtesy) return sum
-    return sum + (Number(p.price) * Number(p.quantity))
-  }, 0)
-
-  return productSum + (order.value.deliveryValue || 0)
+  if (!order.value) return 0
+  return order.value.totalValue || 0
 })
 
 const outstandingBalance = computed(() => {
@@ -201,7 +194,10 @@ onMounted(() => {
           <!-- Products -->
           <OrderProductsList 
             :products="order.products" 
-            :computedTotal="computedTotal" 
+            :computedTotal="computedTotal"
+            :globalDiscountPercentage="order.globalDiscountPercentage"
+            :isGlobalCourtesy="order.isGlobalCourtesy"
+            :deliveryValue="order.deliveryValue"
           />
 
           <!-- Payments History -->

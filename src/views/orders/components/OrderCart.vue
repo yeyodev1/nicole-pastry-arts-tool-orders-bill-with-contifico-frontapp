@@ -7,6 +7,8 @@ const props = defineProps<{
   isSubmitting: boolean
   hasRider: boolean
   isEditMode?: boolean
+  globalDiscountPercentage?: number
+  isGlobalCourtesy?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -15,23 +17,43 @@ const emit = defineEmits<{
   (e: 'submit'): void
 }>()
 
-const cartTotal = computed(() => {
-  return props.cart.reduce((total, item) => total + (item.price * item.quantity), 0)
+const cartSubtotal = computed(() => {
+  if (props.isGlobalCourtesy) return 0
+
+  return props.cart.reduce((total, item) => {
+    let price = item.price
+    if (props.globalDiscountPercentage && props.globalDiscountPercentage > 0 && !item.isCourtesy) {
+      price = item.price * (1 - props.globalDiscountPercentage / 100)
+    }
+    return total + (price * item.quantity)
+  }, 0)
 })
 
-const cartSubtotal = computed(() => cartTotal.value)
-
 const cartIVA = computed(() => {
-  return props.cart.reduce((totalIVA, item) => {
-    // Check if item is Delivery (0% IVA)
-    const isDelivery = item.name.toLowerCase().includes('delivery')
+  if (props.isGlobalCourtesy) return 0
 
-    if (isDelivery) {
-      return totalIVA // No IVA
-    } else {
-      return totalIVA + (item.price * item.quantity * 0.15)
+  return props.cart.reduce((totalIVA, item) => {
+    const isDelivery = item.name.toLowerCase().includes('delivery')
+    if (isDelivery) return totalIVA
+
+    let price = item.price
+    if (props.globalDiscountPercentage && props.globalDiscountPercentage > 0 && !item.isCourtesy) {
+      price = item.price * (1 - props.globalDiscountPercentage / 100)
     }
+
+    return totalIVA + (price * item.quantity * 0.15)
   }, 0)
+})
+
+const savings = computed(() => {
+  const originalSubtotal = props.cart.reduce((total, item) => total + (item.price * item.quantity), 0)
+  const originalIVA = props.cart.reduce((totalIVA, item) => {
+    const isDelivery = item.name.toLowerCase().includes('delivery')
+    return isDelivery ? totalIVA : totalIVA + (item.price * item.quantity * 0.15)
+  }, 0)
+
+  const originalTotal = originalSubtotal + originalIVA
+  return Math.max(0, originalTotal - (cartSubtotal.value + cartIVA.value))
 })
 
 const finalTotal = computed(() => cartSubtotal.value + cartIVA.value)
@@ -89,6 +111,10 @@ const onDecrease = (item: CartItem, index: number) => {
       <div class="total-row">
         <span>IVA (15% est):</span>
         <span>${{ cartIVA.toFixed(2) }}</span>
+      </div>
+      <div v-if="savings > 0" class="total-row savings">
+        <span>Ahorro Descuento:</span>
+        <span>-${{ savings.toFixed(2) }}</span>
       </div>
       <div class="total-row final">
         <span>Total:</span>
@@ -254,6 +280,12 @@ const onDecrease = (item: CartItem, index: number) => {
     span:last-child {
       font-feature-settings: "tnum";
       font-weight: 600;
+    }
+
+    &.savings {
+      color: $success;
+      font-weight: 700;
+      font-size: 0.9rem;
     }
 
     &.final {

@@ -60,24 +60,56 @@ const formData = reactive<OrderFormData>({
     numero_tarjeta: '',
     cuenta_bancaria_id: '',
     tipo_ping: 'D'
-  }
+  },
+  globalDiscountPercentage: 0,
+  isGlobalCourtesy: false
 })
 
 // Cart
 const cart = ref<CartItem[]>([])
 
-// Sync totalValue with Cart (Logic replicated from OrderCart)
-watch(cart, (newCart) => {
-  const subtotal = newCart.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+// Sync totalValue with Cart & Discounts
+watch([cart, () => formData.globalDiscountPercentage, () => formData.isGlobalCourtesy], ([newCart, discount, isGlobalCourtesy]) => {
+  if (isGlobalCourtesy) {
+    formData.totalValue = 0
+    return
+  }
+
+  const subtotal = newCart.reduce((sum, item) => {
+    let itemDiscount = item.isCourtesy ? 100 : 0
+    if (discount && discount > 0 && itemDiscount < 100) {
+      itemDiscount = discount
+    }
+    const itemTotal = (item.price * item.quantity) * ((100 - itemDiscount) / 100)
+    return sum + itemTotal
+  }, 0)
 
   const iva = newCart.reduce((sum, item) => {
     // Delivery items have 0% IVA
     const isDelivery = item.name && item.name.toLowerCase().includes('delivery')
-    return sum + (isDelivery ? 0 : (item.price * item.quantity * 0.15))
+    if (isDelivery) return sum
+
+    let itemDiscount = item.isCourtesy ? 100 : 0
+    if (discount && discount > 0 && itemDiscount < 100) {
+      itemDiscount = discount
+    }
+    const itemTotal = (item.price * item.quantity) * ((100 - itemDiscount) / 100)
+    return sum + (itemTotal * 0.15)
   }, 0)
 
   formData.totalValue = Number((subtotal + iva).toFixed(2))
 }, { deep: true })
+
+// Sync Courtesy Modes: Bi-directional
+watch(() => formData.isGlobalCourtesy, (newVal) => {
+  isCourtesyMode.value = !!newVal
+})
+
+watch(isCourtesyMode, (newVal) => {
+  if (formData.isGlobalCourtesy !== newVal) {
+    formData.isGlobalCourtesy = newVal
+  }
+})
 
 const addToCart = (product: Product) => {
   const existing = cart.value.find(item => item.contifico_id === product.id)
@@ -232,7 +264,9 @@ const resetForm = () => {
       numero_tarjeta: '',
       cuenta_bancaria_id: '',
       tipo_ping: 'D'
-    }
+    },
+    globalDiscountPercentage: 0,
+    isGlobalCourtesy: false
   })
 
   // Clear Cart & State
@@ -277,6 +311,8 @@ onMounted(async () => {
         totalValue: order.totalValue,
         settledInIsland: order.settledInIsland || false,
         settledIslandName: order.settledIslandName || 'San Marino',
+        globalDiscountPercentage: order.globalDiscountPercentage || 0,
+        isGlobalCourtesy: order.isGlobalCourtesy || false,
         payments: order.payments || []
       })
 
@@ -330,13 +366,11 @@ onMounted(async () => {
              class="btn-courtesy-toggle" 
              :class="{ active: isCourtesyMode }"
              @click="isCourtesyMode = !isCourtesyMode"
+             title="Afecta solo a productos que agregues ahora"
            >
              <i class="fa-solid fa-gift"></i>
-             {{ isCourtesyMode ? 'Modo Cortesía ACTIVO' : 'Activar Modo Cortesía' }}
+             {{ isCourtesyMode ? 'Modo Cortesía (Próximos Items)' : 'Activar Cortesía Items' }}
            </button>
-           <div v-if="isCourtesyMode" class="courtesy-banner">
-             <small>Los productos agregados tendrán costo $0.00</small>
-           </div>
         </div>
         <OrderProductSelector @add-to-cart="addToCart" />
       </section>
@@ -347,9 +381,11 @@ onMounted(async () => {
         
         <OrderCart 
           :cart="cart" 
-          :isSubmitting="isSubmitting"
-          :hasRider="!!formData.deliveryPerson?.personId"
+          :is-submitting="isSubmitting"
+          :has-rider="!!formData.deliveryPerson?.personId"
           :is-edit-mode="isEditMode"
+          :global-discount-percentage="formData.globalDiscountPercentage"
+          :is-global-courtesy="formData.isGlobalCourtesy"
           @remove="removeFromCart"
           @update-quantity="updateQuantity"
           @submit="onCartSubmit"
@@ -530,30 +566,6 @@ onMounted(async () => {
     background-color: $NICOLE-PURPLE;
     color: white;
     box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.3);
-  }
-
-  i {
-    font-size: 1.1rem;
-  }
-}
-
-.courtesy-banner {
-  background-color: #f0f9ff; // Light blue
-  border: 1px solid #bae6fd;
-  color: #0369a1;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  text-align: center;
-  font-size: 0.9rem;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-
-  &::before {
-    content: '\f05a'; // Info circle
-    font-family: 'Font Awesome 6 Free';
-    font-weight: 900;
   }
 }
 </style>

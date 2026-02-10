@@ -1,11 +1,26 @@
 <script setup lang="ts">
 import type { OrderFormData } from '@/types/order'
 import PaymentFields from './PaymentFields.vue'
+import { ref, watch } from 'vue'
 
-const props = defineProps<{
-  modelValue: OrderFormData
-  branches: readonly string[]
-}>()
+const props = defineProps({
+  modelValue: {
+    type: Object as () => OrderFormData,
+    required: true
+  },
+  branches: {
+    type: Array as () => string[],
+    required: true
+  }
+})
+
+const showDiscountSection = ref(false)
+const showCreditSection = ref(false) // Assuming these might exist or should be managed
+const showPaymentSection = ref(false)
+
+const toggleDiscountSection = () => {
+  showDiscountSection.value = !showDiscountSection.value
+}
 
 const emit = defineEmits(['update:modelValue'])
 
@@ -27,18 +42,41 @@ const toggleSettle = () => {
   if (props.modelValue.settledInIsland) {
     props.modelValue.isCredit = false
     props.modelValue.registerPaymentNow = false
+    props.modelValue.isGlobalCourtesy = false // New
     // Default to first branch if not set
     if (!props.modelValue.settledIslandName) {
       props.modelValue.settledIslandName = props.branches[0] || 'San Marino'
     }
   }
 }
+
+// Watch for changes in Global Courtesy to trigger side effects
+watch(() => props.modelValue.isGlobalCourtesy, (newVal: boolean | undefined) => {
+  if (newVal) {
+    // If courtesy is activated, disable conflicting options
+    props.modelValue.isCredit = false
+    props.modelValue.registerPaymentNow = false
+    props.modelValue.settledInIsland = false
+    props.modelValue.globalDiscountPercentage = 100
+  } else {
+    // If deactivated, reset percentage if it was exactly 100 (auto-set by courtesy)
+    if (props.modelValue.globalDiscountPercentage === 100) {
+      props.modelValue.globalDiscountPercentage = 0
+    }
+  }
+})
 </script>
 
 <template>
   <div class="payment-selector">
+    <!-- Courtesy Mode Alert -->
+    <div v-if="props.modelValue.isGlobalCourtesy" class="info-box courtesy-alert">
+      <i class="fa-solid fa-gift"></i>
+      <p><strong>Cortesía Global Activa:</strong> El total del pedido es $0.00. No se requiere registro de cobros.</p>
+    </div>
+
     <!-- Payment Options Grid -->
-    <div class="payment-options-row">
+    <div v-if="!props.modelValue.isGlobalCourtesy" class="payment-options-row">
       <!-- Credit Toggle -->
       <div 
         class="payment-toggle credit" 
@@ -84,8 +122,8 @@ const toggleSettle = () => {
       <!-- Settle in Island Toggle -->
       <div 
         class="payment-toggle purple" 
-        :class="{ active: props.modelValue.settledInIsland }"
-        @click="props.modelValue.settledInIsland = !props.modelValue.settledInIsland; toggleSettle()"
+        :class="{ active: props.modelValue.settledInIsland, disabled: props.modelValue.isGlobalCourtesy }"
+        @click="!props.modelValue.isGlobalCourtesy && (props.modelValue.settledInIsland = !props.modelValue.settledInIsland); toggleSettle()"
       >
         <div class="toggle-icon">
           <i class="fa-solid fa-store"></i>
@@ -97,9 +135,28 @@ const toggleSettle = () => {
         <input 
           type="checkbox" 
           v-model="props.modelValue.settledInIsland" 
+          :disabled="props.modelValue.isGlobalCourtesy"
           @change="toggleSettle"
           @click.stop
         />
+      </div>
+
+      <!-- Discount / Courtesy Toggle -->
+      <div 
+        class="payment-toggle discount" 
+        :class="{ active: props.modelValue.isGlobalCourtesy || (props.modelValue.globalDiscountPercentage || 0) > 0 }"
+        @click="toggleDiscountSection()"
+      >
+        <div class="toggle-icon">
+          <i class="fa-solid fa-tags"></i>
+        </div>
+        <div class="toggle-content">
+          <span class="toggle-title">Descuento / Cortesía</span>
+          <span class="toggle-desc">{{ props.modelValue.isGlobalCourtesy ? 'Cortesía 100%' : 'Ajustar valor' }}</span>
+        </div>
+        <div class="active-indicator" v-if="props.modelValue.isGlobalCourtesy || (props.modelValue.globalDiscountPercentage || 0) > 0">
+           <i class="fas fa-check-circle"></i>
+        </div>
       </div>
     </div>
 
@@ -124,12 +181,46 @@ const toggleSettle = () => {
       </div>
     </div>
     
-    <div v-if="props.modelValue.registerPaymentNow" class="payment-fields-section detail-section">
+    <div v-if="props.modelValue.registerPaymentNow && !props.modelValue.isGlobalCourtesy" class="payment-fields-section detail-section">
       <h3>Detalles del Pago</h3>
       <PaymentFields 
         v-model="props.modelValue.paymentDetails" 
         :totalToPay="props.modelValue.totalValue"
       />
+    </div>
+
+    <!-- Discount Detail Section -->
+    <div v-if="showDiscountSection" class="discount-detail-section detail-section">
+      <h3>Ajuste de Descuento</h3>
+      
+      <div class="discount-controls">
+        <label class="courtesy-switch">
+          <input 
+            type="checkbox" 
+            v-model="props.modelValue.isGlobalCourtesy" 
+          />
+          <span class="slider"></span>
+          <span class="switch-label">Modo Cortesía (100% Descuento)</span>
+        </label>
+
+        <div class="divider"></div>
+
+        <div class="form-group discount-percent">
+          <label>Porcentaje de Descuento Manual</label>
+          <div class="input-with-unit">
+            <input 
+              type="number" 
+              v-model.number="props.modelValue.globalDiscountPercentage" 
+              min="0" 
+              max="100"
+              :disabled="props.modelValue.isGlobalCourtesy"
+              placeholder="0"
+            />
+            <span class="unit">%</span>
+          </div>
+          <p class="hint">Se aplicará globalmente a todos los productos.</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -251,6 +342,152 @@ const toggleSettle = () => {
       color: $NICOLE-PURPLE;
     }
   }
+
+  &.discount.active {
+    border-color: #f59e0b;
+    background: rgba(#f59e0b, 0.03);
+
+    .toggle-icon {
+      background: #f59e0b;
+      color: white;
+    }
+
+    .toggle-title {
+      color: #b45309;
+    }
+  }
+
+  &.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: $gray-50;
+    pointer-events: none;
+  }
+
+  .active-indicator {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    color: #f59e0b;
+    font-size: 1.2rem;
+  }
+}
+
+.discount-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid $border-light;
+
+  .courtesy-switch {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    user-select: none;
+
+    input {
+      display: none;
+    }
+
+    .slider {
+      width: 44px;
+      height: 24px;
+      background: #e2e8f0;
+      border-radius: 20px;
+      position: relative;
+      transition: all 0.3s;
+
+      &::before {
+        content: '';
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        background: white;
+        border-radius: 50%;
+        top: 3px;
+        left: 3px;
+        transition: all 0.3s;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+    }
+
+    input:checked+.slider {
+      background: $success;
+
+      &::before {
+        transform: translateX(20px);
+      }
+    }
+
+    .switch-label {
+      font-weight: 700;
+      color: $text-dark;
+      font-size: 1rem;
+    }
+  }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(to right, $border-light, transparent);
+  }
+
+  .discount-percent {
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      color: $text-light;
+      font-size: 0.9rem;
+    }
+
+    .input-with-unit {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 120px;
+      position: relative;
+
+      input {
+        width: 100%;
+        padding: 0.75rem 2rem 0.75rem 1rem;
+        border: 2px solid $border-light;
+        border-radius: 10px;
+        font-weight: 700;
+        color: $NICOLE-PURPLE;
+        font-size: 1.1rem;
+        transition: all 0.2s;
+
+        &:focus {
+          border-color: $NICOLE-PURPLE;
+          background: white;
+        }
+
+        &:disabled {
+          background: #f8fafc;
+          color: #94a3b8;
+          border-color: #e2e8f0;
+        }
+      }
+
+      .unit {
+        position: absolute;
+        right: 1rem;
+        font-weight: 800;
+        color: $text-light;
+      }
+    }
+
+    .hint {
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: #7c3aed;
+      font-weight: 500;
+    }
+  }
 }
 
 .detail-section {
@@ -315,6 +552,18 @@ const toggleSettle = () => {
 
     i {
       color: #dc2626;
+    }
+  }
+
+  &.courtesy-alert {
+    background: rgba($success, 0.05);
+    border-color: rgba($success, 0.2);
+    color: darken-color($success, 10%);
+    margin-bottom: 1.5rem;
+
+    i {
+      color: $success;
+      font-size: 1.4rem;
     }
   }
 }

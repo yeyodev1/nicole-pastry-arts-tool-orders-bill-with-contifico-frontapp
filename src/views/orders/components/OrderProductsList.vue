@@ -3,8 +3,33 @@ import { computed } from 'vue'
 
 const props = defineProps<{
   products: any[],
-  computedTotal: number
+  computedTotal: number,
+  globalDiscountPercentage?: number,
+  isGlobalCourtesy?: boolean,
+  deliveryValue?: number
 }>()
+
+const subtotalBruto = computed(() => {
+  return props.products.reduce((sum, p) => sum + (p.price * p.quantity), 0)
+})
+
+const ivaTotal = computed(() => {
+  // Rough estimate based on products (excluding delivery which is usually 0%)
+  return props.products.reduce((sum, p) => {
+    const isDelivery = p.name && p.name.toLowerCase().includes('delivery')
+    if (isDelivery) return sum
+
+    let discount = p.isCourtesy ? 100 : 0
+    if (props.isGlobalCourtesy) {
+      discount = 100
+    } else if (props.globalDiscountPercentage && props.globalDiscountPercentage > 0 && discount < 100) {
+      discount = props.globalDiscountPercentage
+    }
+
+    const itemTotal = (p.price * p.quantity) * (1 - discount / 100)
+    return sum + (itemTotal * 0.15)
+  }, 0)
+})
 </script>
 
 <template>
@@ -22,7 +47,10 @@ const props = defineProps<{
          </thead>
          <tbody>
            <tr v-for="(item, idx) in products" :key="idx">
-             <td>{{ item.name }}</td>
+             <td>
+               {{ item.name }}
+               <span v-if="item.isCourtesy" class="badge-courtesy">Cortesía</span>
+             </td>
              <td class="text-right">${{ item.price.toFixed(2) }}</td>
              <td class="text-center">{{ item.quantity }}</td>
              <td class="text-right font-bold">${{ (item.price * item.quantity).toFixed(2) }}</td>
@@ -30,7 +58,25 @@ const props = defineProps<{
          </tbody>
          <tfoot>
            <tr>
-             <td colspan="3" class="text-right label-total">Total:</td>
+             <td colspan="3" class="text-right label-sub">Subtotal Bruto:</td>
+             <td class="text-right">${{ subtotalBruto.toFixed(2) }}</td>
+           </tr>
+           <tr v-if="isGlobalCourtesy || (globalDiscountPercentage || 0) > 0">
+             <td colspan="3" class="text-right label-sub text-success">Descuento Global:</td>
+             <td class="text-right text-success">
+               -{{ isGlobalCourtesy ? '100%' : `${globalDiscountPercentage}%` }}
+             </td>
+           </tr>
+           <tr v-if="deliveryValue">
+             <td colspan="3" class="text-right label-sub">Envío:</td>
+             <td class="text-right">${{ deliveryValue.toFixed(2) }}</td>
+           </tr>
+           <tr>
+             <td colspan="3" class="text-right label-sub">IVA (15%):</td>
+             <td class="text-right">${{ ivaTotal.toFixed(2) }}</td>
+           </tr>
+           <tr>
+             <td colspan="3" class="text-right label-total">Total del Pedido:</td>
              <td class="text-right value-total">${{ computedTotal.toFixed(2) }}</td>
            </tr>
          </tfoot>
@@ -92,7 +138,7 @@ const props = defineProps<{
 
       td {
         border-top: 2px solid $border-light;
-        padding: 1rem 0.75rem;
+        padding: 0.75rem;
         font-weight: 700;
       }
 
@@ -102,6 +148,27 @@ const props = defineProps<{
       }
     }
   }
+}
+
+.badge-courtesy {
+  background-color: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-left: 6px;
+  vertical-align: middle;
+  font-weight: 700;
+}
+
+.text-success {
+  color: #15803d !important;
+}
+
+.label-sub {
+  font-size: 0.85rem;
+  color: $text-light;
+  font-weight: 600;
 }
 
 .text-right {
