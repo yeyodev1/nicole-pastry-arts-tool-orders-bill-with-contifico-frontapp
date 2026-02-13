@@ -1,12 +1,61 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted, computed } from 'vue'
 import type { OrderFormData, CartItem } from '@/types/order'
 
 const props = defineProps<{
   isOpen: boolean
   orderData: OrderFormData
   cart: CartItem[]
+  originalOrder?: OrderFormData | null // New prop
 }>()
+
+// --- Change Detection Logic ---
+const changes = computed(() => {
+  if (!props.originalOrder) return []
+  const list = []
+
+  // 1. Date & Time
+  if (props.orderData.deliveryDate !== props.originalOrder.deliveryDate) {
+    list.push({ label: 'Fecha de Entrega', from: props.originalOrder.deliveryDate, to: props.orderData.deliveryDate })
+  }
+  if (props.orderData.deliveryTime !== props.originalOrder.deliveryTime) {
+    list.push({ label: 'Hora de Entrega', from: props.originalOrder.deliveryTime, to: props.orderData.deliveryTime })
+  }
+
+  // 2. Value
+  if (props.orderData.totalValue !== props.originalOrder.totalValue) {
+    list.push({
+      label: 'Total del Pedido',
+      from: formatMoney(props.originalOrder.totalValue || 0),
+      to: formatMoney(props.orderData.totalValue || 0),
+      isValue: true
+    })
+  }
+
+  // 3. Products (Simplified check)
+  // A better check would be deep comparison, but length + value usually covers most "quick edits"
+  // Let's rely on total value change for product changes mostly, 
+  // but we can check if product count changed.
+  // actually, let's just show a generic "Productos modificados" if total changed but not products length?
+  // Or just rely on total value. 
+
+  return list
+})
+
+// --- Payment Logic ---
+const totalPaidHistory = computed(() => {
+  return (props.orderData.payments || []).reduce((sum, p) => sum + Number(p.monto), 0)
+})
+
+const currentPaymentAmount = computed(() => {
+  return props.orderData.registerPaymentNow ? Number(props.orderData.paymentDetails?.monto || 0) : 0
+})
+
+const totalPaid = computed(() => totalPaidHistory.value + currentPaymentAmount.value)
+
+const outstandingBalance = computed(() => {
+  return (props.orderData.totalValue || 0) - totalPaid.value
+})
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -89,6 +138,20 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
            <strong>{{ orderData.deliveryDate }} - {{ orderData.deliveryTime }}</strong>
          </div>
 
+         <div v-if="changes.length > 0" class="changes-section">
+           <div class="changes-header">
+             <i class="fa-solid fa-pen-to-square"></i> Cambios Realizados
+           </div>
+           <div v-for="(change, i) in changes" :key="i" class="change-item">
+             <span class="change-label">{{ change.label }}:</span>
+             <div class="change-values">
+               <span class="val-from">{{ change.from }}</span>
+               <i class="fa-solid fa-arrow-right-long"></i>
+               <span class="val-to">{{ change.to }}</span>
+             </div>
+           </div>
+         </div>
+
          <div class="divider"></div>
 
          <div class="row header">
@@ -126,10 +189,14 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
          
          <div class="divider"></div>
          
+         <div class="divider"></div>
+         
          <div class="row highlight" :class="{ 'is-credit': orderData.isCredit, 'is-settled': orderData.settledInIsland }">
             <span v-if="orderData.isCredit">Venta a Crédito:</span>
             <span v-else-if="orderData.settledInIsland">Facturado en Isla:</span>
-            <span v-else>Pago Inicial:</span>
+            <span v-else>
+               {{ originalOrder ? 'Nuevo Pago / Abono:' : 'Pago Inicial:' }}
+            </span>
 
             <strong v-if="orderData.isCredit" class="text-danger">
                {{ formatMoney(orderData.totalValue || 0) }} (Pendiente)
@@ -138,11 +205,32 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
                {{ formatMoney(orderData.totalValue || 0) }} ({{ orderData.settledIslandName }})
             </strong>
             <strong v-else :class="{ 'text-success': orderData.registerPaymentNow, 'text-warning': !orderData.registerPaymentNow }">
-               {{ orderData.registerPaymentNow ? formatMoney(Number(orderData.paymentDetails?.monto || 0)) : '$0.00 (Por confirmar)' }}
+               {{ orderData.registerPaymentNow ? formatMoney(currentPaymentAmount) : '$0.00 (Por confirmar)' }}
             </strong>
          </div>
+
+         <!-- Payment Summary (History + New) -->
+         <div v-if="originalOrder && (totalPaidHistory > 0 || currentPaymentAmount > 0)" class="payment-summary-box">
+            <div class="row small-row">
+               <span>Historial Pagado:</span>
+               <span>{{ formatMoney(totalPaidHistory) }}</span>
+            </div>
+            <div class="row small-row" v-if="currentPaymentAmount > 0">
+               <span>+ Nuevo Pago:</span>
+               <span>{{ formatMoney(currentPaymentAmount) }}</span>
+            </div>
+            <div class="divider-dashed"></div>
+            <div class="row total-paid-row">
+               <span>Total Pagado:</span>
+               <strong :class="outstandingBalance <= 0.01 ? 'text-success' : ''">{{ formatMoney(totalPaid) }}</strong>
+            </div>
+            <div class="row pending-row" v-if="outstandingBalance > 0.01">
+               <span>Saldo Pendiente:</span>
+               <strong class="text-danger">{{ formatMoney(outstandingBalance) }}</strong>
+            </div>
+         </div>
          
-         <div class="row small-text" v-if="orderData.registerPaymentNow && Number(orderData.paymentDetails?.monto || 0) < (orderData.totalValue || 0)">
+         <div class="row small-text" v-else-if="orderData.registerPaymentNow && Number(orderData.paymentDetails?.monto || 0) < (orderData.totalValue || 0)">
             <span>Saldo Pendiente:</span>
             <span>{{ formatMoney((orderData.totalValue || 0) - Number(orderData.paymentDetails?.monto || 0)) }}</span>
          </div>
@@ -282,6 +370,92 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
       font-size: 0.8rem;
       text-transform: uppercase;
       font-weight: 700;
+    }
+  }
+
+  /* Changes Section */
+  .changes-section {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+
+    .changes-header {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #1e40af;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .change-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      margin-bottom: 0.25rem;
+
+      .change-label {
+        color: #1e3a8a;
+      }
+
+      .change-values {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+
+        .val-from {
+          color: #64748b;
+          text-decoration: line-through;
+        }
+
+        .val-to {
+          font-weight: 700;
+          color: #1e40af;
+        }
+      }
+    }
+  }
+
+  /* Payment Summary Box */
+  .payment-summary-box {
+    margin-top: 0.5rem;
+    background: white;
+    border: 1px solid $border-light;
+    border-radius: 8px;
+    padding: 0.75rem;
+
+    .small-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: $text-light;
+      margin-bottom: 0.25rem;
+    }
+
+    .divider-dashed {
+      border-top: 1px dashed $border-light;
+      margin: 0.5rem 0;
+    }
+
+    .total-paid-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: $text-dark;
+      margin-bottom: 0.25rem;
+    }
+
+    .pending-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #dc2626;
     }
   }
 

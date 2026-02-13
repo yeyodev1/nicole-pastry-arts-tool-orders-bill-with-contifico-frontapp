@@ -24,6 +24,7 @@ const generatedWhatsAppMessage = ref('')
 const isCourtesyMode = ref(false)
 const isEditMode = ref(false)
 const editingOrderId = ref<string | null>(null)
+const originalOrder = ref<OrderFormData | null>(null)
 
 // Form Data - Strictly Typed
 const formData = reactive<OrderFormData>({
@@ -143,6 +144,12 @@ const updateQuantity = (index: number, change: number) => {
     if (item.quantity < 1) {
       removeFromCart(index)
     }
+  }
+}
+
+const toggleItemCourtesy = (index: number) => {
+  if (cart.value[index]) {
+    cart.value[index].isCourtesy = !cart.value[index].isCourtesy
   }
 }
 
@@ -316,6 +323,9 @@ onMounted(async () => {
         payments: order.payments || []
       })
 
+      // Store initial state for change detection (Deep Clone)
+      originalOrder.value = JSON.parse(JSON.stringify(formData))
+
       // Map back to cart
       cart.value = order.products.map((p: any) => ({
         id: p.contifico_id,
@@ -388,6 +398,7 @@ onMounted(async () => {
           :is-global-courtesy="formData.isGlobalCourtesy"
           @remove="removeFromCart"
           @update-quantity="updateQuantity"
+          @toggle-courtesy="toggleItemCourtesy"
           @submit="onCartSubmit"
         />
       </section>
@@ -397,6 +408,7 @@ onMounted(async () => {
     <OrderConfirmationModal
       :is-open="showConfirmationModal"
       :order-data="formData"
+      :original-order="originalOrder"
       :cart="cart"
       @close="showConfirmationModal = false"
       @confirm="executeOrderAction"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { OrderFormData } from '@/types/order'
 import PaymentFields from './PaymentFields.vue'
-import { ref, watch, type PropType } from 'vue'
+import { ref, watch, type PropType, computed } from 'vue'
 
 const props = defineProps({
   modelValue: {
@@ -64,6 +64,12 @@ watch(() => props.modelValue.isGlobalCourtesy, (newVal: boolean | undefined) => 
       props.modelValue.globalDiscountPercentage = 0
     }
   }
+})
+
+const amountToPay = computed(() => {
+  if (!props.modelValue.totalValue) return 0
+  const existingPayments = (props.modelValue.payments || []).reduce((sum, p) => sum + Number(p.monto), 0)
+  return Math.max(0, props.modelValue.totalValue - existingPayments)
 })
 </script>
 
@@ -185,7 +191,7 @@ watch(() => props.modelValue.isGlobalCourtesy, (newVal: boolean | undefined) => 
       <h3>Detalles del Pago</h3>
       <PaymentFields 
         v-model="props.modelValue.paymentDetails" 
-        :totalToPay="props.modelValue.totalValue"
+        :totalToPay="amountToPay"
       />
     </div>
 

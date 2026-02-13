@@ -14,6 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'remove', index: number): void
   (e: 'update-quantity', index: number, change: number): void
+  (e: 'toggle-courtesy', index: number): void // New emit
   (e: 'submit'): void
 }>()
 
@@ -79,10 +80,20 @@ const onDecrease = (item: CartItem, index: number) => {
     <div class="cart-items">
       <div v-for="(item, index) in cart" :key="index" class="cart-item">
         <div class="item-details">
-          <span class="item-name">
-            {{ item.name }}
-            <span v-if="item.isCourtesy" class="badge-courtesy">Cortesía</span>
-          </span>
+          <div class="name-row">
+            <span class="item-name">
+              {{ item.name }}
+              <span v-if="item.isCourtesy" class="badge-courtesy">Cortesía</span>
+            </span>
+            <button 
+              class="btn-toggle-courtesy" 
+              :class="{ active: item.isCourtesy }"
+              @click="$emit('toggle-courtesy', index)"
+              title="Alternar cortesía (100% descuento)"
+            >
+              <i class="fa-solid fa-gift"></i>
+            </button>
+          </div>
           <span class="item-price" v-if="!item.isCourtesy">${{ item.price.toFixed(2) }}</span>
           <span class="item-price free" v-else>$0.00</span>
         </div>
@@ -204,6 +215,39 @@ const onDecrease = (item: CartItem, index: number) => {
         margin-left: 6px;
         vertical-align: middle;
         font-weight: 700;
+      }
+    }
+
+    .name-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .btn-toggle-courtesy {
+      border: none;
+      background: #f1f5f9;
+      color: #94a3b8;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+
+      &:hover {
+        background: #e2e8f0;
+        color: #64748b;
+      }
+
+      &.active {
+        background: #e0f2fe;
+        color: #0369a1;
+        box-shadow: 0 2px 4px rgba(3, 105, 161, 0.2);
       }
     }
 
