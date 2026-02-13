@@ -45,6 +45,7 @@ export interface POSOrder {
   settledInIsland?: boolean;
   isGlobalCourtesy?: boolean;
   globalDiscountPercentage?: number;
+  branch?: string;
 }
 
 export interface POSFilters {

@@ -6,12 +6,13 @@ import DeliveryModal from './components/DeliveryModal.vue'
 import ToastNotification from '@/components/ToastNotification.vue'
 import POSFilterBar, { type POSFilterMode } from './components/POSFilterBar.vue'
 import { formatECT } from '@/utils/dateUtils'
+import { useOrderExport } from '@/composables/useOrderExport'
 
 const isLoading = ref(false)
 const orders = ref<POSOrder[]>([])
 const pendingDispatchesForBulk = ref<any[]>([])
 const selectedBranch = ref('Mall del Sol')
-const branches = ['San Marino', 'Mall del Sol', 'Centro de Producción']
+const branches = ['Todas las sucursales', 'San Marino', 'Mall del Sol', 'Centro de Producción']
 
 // POS-Specific Filter States
 const filterMode = ref<POSFilterMode>('today')
@@ -108,6 +109,22 @@ const handleBulkSuccess = () => {
   fetchData();
 }
 
+// --- EXPORT LOGIC ---
+const { isExporting, exportDispatchOrder } = useOrderExport()
+
+const handleExportDispatch = async () => {
+  if (orders.value.length === 0) {
+    toast.value = { show: true, message: 'No hay pedidos para exportar', type: 'info' }
+    return
+  }
+  try {
+    await exportDispatchOrder(orders.value)
+    toast.value = { show: true, message: 'Reporte de Entregas exportado', type: 'success' }
+  } catch (err) {
+    toast.value = { show: true, message: 'Error al exportar reporte', type: 'error' }
+  }
+}
+
 // Helpers for Status Styling
 const getStatusLabel = (order: POSOrder) => {
   if (order.posStatus === 'DELIVERED') return 'Entregado'
@@ -161,13 +178,19 @@ onMounted(() => {
                 </div>
                 <div class="banner-text">
                     <span class="label">Operando en</span>
-                    <span class="branch-name">{{ selectedBranch }}</span>
+                    <span class="branch-name">{{ selectedBranch === 'Todas las sucursales' ? 'Global (Todas)' : selectedBranch }}</span>
                 </div>
-                <div class="banner-tag">ACTIVO</div>
+                <div class="banner-tag">{{ selectedBranch === 'Todas las sucursales' ? 'REPORTES' : 'ACTIVO' }}</div>
             </div>
         </div>
         
         <div class="controls">
+            <button class="btn-export-dispatch" @click="handleExportDispatch" :disabled="isExporting || orders.length === 0">
+                <i class="fas fa-file-excel"></i> Exportar Reporte de Entrega
+            </button>
+
+            <div class="separator"></div>
+
             <button v-if="pendingDispatchesForBulk.length > 0" class="btn-bulk" @click="showBulkModal = true">
                 <i class="fa-solid fa-boxes-stacked"></i> Recepción Masiva
             </button>
@@ -208,7 +231,9 @@ onMounted(() => {
       <div v-else class="view-content">
         <div class="info-bar" v-if="orders.length > 0">
            <span>
-             <i class="fa-solid fa-circle-check"></i> Gestión de <strong>{{ selectedBranch }}</strong>: Pedidos listos para entrega al cliente.
+             <i class="fa-solid fa-circle-check"></i> 
+             <strong v-if="selectedBranch === 'Todas las sucursales'">Reporte Unificado de todas las sucursales</strong>
+             <template v-else>Gestión de <strong>{{ selectedBranch }}</strong>: Pedidos listos para entrega al cliente.</template>
            </span>
         </div>
 
@@ -239,6 +264,9 @@ onMounted(() => {
                            <i v-else-if="order.posStatus === 'IN_TRANSIT'" class="fa-solid fa-truck-fast"></i>
                            <i v-else class="fa-solid fa-clock"></i>
                            <span>{{ getStatusLabel(order) }}</span>
+                       </div>
+                       <div v-if="selectedBranch === 'Todas las sucursales'" class="branch-mini-pill">
+                           <i class="fa-solid fa-map-location-dot"></i> {{ order.branch }}
                        </div>
                    </div>
                    <div class="header-right">
@@ -339,8 +367,8 @@ onMounted(() => {
     <div class="floating-location-badge" :class="selectedBranch.toLowerCase().replace(/\s+/g, '-')">
         <div class="badge-icon"><i class="fa-solid fa-store"></i></div>
         <div class="badge-content">
-            <span class="badge-label">Sucursal</span>
-            <span class="badge-name">{{ selectedBranch }}</span>
+            <span class="badge-label">Vista actual</span>
+            <span class="badge-name">{{ selectedBranch === 'Todas las sucursales' ? 'Todas' : selectedBranch }}</span>
         </div>
     </div>
   </div>
@@ -566,6 +594,44 @@ $desktop: 1024px;
       flex-wrap: wrap;
       align-items: center;
       justify-content: flex-end;
+    }
+  }
+
+  .btn-export-dispatch {
+    background: #F0FDF4; // Light Green background
+    color: #16A34A;
+    border: 1px solid #DCFCE7;
+    padding: 0.8rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+    width: 100%;
+    font-size: 0.95rem;
+
+    @include from-tablet {
+      width: auto;
+      padding: 0.6rem 1.2rem;
+      font-size: 0.85rem;
+    }
+
+    &:hover:not(:disabled) {
+      background: #DCFCE7;
+      border-color: #BBF7D0;
+      transform: translateY(-1px);
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    i {
+      font-size: 1rem;
     }
   }
 
@@ -816,6 +882,20 @@ $desktop: 1024px;
       font-weight: 700;
       text-transform: uppercase;
       color: #475569;
+    }
+
+    .branch-mini-pill {
+      margin-top: 0.2rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
     }
   }
 
