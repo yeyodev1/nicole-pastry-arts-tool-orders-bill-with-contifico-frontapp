@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { OrderFormData } from '@/types/order'
 import PaymentFields from './PaymentFields.vue'
-import { ref, watch } from 'vue'
+import { ref, watch, type PropType } from 'vue'
 
 const props = defineProps({
   modelValue: {
@@ -9,7 +9,7 @@ const props = defineProps({
     required: true
   },
   branches: {
-    type: Array as () => string[],
+    type: Array as PropType<readonly string[]>,
     required: true
   }
 })
