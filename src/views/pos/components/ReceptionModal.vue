@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import HoldConfirmButton from '@/components/ui/HoldConfirmButton.vue'
+import { formatECT } from '@/utils/dateUtils'
 
 const props = defineProps<{
   isOpen: boolean
@@ -67,7 +69,7 @@ const handleSubmit = () => {
             </div>
             <div class="info-group">
                 <label><i class="fa-solid fa-calendar"></i> Enviado el</label>
-                <span>{{ new Date(dispatch.reportedAt).toLocaleString() }}</span>
+                <span>{{ formatECT(dispatch.reportedAt) }}</span>
             </div>
           </div>
 
@@ -125,9 +127,12 @@ const handleSubmit = () => {
 
         <div class="modal-actions">
           <button class="btn-cancel" @click="emit('close')">Cancelar</button>
-          <button class="btn-confirm" @click="handleSubmit">
-            <i class="fa-solid fa-check"></i> Confirmar Recepción
-          </button>
+          <div class="hold-btn-container">
+            <HoldConfirmButton 
+                label="Confirmar Recepción"
+                @confirmed="handleSubmit"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -396,22 +401,19 @@ const handleSubmit = () => {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 1rem;
   padding: 1.5rem;
   border-top: 1px solid $border-light;
   background: #fafbfc;
   border-radius: 0 0 16px 16px;
 
-  button {
-    padding: 0.8rem 2rem;
+  button.btn-cancel {
+    padding: 0.8rem 1.5rem;
     border-radius: 8px;
     font-weight: 600;
     font-size: 1rem;
     cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .btn-cancel {
     background: white;
     border: 1px solid $border-light;
     color: $text-light;
@@ -422,20 +424,9 @@ const handleSubmit = () => {
     }
   }
 
-  .btn-confirm {
-    background: $NICOLE-PURPLE;
-    border: none;
-    color: white;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.25);
-
-    &:hover {
-      background: $purple-hover;
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba($NICOLE-PURPLE, 0.35);
-    }
+  .hold-btn-container {
+    flex: 1;
+    max-width: 300px;
   }
 }
 </style>
