@@ -167,7 +167,6 @@ const selectTime = (time: string) => {
         <CustomDatePicker
           label="Fecha de Entrega"
           v-model="props.modelValue.deliveryDate"
-          :minDate="minDate"
           required
         />
       </div>

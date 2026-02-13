@@ -1,13 +1,40 @@
 <script setup lang="ts">
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useToast } from '@/composables/useToast'
+
 const props = defineProps<{
   isOpen: boolean
   message: string
+  orderId?: string | null
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'send'): void
 }>()
+
+const router = useRouter()
+const { success } = useToast()
+
+const handleCopy = async () => {
+  try {
+    await navigator.clipboard.writeText(props.message)
+    success('Mensaje copiado al portapapeles')
+  } catch (err) {
+    console.error('Failed to copy text: ', err)
+  }
+}
+
+const goToOrderDetails = () => {
+  if (props.orderId) {
+    router.push(`/orders/${props.orderId}`)
+  }
+}
+
+const handleSend = () => {
+  emit('send')
+}
 </script>
 
 <template>
@@ -18,40 +45,56 @@ const emit = defineEmits<{
       <div class="wa-header">
          <div class="wa-profile">
             <div class="wa-avatar">
-              <i class="fab fa-whatsapp"></i>
+              <i class="fa-brands fa-whatsapp"></i>
             </div>
             <div class="wa-info">
-               <h3>Resumen del Pedido</h3>
-               <span>Generado autom.</span>
+               <h3>Pedido Creado con Éxito</h3>
+               <span>Listo para enviar</span>
             </div>
          </div>
          <button @click="emit('close')" class="close-btn" title="Cerrar">
-           <i class="fas fa-times"></i>
+           <i class="fa-solid fa-xmark"></i>
          </button>
       </div>
 
       <!-- WA Body -->
       <div class="wa-body">
+         <div class="success-banner">
+            <i class="fa-solid fa-circle-check"></i>
+            <p>¡El pedido #{{ orderId?.slice(-6) || 'Nuevo' }} se ha guardado correctamente!</p>
+         </div>
+
          <div class="date-divider">
-            <span>HOY</span>
+            <span>Mensaje Generado</span>
          </div>
          
          <div class="message-bubble sent">
             <pre>{{ message }}</pre>
             <div class="msg-meta">
                <span>{{ new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
-               <i class="fas fa-check-double"></i>
+               <i class="fa-solid fa-check-double"></i>
             </div>
          </div>
+
+
       </div>
 
       <!-- WA Footer Actions -->
       <div class="wa-footer">
-          <p class="hint">
-            <i class="fas fa-check-circle"></i> Texto copiado al portapapeles
-          </p>
-          <button @click="emit('send')" class="btn-send-wa">
-             Ir a WhatsApp <i class="fas fa-external-link-alt"></i>
+          <button @click="handleSend" class="btn-send-wa">
+             Enviar por WhatsApp <i class="fa-brands fa-whatsapp"></i>
+          </button>
+          
+          <button v-if="orderId" class="btn-view-order" @click="goToOrderDetails">
+             <i class="fa-solid fa-eye"></i> Ver Pedido
+          </button>
+
+          <button class="btn-copy-order" @click="handleCopy">
+             <i class="fa-regular fa-copy"></i> Copiar Texto
+          </button>
+          
+          <button @click="emit('close')" class="btn-secondary">
+             Cerrar y Crear Otro
           </button>
       </div>
     
@@ -76,25 +119,23 @@ const emit = defineEmits<{
 
 .modal.whatsapp-theme {
   background: #E5DDD5;
-  /* WA Background */
   width: 90%;
-  max-width: 450px;
+  max-width: 480px;
   border-radius: 20px;
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: slideUp 0.3s ease-out;
-  height: 80vh;
-  max-height: 700px;
+  height: auto;
+  max-height: 85vh;
 }
 
 /* Header */
 .wa-header {
   background: #008069;
-  /* WA Header Green */
   color: white;
-  padding: 0.8rem 1rem;
+  padding: 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -107,8 +148,8 @@ const emit = defineEmits<{
     gap: 0.8rem;
 
     .wa-avatar {
-      width: 40px;
-      height: 40px;
+      width: 42px;
+      height: 42px;
       background: white;
       border-radius: 50%;
       display: flex;
@@ -119,16 +160,18 @@ const emit = defineEmits<{
     }
 
     .wa-info {
+      display: flex;
+      flex-direction: column;
+
       h3 {
         margin: 0;
-        font-size: 1rem;
+        font-size: 1.05rem;
         font-weight: 600;
       }
 
       span {
-        font-size: 0.75rem;
-        opacity: 0.8;
-        display: block;
+        font-size: 0.8rem;
+        opacity: 0.85;
       }
     }
   }
@@ -137,7 +180,7 @@ const emit = defineEmits<{
     background: none;
     border: none;
     color: white;
-    font-size: 1.2rem;
+    font-size: 1.4rem;
     cursor: pointer;
     padding: 0.5rem;
 
@@ -154,11 +197,9 @@ const emit = defineEmits<{
   overflow-y: auto;
   position: relative;
   background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
-  /* Subtle pattern if possible, or just color */
   background-blend-mode: overlay;
   background-color: #E5DDD5;
 
-  /* Scrollbar styling */
   &::-webkit-scrollbar {
     width: 6px;
   }
@@ -168,38 +209,62 @@ const emit = defineEmits<{
     border-radius: 3px;
   }
 
+  .success-banner {
+    background: #dcf8c6;
+    border: 1px solid #c8e6c9;
+    color: #2e7d32;
+    padding: 0.75rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+
+    i {
+      font-size: 1.25rem;
+    }
+
+    p {
+      margin: 0;
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+  }
+
   .date-divider {
     text-align: center;
     margin-bottom: 1rem;
 
     span {
-      background: #badcff;
-      color: #444;
-      padding: 0.3rem 0.6rem;
+      background: #e1f5fe;
+      color: #0277bd;
+      padding: 0.3rem 0.8rem;
       border-radius: 8px;
       font-size: 0.75rem;
       font-weight: 600;
       box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+      text-transform: uppercase;
     }
   }
 
   .message-bubble {
     background: white;
-    padding: 0.6rem 0.8rem;
+    padding: 0.8rem 1rem;
     border-radius: 8px;
-    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
-    max-width: 90%;
-    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    max-width: 95%;
+    margin: 0 auto 1.5rem auto;
     position: relative;
     font-size: 0.9rem;
     color: #111;
-    line-height: 1.4;
+    line-height: 1.5;
 
     &.sent {
-      background: #dcf8c6;
-      margin-left: auto;
-      /* Push right */
-      border-top-right-radius: 0;
+      border-top-left-radius: 0; // Look like a received message actually for preview
+      // Or if we want it to look like user is sending:
+      // background: #dcf8c6; margin-left: auto; border-top-right-radius: 0;
+      // Let's keep white as "Draft"
     }
 
     pre {
@@ -207,7 +272,6 @@ const emit = defineEmits<{
       font-family: inherit;
       margin: 0;
       padding-bottom: 0.5rem;
-      /* Space for meta */
     }
 
     .msg-meta {
@@ -215,13 +279,54 @@ const emit = defineEmits<{
       justify-content: flex-end;
       align-items: center;
       gap: 0.3rem;
-      font-size: 0.65rem;
+      font-size: 0.7rem;
       color: rgba(0, 0, 0, 0.45);
-      margin-top: -0.2rem;
 
       i {
         color: #34B7F1;
-        /* WA Blue ticks */
+      }
+    }
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+
+    button {
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+
+      &.btn-copy {
+        background: white;
+        border-color: #ddd;
+        color: #555;
+
+        &:hover {
+          background: #f5f5f5;
+          color: #333;
+        }
+      }
+
+      &.btn-details {
+        background: white;
+        border-color: #ddd;
+        color: $NICOLE-PURPLE;
+
+        &:hover {
+          background: #fdf2f8;
+          border-color: $NICOLE-PURPLE;
+        }
       }
     }
   }
@@ -230,40 +335,28 @@ const emit = defineEmits<{
 /* Footer */
 .wa-footer {
   background: #f0f0f0;
-  padding: 0.8rem 1rem;
+  padding: 1rem 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
-  align-items: center;
   border-top: 1px solid #ddd;
-
-  .hint {
-    margin: 0;
-    font-size: 0.85rem;
-    color: $success;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-weight: 500;
-  }
 
   .btn-send-wa {
     width: 100%;
-    padding: 0.8rem;
+    padding: 0.9rem;
     background: #008069;
     color: white;
     border: none;
-    border-radius: 20px;
-    font-weight: 600;
-    font-size: 1rem;
+    border-radius: 25px;
+    font-weight: 700;
+    font-size: 1.05rem;
     cursor: pointer;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-    transition: transform 0.1s;
-
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 0.6rem;
+    transition: transform 0.1s, background 0.2s;
 
     &:hover {
       background: #006c59;
@@ -271,6 +364,83 @@ const emit = defineEmits<{
 
     &:active {
       transform: scale(0.98);
+    }
+  }
+
+  .btn-view-order {
+    width: 100%;
+    padding: 0.9rem;
+    background: white; // Or slightly grey
+    color: $NICOLE-PURPLE;
+    border: 2px solid $NICOLE-PURPLE;
+    border-radius: 25px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); // bit softer
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    transition: transform 0.1s, background 0.2s, color 0.2s;
+
+    &:hover {
+      background: rgba($NICOLE-PURPLE, 0.05);
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+
+    i {
+      font-size: 1rem;
+    }
+  }
+
+  .btn-copy-order {
+    width: 100%;
+    padding: 0.9rem;
+    background: white;
+    color: #555;
+    border: 2px solid #ddd;
+    border-radius: 25px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    transition: all 0.2s;
+
+    &:hover {
+      background: #f5f5f5;
+      border-color: #ccc;
+      color: #333;
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+
+    i {
+      font-size: 1rem;
+    }
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border: none;
+    color: #666;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0.5rem;
+    font-size: 0.95rem;
+
+    &:hover {
+      color: #333;
+      text-decoration: underline;
     }
   }
 }
