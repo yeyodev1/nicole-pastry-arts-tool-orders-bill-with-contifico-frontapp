@@ -40,6 +40,11 @@ export interface POSOrder {
   status: string;
   posStatus: "NOT_SENT" | "IN_TRANSIT" | "RECEIVED" | "DELIVERED";
   dispatches: any[];
+  payments?: { monto: number; forma_cobro: string; fecha: string }[];
+  isCredit?: boolean;
+  settledInIsland?: boolean;
+  isGlobalCourtesy?: boolean;
+  globalDiscountPercentage?: number;
 }
 
 export interface POSFilters {

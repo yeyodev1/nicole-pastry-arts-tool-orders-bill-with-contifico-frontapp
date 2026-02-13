@@ -124,6 +124,26 @@ const getStatusColorClass = (order: POSOrder) => {
   return 'status-gray'
 }
 
+// Payment Calc Helpers
+const calculateTotalPaid = (order: POSOrder) => {
+  const history = (order.payments || []).reduce((sum, p) => sum + Number(p.monto), 0)
+  return history
+}
+
+const calculateRemainingBalance = (order: POSOrder) => {
+  if (order.isGlobalCourtesy) return 0
+  const total = order.totalValue || 0
+  const paid = calculateTotalPaid(order)
+  return Math.max(0, total - paid)
+}
+
+const isOrderFullyPaid = (order: POSOrder) => {
+  if (order.isGlobalCourtesy) return true
+  if (order.settledInIsland) return true
+  if (order.isCredit) return false
+  return calculateRemainingBalance(order) < 0.01
+}
+
 onMounted(() => {
   fetchData()
 })
@@ -201,54 +221,80 @@ onMounted(() => {
            </div>
 
            <div 
-              v-else 
-              v-for="order in orders" 
-              :key="order._id" 
-              class="shipment-card"
-              :class="getStatusColorClass(order)"
-           >
-              <div class="card-header">
-                  <div class="status-indicator">
-                      <i v-if="order.posStatus === 'DELIVERED'" class="fa-solid fa-check-circle"></i>
-                      <i v-else-if="order.posStatus === 'RECEIVED'" class="fa-solid fa-store"></i>
-                      <i v-else-if="order.posStatus === 'IN_TRANSIT'" class="fa-solid fa-truck-fast"></i>
-                      <i v-else class="fa-solid fa-clock"></i>
-                      <span>{{ getStatusLabel(order) }}</span>
-                  </div>
-                  <span class="date">{{ formatECT(order.deliveryDate, false) }}</span>
-              </div>
-              
-              <div class="card-body">
-                  <div class="info-row highlight">
-                      <span class="label"><i class="fa-solid fa-hashtag"></i> Orden</span>
-                      <span class="value">#{{ order.orderNumber }}</span>
-                  </div>
-                  <div class="info-row">
-                       <span class="label"><i class="fa-solid fa-user"></i> Cliente</span>
-                       <span class="value">{{ order.customerName }}</span>
-                  </div>
-                  
-                  <div class="items-preview">
-                      <div class="preview-header">
-                          <i class="fa-solid fa-box-open"></i> Productos ({{ order.products.length }})
-                      </div>
-                      <div class="preview-content">
-                          <span v-for="(p, i) in order.products.slice(0, 3)" :key="p._id">
-                              {{ p.quantity }} {{ p.name }}<span v-if="i < order.products.length - 1">, </span>
-                          </span>
-                          <span v-if="order.products.length > 3" class="more-items">
-                              +{{ order.products.length - 3 }} más
-                          </span>
-                      </div>
-                  </div>
+               v-for="order in orders" 
+               :key="order._id" 
+               class="shipment-card"
+               :class="getStatusColorClass(order)"
+            >
+               <div class="card-header">
+                   <div class="header-left">
+                       <div class="order-id-track">
+                           <span class="id-label">ID:</span>
+                           <span class="id-value">{{ order._id.slice(-6).toUpperCase() }}</span>
+                       </div>
+                       <span class="order-badge">#{{ order.orderNumber }}</span>
+                       <div class="status-pill">
+                           <i v-if="order.posStatus === 'DELIVERED'" class="fa-solid fa-check-circle"></i>
+                           <i v-else-if="order.posStatus === 'RECEIVED'" class="fa-solid fa-store"></i>
+                           <i v-else-if="order.posStatus === 'IN_TRANSIT'" class="fa-solid fa-truck-fast"></i>
+                           <i v-else class="fa-solid fa-clock"></i>
+                           <span>{{ getStatusLabel(order) }}</span>
+                       </div>
+                   </div>
+                   <div class="header-right">
+                       <div class="delivery-time-badge">
+                           <i class="fa-regular fa-clock"></i>
+                           <span>{{ order.deliveryTime }}</span>
+                       </div>
+                       <span class="date">{{ formatECT(order.deliveryDate, false) }}</span>
+                   </div>
+               </div>
+               
+               <div class="card-body">
+                   <div class="customer-info">
+                        <div class="customer-avatar">
+                            <i class="fa-solid fa-user"></i>
+                        </div>
+                        <div class="customer-details">
+                            <span class="label">Cliente</span>
+                            <span class="value">{{ order.customerName }}</span>
+                        </div>
+                   </div>
+                   
+                   <div class="items-preview">
+                       <div class="preview-header">
+                           <i class="fa-solid fa-box-open"></i> Productos ({{ order.products.length }})
+                       </div>
+                       <div class="products-list">
+                           <div v-for="p in order.products" :key="p._id" class="product-item">
+                               <span class="qty">{{ p.quantity }}x</span>
+                               <span class="name">{{ p.name }}</span>
+                           </div>
+                       </div>
+                   </div>
 
-                  <div class="payment-info">
-                      <div class="p-row">
-                          <span>Pago: {{ order.paymentMethod }}</span>
-                          <span class="amount">${{ order.totalValue.toFixed(2) }}</span>
-                      </div>
-                  </div>
-              </div>
+                   <div class="payment-info">
+                       <div class="p-row">
+                           <div class="payment-method">
+                               <i class="fa-solid fa-credit-card"></i>
+                               <span>{{ order.paymentMethod }}</span>
+                           </div>
+                           <div class="payment-status">
+                               <div v-if="order.settledInIsland" class="settled-badge">
+                                   <i class="fa-solid fa-umbrella-beach"></i> Facturado en Isla
+                               </div>
+                               <div v-else-if="isOrderFullyPaid(order)" class="paid-badge">
+                                   <i class="fa-solid fa-circle-check"></i> Pedido Pagado Completo
+                               </div>
+                               <div v-else class="balance-badge">
+                                   <span class="label">Por Cobrar:</span>
+                                   <span class="value">${{ calculateRemainingBalance(order).toFixed(2) }}</span>
+                               </div>
+                           </div>
+                           <span class="total-amount">${{ order.totalValue.toFixed(2) }}</span>
+                       </div>
+                   </div>
+               </div>
 
               <div class="card-actions">
                   <button 
@@ -687,179 +733,275 @@ $desktop: 1024px;
 
 .shipment-card {
   background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  border-radius: 16px;
+  border: 1px solid #E2E8F0;
   overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
-  transition: all 0.2s ease;
-  position: relative;
-  max-width: 100%;
-  border-top: 5px solid #CBD5E1;
-  border: 1px solid #E2E8F0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 
   &:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
-  }
-
-  &.status-yellow {
-    background: #FFFBEB;
-    border-color: #FDE047;
-    border-top: 6px solid #FACC15;
-
-    .card-header {
-      background: rgba(#FDE68A, 0.2);
-      border-bottom-color: rgba(#FACC15, 0.1);
-    }
+    box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.1);
   }
 
   &.status-blue {
-    background: #EFF6FF;
-    border-color: #BFDBFE;
-    border-top: 6px solid #3B82F6;
+    border-left: 6px solid #3B82F6;
+    background-color: #EFF6FF;
+    border-color: #DBEAFE;
+  }
 
-    .card-header {
-      background: rgba(#DBEAFE, 0.3);
-      border-bottom-color: rgba(#3B82F6, 0.1);
-    }
+  &.status-yellow {
+    border-left: 6px solid #F59E0B;
+    background-color: #FFFBEB;
+    border-color: #FEF3C7;
   }
 
   &.status-green {
-    background: #F0FDF4;
-    border-color: #BBF7D0;
-    border-top: 6px solid #22C55E;
-
-    .card-header {
-      background: rgba(#DCFCE7, 0.3);
-      border-bottom-color: rgba(#22C55E, 0.1);
-    }
+    border-left: 6px solid #22C55E;
+    background-color: #F0FDF4;
+    border-color: #DCFCE7;
   }
 
   &.status-gray {
-    background: #F8FAFC;
+    border-left: 6px solid #94A3B8;
+    background-color: #F8FAFC;
     border-color: #E2E8F0;
-    border-top: 6px solid #94A3B8;
-
-    .card-header {
-      background: #F1F5F9;
-      border-bottom-color: #E2E8F0;
-    }
   }
 }
 
 .card-header {
   padding: 1rem;
+  background: rgba(255, 255, 255, 0.4);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid transparent;
+  align-items: flex-start;
   gap: 0.5rem;
 
-  .status-indicator {
+  .header-left {
     display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #475569;
-  }
+    flex-direction: column;
+    gap: 0.5rem;
 
-  .date {
-    font-size: 0.8rem;
-    color: $text-light;
-    font-weight: 600;
-  }
-}
+    .order-id-track {
+      display: flex;
+      gap: 0.3rem;
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: #94A3B8;
+      letter-spacing: 0.05em;
 
-.status-yellow .status-indicator {
-  color: #854D0E;
-}
+      .id-value {
+        color: #64748B;
+      }
+    }
 
-.status-blue .status-indicator {
-  color: #1E40AF;
-}
-
-.status-green .status-indicator {
-  color: #166534;
-}
-
-.status-gray .status-indicator {
-  color: #475569;
-}
-
-.card-body {
-  padding: 1rem;
-  flex: 1;
-
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 0.6rem;
-    font-size: 0.95rem;
-
-    .label {
-      color: $text-light;
+    .order-badge {
+      background: $NICOLE-PURPLE;
+      color: white;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-weight: 800;
       font-size: 0.85rem;
+      width: fit-content;
+    }
+
+    .status-pill {
       display: flex;
       align-items: center;
       gap: 0.4rem;
-    }
-
-    .value {
+      font-size: 0.75rem;
       font-weight: 700;
-      color: $text-dark;
-      text-align: right;
-    }
-
-    &.highlight .value {
-      color: $NICOLE-PURPLE;
-      font-size: 1rem;
+      text-transform: uppercase;
+      color: #475569;
     }
   }
 
-  .items-preview {
-    margin-top: 1rem;
-    background: #F8FAFC;
-    padding: 0.8rem;
-    border-radius: 8px;
-    border: 1px solid #F1F5F9;
+  .header-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.4rem;
 
-    .preview-header {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #64748B;
-      margin-bottom: 0.5rem;
+    .delivery-time-badge {
+      background: #FEF3C7;
+      color: #92400E;
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.9rem;
       font-weight: 800;
       display: flex;
       align-items: center;
       gap: 0.4rem;
+      border: 1px solid #FDE68A;
     }
 
-    .preview-content {
-      font-size: 0.9rem;
-      color: #334155;
-      line-height: 1.5;
+    .date {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #64748B;
+    }
+  }
+}
+
+.card-body {
+  padding: 1.25rem;
+  flex: 1;
+  background: transparent;
+
+  .customer-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+
+    .customer-avatar {
+      width: 40px;
+      height: 40px;
+      background: #F1F5F9;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #64748B;
+      font-size: 1.1rem;
+    }
+
+    .customer-details {
+      display: flex;
+      flex-direction: column;
+
+      .label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #94A3B8;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .value {
+        font-size: 1rem;
+        font-weight: 800;
+        color: #1E293B;
+      }
+    }
+  }
+
+  .items-preview {
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 12px;
+    padding: 1rem;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.25rem;
+
+    .preview-header {
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: #64748B;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .products-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+
+      .product-item {
+        display: flex;
+        gap: 0.75rem;
+        font-size: 0.9rem;
+        color: #334155;
+        line-height: 1.4;
+
+        .qty {
+          font-weight: 800;
+          color: $NICOLE-PURPLE;
+          min-width: 2.5ch;
+        }
+
+        .name {
+          font-weight: 600;
+        }
+      }
     }
   }
 
   .payment-info {
-    margin-top: 0.8rem;
-    padding-top: 0.8rem;
-    border-top: 1px dashed #E2E8F0;
+    padding-top: 1rem;
+    border-top: 1px solid #F1F5F9;
 
     .p-row {
       display: flex;
       justify-content: space-between;
-      font-size: 0.85rem;
-      color: #64748B;
-      font-weight: 600;
+      align-items: center;
 
-      .amount {
+      .payment-method {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #64748B;
+      }
+
+      .payment-status {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+
+        .paid-badge,
+        .settled-badge {
+          padding: 0.25rem 0.6rem;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          font-weight: 800;
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          text-transform: uppercase;
+        }
+
+        .paid-badge {
+          background: #DCFCE7;
+          color: #166534;
+        }
+
+        .settled-badge {
+          background: #F3E8FF;
+          color: #6B21A8;
+        }
+
+        .balance-badge {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          line-height: 1;
+
+          .label {
+            font-size: 0.65rem;
+            font-weight: 800;
+            color: #94A3B8;
+            text-transform: uppercase;
+          }
+
+          .value {
+            font-size: 1rem;
+            font-weight: 900;
+            color: #E11D48;
+          }
+        }
+      }
+
+      .total-amount {
+        font-size: 1.1rem;
+        font-weight: 900;
         color: $NICOLE-SECONDARY;
-        font-weight: 800;
-        font-size: 0.95rem;
       }
     }
   }
@@ -867,39 +1009,32 @@ $desktop: 1024px;
 
 .card-actions {
   padding: 1rem;
-  border-top: 1px solid #F1F5F9;
   background: #FCFCFD;
+  border-top: 1px solid #F1F5F9;
 }
 
 .action-btn {
   width: 100%;
-  border: none;
   padding: 0.85rem;
-  border-radius: 10px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
+  border-radius: 12px;
+  font-weight: 800;
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 0.6rem;
-  font-size: 0.9rem;
-}
-
-.btn-receive {
-  display: none;
-}
-
-.btn-details {
-  display: none;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+  cursor: pointer;
 }
 
 .btn-deliver {
   background: #22C55E;
   color: white;
+  border: none;
 
   &:hover {
     background: #16A34A;
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
   }
 }
 
@@ -908,10 +1043,6 @@ $desktop: 1024px;
   color: #16A34A;
   border: 1px solid #DCFCE7;
   cursor: default;
-}
-
-.btn-disabled {
-  display: none;
 }
 
 .info-bar {
