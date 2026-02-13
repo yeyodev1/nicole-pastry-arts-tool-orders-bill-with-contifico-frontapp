@@ -1,8 +1,7 @@
 import { ref } from 'vue'
 // @ts-ignore
-import * as XLSX from 'xlsx'
-import ProductionService from '@/services/production.service'
-import { parseECTDate, formatECT } from '@/utils/dateUtils'
+import XLSX from 'xlsx-js-style'
+import { formatECT } from '@/utils/dateUtils'
 
 export function useOrderExport() {
   const isExporting = ref(false)
@@ -19,20 +18,16 @@ export function useOrderExport() {
   ) => {
     isExporting.value = true
     try {
-      // Aggregate products from the provided orders list
-      // We want to sum up quantities for each product across all selected orders.
-      const productAggregation: Record<string, { name: string, qty: number, category: string }> = {}
+      // Aggregate products
+      const productAggregation: Record<string, { name: string, qty: number, category: string, comments: string[] }> = {}
 
       orders.forEach(order => {
-        // Skip orders that shouldn't be in production? 
-        // Usually we export exactly what is filtered.
-        // If the user filtered by "Invoice Error", they still might want a production list for those.
-        // So we process all passed orders.
-
         const products = order.products || []
+        const orderComment = order.comments ? `${order.customerName}: ${order.comments}` : null
+
         products.forEach((p: any) => {
           const name = p.name || 'Unknown'
-          const key = p._id || name // Use ID if available for uniqueness, else name
+          const key = name.trim().toUpperCase()
           const qty = p.quantity || 0
           const cat = p.category || ''
 
@@ -40,84 +35,146 @@ export function useOrderExport() {
             productAggregation[key] = {
               name: name,
               qty: 0,
-              category: cat
+              category: cat,
+              comments: []
             }
           }
           productAggregation[key].qty += qty
-          // Update category if we found one and previous was empty
+
           if (!productAggregation[key].category && cat) {
             productAggregation[key].category = cat
+          }
+
+          if (orderComment) {
+            productAggregation[key].comments.push(orderComment)
           }
         })
       })
 
-      // Group by Category to match User Request Format
-      const categoryMap: Record<string, any[]> = {
-        'TORTAS': [],
-        'INDIVIDUALES': [],
-        'BOLLERIA': [],
-        'GALLETAS': [],
-        'SYROPES': [],
-        'VEGETALES': [],
-        'HELADERIA': [],
-        'CASA MIA': [],
-        'OTROS': []
-      }
+      // Dynamic Grouping Logic
+      // Define preferred order for known categories
+      const preferredOrder = [
+        'TORTAS',
+        'INDIVIDUALES',
+        'BOLLERIA',
+        'GALLETAS',
+        'SYROPES',
+        'VEGETALES',
+        'HELADERIA',
+        'CASA MIA',
+        'PACK PEQUEÑO', // Added from user image example
+        'OTROS'
+      ]
+
+      const groupedProducts: Record<string, any[]> = {}
 
       Object.values(productAggregation).forEach(item => {
         if (item.qty <= 0) return
 
-        const cat = (item.category || '').toUpperCase()
-        const name = item.name
-        const unit = 'UNI'
+        let cat = (item.category || '').toUpperCase().trim()
+        const name = item.name.toUpperCase()
 
-        // Mapping Logic
-        let targetCat = 'OTROS'
-        // Try strict mapping first if category is known
-        if (categoryMap[cat]) {
-          targetCat = cat
-        } else {
-          // Heuristic mapping
-          if (cat.includes('CAKE') || cat.includes('TORTA') || name.toUpperCase().includes('TORTA')) targetCat = 'TORTAS'
-          else if (cat.includes('INDIVIDUAL') || name.toUpperCase().includes('INDIVIDUAL')) targetCat = 'INDIVIDUALES'
-          else if (cat.includes('BOLLERIA') || cat.includes('PAN') || name.toUpperCase().includes('PAN')) targetCat = 'BOLLERIA'
-          else if (cat.includes('GALLETA') || cat.includes('COOKIE') || name.toUpperCase().includes('GALLETA')) targetCat = 'GALLETAS'
-          else if (cat.includes('SIROPE') || cat.includes('SYRUP')) targetCat = 'SYROPES'
-          else if (cat.includes('VEGETAL') || cat.includes('FRUTA')) targetCat = 'VEGETALES'
-          else if (cat.includes('HELADO') || cat.includes('NIEVE')) targetCat = 'HELADERIA'
-          else if (cat.includes('CASA') || cat.includes('SALADO')) targetCat = 'CASA MIA'
+        // Mapping Logic (can be expanded)
+        if (!cat) {
+          if (name.includes('TORTA')) cat = 'TORTAS'
+          else if (name.includes('INDIVIDUAL')) cat = 'INDIVIDUALES'
+          else if (name.includes('PAN') || name.includes('CROISSANT')) cat = 'BOLLERIA'
+          else if (name.includes('GALLETA') || name.includes('COOKIE')) cat = 'GALLETAS'
+          else cat = 'OTROS'
         }
 
-        const targetList = categoryMap[targetCat] || categoryMap['OTROS'] || []
-        targetList.push({ name, unit, qty: item.qty })
+        if (!groupedProducts[cat]) {
+          groupedProducts[cat] = []
+        }
+
+        const currentGroup = groupedProducts[cat] as any[]
+        currentGroup.push({
+          name: item.name,
+          unit: 'UNI',
+          qty: item.qty,
+          comments: item.comments.join('; ')
+        })
       })
 
-      // Create Worksheet Data
+      // Sort categories based on preferred order, putting unknown ones at the end (before OTROS if possible)
+      const sortedCategories = Object.keys(groupedProducts).sort((a, b) => {
+        const indexA = preferredOrder.indexOf(a)
+        const indexB = preferredOrder.indexOf(b)
+
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB
+        if (indexA !== -1) return -1
+        if (indexB !== -1) return 1
+
+        // Both unknown, sort alphabetically
+        return a.localeCompare(b)
+      })
+
+      // Create Worksheet Data with Styling
       const wsData: any[][] = []
+      // We will track cell styles
+      const wsMerges: any[] = []
+      const wsStyle: any = {} // Cell address -> style object
+
+      // Helper to set style
+      const setStyle = (row: number, col: number, style: any) => {
+        const cellRef = XLSX.utils.encode_cell({ r: row, c: col })
+        wsStyle[cellRef] = style
+      }
 
       // Header Info
-      wsData.push(['PRODUCTO', 'FECHA', `RESPONSABLE: ${responsibleName.toUpperCase()}`, 'RECIBIDO', 'REBECCA PINTO'])
-      wsData.push(['', formatECT(new Date().toISOString(), false), `HORA: ${new Date().getHours()}:${new Date().getMinutes().toString().padStart(2, '0')}`, '', 'HORA: 16:00'])
-      wsData.push(['', '', 'PRIMER DESPACHO', '', 'SEGUNDO DESPACHO'])
+      wsData.push(['PRODUCTO', 'FECHA', `RESPONSABLE: ${responsibleName.toUpperCase()}`, 'RECIBIDO', 'REBECCA PINTO', 'COMENTARIOS'])
+      wsData.push(['', formatECT(new Date().toISOString(), false), `HORA: ${new Date().getHours()}:${new Date().getMinutes().toString().padStart(2, '0')}`, '', 'HORA: 16:00', ''])
+      wsData.push(['', '', 'PRIMER DESPACHO', '', 'SEGUNDO DESPACHO', ''])
       wsData.push([]) // Spacer
 
-      // Rows by Category
-      Object.keys(categoryMap).forEach(cat => {
-        const products = categoryMap[cat] || []
+      // Apply styles to header rows
+      // Row 0 (Headers)
+      for (let c = 0; c <= 5; c++) {
+        setStyle(0, c, { font: { bold: true }, border: { bottom: { style: 'thin' } } })
+      }
+
+      let currentRow = 4
+
+      sortedCategories.forEach(cat => {
+        const products = groupedProducts[cat] || []
         if (products.length > 0) {
-          wsData.push([cat]) // Category Header
+          // Category Header
+          wsData.push([cat, '', '', '', '', ''])
+
+          // Merge cells for category header across A-F? Or just leave it in A
+          // Let's style the whole row for the category
+          for (let c = 0; c <= 5; c++) {
+            setStyle(currentRow, c, {
+              fill: { fgColor: { rgb: "E0E0E0" } }, // Light Gray background
+              font: { bold: true, sz: 12 }
+            })
+          }
+          currentRow++
+
           products.forEach(p => {
-            wsData.push([p.name, p.unit, p.qty, '', ''])
+            wsData.push([p.name, p.unit, p.qty, '', '', p.comments])
+            currentRow++
           })
-          wsData.push([]) // Spacer after category
+          // Spacer after category
+          wsData.push([])
+          currentRow++
         }
       })
 
       const wb = XLSX.utils.book_new()
       const ws = XLSX.utils.aoa_to_sheet(wsData)
 
-      // Basic Styling (Column widths)
-      ws['!cols'] = [{ wch: 40 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 20 }]
+      // Apply merges (if any needed, none strict right now)
+      // ws['!merges'] = wsMerges
+
+      // Apply styles
+      Object.keys(wsStyle).forEach(cell => {
+        if (!ws[cell]) return
+        ws[cell].s = wsStyle[cell]
+      })
+
+      // Column Widths
+      ws['!cols'] = [{ wch: 40 }, { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 50 }]
 
       XLSX.utils.book_append_sheet(wb, ws, 'Orden Produccion')
       saveExcelFile(wb, `Orden_Produccion_${formatECT(new Date().toISOString(), false)}`)
@@ -131,24 +188,19 @@ export function useOrderExport() {
   }
 
   // --- Dispatch Export ---
+  // Keeping as is, but ensuring it uses the new XLSX import which is compatible
   const exportDispatchOrder = async (orders: any[]) => {
     isExporting.value = true
     try {
       const wsData: any[][] = []
 
-      // Headers from user image:
-      // FECHA DE ENTREGA | CLIENTE | PEDIDO | HORA DE ENTREGA | DIRECCION DE ENTREGA | ESTADO DE PAGO | COMENTARIOS
       wsData.push(['FECHA DE ENTREGA', 'CLIENTE', 'PEDIDO', 'HORA DE ENTREGA', 'DIRECCION DE ENTREGA', 'ESTADO DE PAGO', 'COMENTARIOS'])
 
       orders.forEach(order => {
-        // Format Date
         const dateStr = order.deliveryDate ? formatECT(order.deliveryDate, false) : ''
-
-        // Format Items (e.g., "1 Torta tiramisu, 2 Galletas")
         const products = order.products || []
         const itemsStr = products.map((p: any) => `${p.quantity} ${p.name}`).join(' + ')
 
-        // Address / Destination
         let address = ''
         if (order.deliveryType === 'delivery') {
           address = order.deliveryAddress || 'Domicilio'
@@ -156,8 +208,6 @@ export function useOrderExport() {
           address = order.branch || 'Retiro en Local'
         }
 
-        // Payment status (Usually computed or from paymentDetails)
-        // Adjust based on your model. Assuming 'paymentStatus' or checking 'paymentDetails'
         const paymentStatus = order.paymentDetails?.status === 'PAID' ? 'PAGADO' : 'PENDIENTE'
         const paymentMethod = order.paymentDetails?.method ? `(${order.paymentDetails.method})` : ''
         const paymentStr = `${paymentStatus} ${paymentMethod}`
