@@ -18,8 +18,7 @@ const progress = ref(0)
 const isHolding = ref(false)
 let animationFrameId: number | null = null
 let startTime: number | null = null
-const HOLD_DURATION = 3000 // 3 seconds is usually enough, user asked for 5 but 3 feels better. I'll stick to 3 or 4 for UX. Let's do 4000.
-const DURATION = 4000
+const DURATION = 1200
 
 const startHold = () => {
   if (isHolding.value) return
@@ -171,7 +170,7 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
          </div>
       </div>
       
-      <p class="safety-hint">Mantén presionado por 4 segundos para evitar duplicados.</p>
+      <p class="safety-hint">Mantén presionado para confirmar.</p>
     </div>
   </div>
 </template>
