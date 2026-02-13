@@ -25,6 +25,8 @@ const emit = defineEmits<{
   (e: 'update:searchQuery', value: string): void
   (e: 'search'): void
   (e: 'toggle-select-all'): void
+  (e: 'export-production'): void
+  (e: 'export-dispatch'): void
 }>()
 </script>
 
@@ -58,6 +60,16 @@ const emit = defineEmits<{
           @click="emit('update:dateType', 'createdAt')"
         >
           Registro
+        </button>
+      </div>
+
+      <!-- Export Buttons -->
+      <div class="export-actions">
+        <button class="btn-export" @click="emit('export-production')" title="Exportar Orden de Producción">
+           <i class="fas fa-clipboard-list"></i> <span class="label">Prod.</span>
+        </button>
+        <button class="btn-export" @click="emit('export-dispatch')" title="Exportar Orden de Entrega">
+           <i class="fas fa-truck-loading"></i> <span class="label">Entregas</span>
         </button>
       </div>
     </div>
@@ -168,7 +180,7 @@ const emit = defineEmits<{
   .search-wrapper {
     position: relative;
     flex: 2; // Grow to fill space
-    min-width: 280px; // Ensure reasonable minimum
+    min-width: 200px; // Ensure reasonable minimum
     width: 100%; // Fallback for small screens
 
     @media (max-width: 640px) {
@@ -214,8 +226,8 @@ const emit = defineEmits<{
     padding: 0.3rem;
     border-radius: 12px;
     gap: 0.2rem;
-    flex: 1;
-    min-width: 200px;
+    flex: 0 0 auto;
+    min-width: 160px;
     white-space: nowrap; // Prevent button text wrapping
 
     @media (max-width: 640px) {
@@ -244,6 +256,50 @@ const emit = defineEmits<{
 
       &:hover:not(.active) {
         color: #1e293b;
+      }
+    }
+  }
+
+  .export-actions {
+    display: flex;
+    gap: 0.5rem;
+
+    @media (max-width: 640px) {
+      flex: 1 1 100%;
+      order: 3;
+      justify-content: space-between;
+    }
+
+    .btn-export {
+      background: white;
+      border: 1px solid #e2e8f0;
+      color: #64748b;
+      padding: 0.6rem 1rem;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+      font-size: 0.85rem;
+
+      &:hover {
+        border-color: #8b5cf6;
+        color: #8b5cf6;
+        background: #fdfbff;
+      }
+
+      i {
+        font-size: 1rem;
+      }
+
+      .label {
+        display: none;
+
+        @media (min-width: 450px) {
+          display: inline;
+        }
       }
     }
   }
