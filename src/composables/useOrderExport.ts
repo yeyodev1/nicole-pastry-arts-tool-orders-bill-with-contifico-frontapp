@@ -137,8 +137,8 @@ export function useOrderExport() {
       const wsData: any[][] = []
 
       // Headers from user image:
-      // FECHA DE ENTREGA | CLIENTE | PEDIDO | HORA DE ENTREGA | DIRECCION DE ENTREGA | ESTADO DE PAGO
-      wsData.push(['FECHA DE ENTREGA', 'CLIENTE', 'PEDIDO', 'HORA DE ENTREGA', 'DIRECCION DE ENTREGA', 'ESTADO DE PAGO'])
+      // FECHA DE ENTREGA | CLIENTE | PEDIDO | HORA DE ENTREGA | DIRECCION DE ENTREGA | ESTADO DE PAGO | COMENTARIOS
+      wsData.push(['FECHA DE ENTREGA', 'CLIENTE', 'PEDIDO', 'HORA DE ENTREGA', 'DIRECCION DE ENTREGA', 'ESTADO DE PAGO', 'COMENTARIOS'])
 
       orders.forEach(order => {
         // Format Date
@@ -168,7 +168,8 @@ export function useOrderExport() {
           itemsStr,
           order.deliveryTime || '',
           address,
-          paymentStr
+          paymentStr,
+          order.comments || ''
         ])
       })
 
@@ -176,7 +177,7 @@ export function useOrderExport() {
       const ws = XLSX.utils.aoa_to_sheet(wsData)
 
       // Column Widths
-      ws['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 40 }, { wch: 15 }, { wch: 30 }, { wch: 25 }]
+      ws['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 40 }, { wch: 15 }, { wch: 30 }, { wch: 25 }, { wch: 40 }]
 
       XLSX.utils.book_append_sheet(wb, ws, 'Despacho')
       saveExcelFile(wb, `Orden_Despacho_${formatECT(new Date().toISOString(), false)}`)
