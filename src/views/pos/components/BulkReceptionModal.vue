@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import type { IncomingDispatch } from '@/services/pos.service';
+import type { POSOrder } from '@/services/pos.service';
 import POSService from '@/services/pos.service';
+import HoldConfirmButton from '@/components/ui/HoldConfirmButton.vue';
+import { parseECTDate, getECTTodayString } from '@/utils/dateUtils';
 
 const props = defineProps<{
   isOpen: boolean;
-  dispatches: IncomingDispatch[];
+  dispatches: any[];
 }>();
 
 const emit = defineEmits<{
@@ -15,7 +17,8 @@ const emit = defineEmits<{
 
 const isProcessing = ref(false);
 const bulkNotes = ref('');
-const filterMode = ref<'today' | 'tomorrow' | 'all'>('today');
+type BulkFilterMode = 'yesterday' | 'today' | 'tomorrow' | 'today_tomorrow' | 'all';
+const filterMode = ref<BulkFilterMode>('today');
 
 // --- CONSOLIDATED LOGIC ---
 
@@ -24,6 +27,7 @@ interface ConsolidatedItem {
   name: string;
   totalSent: number;
   quantityReceived: number;
+  itemStatus: 'OK' | 'MISSING' | 'DAMAGED';
   sources: {
     orderId: string;
     dispatchId: string;
@@ -45,54 +49,48 @@ watch(() => props.isOpen, (newVal) => {
   if (newVal) bulkNotes.value = '';
 });
 
-const isSameDay = (d1: Date, d2: Date) => {
-  return d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
-}
-
 const calculateConsolidated = () => {
   const map = new Map<string, ConsolidatedItem>();
 
-  // Dates for filtering
-  const now = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
+  // Dates for filtering (Standardized EC Time)
+  const todayStr = getECTTodayString(); // YYYY-MM-DD
+  const today = new Date(todayStr + 'T12:00:00'); // Use noon to avoid any edge shifts
+
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+  const getDStr = (d: Date) => d.toISOString().split('T')[0];
+
+  const yesterdayStr = getDStr(yesterday);
+  const tomorrowStr = getDStr(tomorrow);
 
   props.dispatches.forEach(d => {
-    // Status Check: Undefined or PENDING is acceptable for "En Tránsito"
+    // Status Check
     const status = d.dispatch.receptionStatus;
-    // If status is undefined, we assume pending. If defined, must be PENDING.
     if (status && status !== 'PENDING') return;
 
-    // Date Check
-    // We use d.deliveryDate from the top level object
-    const deliveryDate = new Date(d.deliveryDate);
-    // Correct timezone issue if needed, but assuming ISO string works for local date comparison roughly
-    // Ideally we work with local dates.
-    // Adjust deliveryDate from ISO UTC to Local if needed, but often backend stores T00:00:00Z as "The Date".
-    // Let's rely on getFullYear/Month/Date being local for now.
-    const dDateLocal = new Date(d.deliveryDate);
-    // Force offset check? The ISO string "2026-01-30T00..." might range. 
-    // Let's use UTC comparison for exact date matches if the strings are strictly dates.
-    // But user likely wants simple local day comparison.
+    // Standardized date parsing for EC
+    const dDateObj = parseECTDate(d.deliveryDate);
+    const dDateStr = getDStr(dDateObj);
 
     let dateMatch = false;
 
     if (filterMode.value === 'all') dateMatch = true;
-    else if (filterMode.value === 'today' && isSameDay(dDateLocal, today)) dateMatch = true;
-    else if (filterMode.value === 'tomorrow' && isSameDay(dDateLocal, tomorrow)) dateMatch = true;
+    else if (filterMode.value === 'yesterday' && dDateStr === yesterdayStr) dateMatch = true;
+    else if (filterMode.value === 'today' && dDateStr === todayStr) dateMatch = true;
+    else if (filterMode.value === 'tomorrow' && dDateStr === tomorrowStr) dateMatch = true;
+    else if (filterMode.value === 'today_tomorrow' && (dDateStr === todayStr || dDateStr === tomorrowStr)) dateMatch = true;
 
     if (!dateMatch) return;
 
-    d.dispatch.items.forEach(item => {
+    d.dispatch.items.forEach((item: any) => {
       if (!map.has(item.productId)) {
         map.set(item.productId, {
           productId: item.productId,
           name: item.name,
           totalSent: 0,
           quantityReceived: 0,
+          itemStatus: 'OK',
           sources: []
         });
       }
@@ -135,7 +133,7 @@ const handleConfirm = async () => {
       const update = dispatchUpdates.get(source.dispatchId)!;
 
       let allocated = 0;
-      let status = 'OK';
+      let status = cItem.itemStatus; // Use the consolidated status
 
       if (remainingToDistribute >= source.quantitySent) {
         allocated = source.quantitySent;
@@ -143,8 +141,9 @@ const handleConfirm = async () => {
       } else {
         allocated = remainingToDistribute;
         remainingToDistribute = 0;
-        // If allocated < sent, mark MISSING
-        if (allocated < source.quantitySent) {
+        // Even if we distribute quantity, if the user marked it MISSING elsewhere, we should follow?
+        // But here we set itemStatus per product row.
+        if (allocated < source.quantitySent && status === 'OK') {
           status = 'MISSING';
         }
       }
@@ -196,15 +195,19 @@ const handleConfirm = async () => {
         
         <!-- Filter Tabs -->
         <div class="filter-tabs">
+            <button :class="{ active: filterMode === 'yesterday' }" @click="filterMode = 'yesterday'">Ayer</button>
             <button :class="{ active: filterMode === 'today' }" @click="filterMode = 'today'">Hoy</button>
             <button :class="{ active: filterMode === 'tomorrow' }" @click="filterMode = 'tomorrow'">Mañana</button>
-            <button :class="{ active: filterMode === 'all' }" @click="filterMode = 'all'">Todo (Pendiente)</button>
+            <button :class="{ active: filterMode === 'today_tomorrow' }" @click="filterMode = 'today_tomorrow'">Hoy y Mañana</button>
+            <button :class="{ active: filterMode === 'all' }" @click="filterMode = 'all'">Todo</button>
         </div>
 
         <div v-if="consolidatedItems.length === 0" class="empty-msg">
             <i class="fa-solid fa-check-circle"></i>
             <p v-if="filterMode === 'today'">No hay ítems para <strong>HOY</strong>.</p>
+            <p v-else-if="filterMode === 'yesterday'">No hay ítems para <strong>AYER</strong>.</p>
             <p v-else-if="filterMode === 'tomorrow'">No hay ítems para <strong>MAÑANA</strong>.</p>
+            <p v-else-if="filterMode === 'today_tomorrow'">No hay ítems para <strong>HOY Y MAÑANA</strong>.</p>
             <p v-else>No hay ítems pendientes en general.</p>
         </div>
 
@@ -214,13 +217,19 @@ const handleConfirm = async () => {
                     <tr>
                         <th class="col-prod">Producto</th>
                         <th class="text-center">Enviado</th>
-                        <th class="text-center">Recibido (Total)</th>
-                        <th>Estado</th>
+                        <th class="text-center">Recibido</th>
+                        <th>Estado Físico</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr v-for="item in consolidatedItems" :key="item.productId" :class="{ 'diff': item.quantityReceived !== item.totalSent }">
-                        <td class="prod-name">{{ item.name }}</td>
+                    <tr v-for="item in consolidatedItems" :key="item.productId" :class="{ 'diff': item.quantityReceived !== item.totalSent || item.itemStatus !== 'OK' }">
+                        <td class="prod-name">
+                            {{ item.name }}
+                            <div v-if="item.quantityReceived !== item.totalSent" class="diff-indicator">
+                                <span v-if="item.quantityReceived < item.totalSent">Faltan {{ item.totalSent - item.quantityReceived }}</span>
+                                <span v-else>Sobran {{ item.quantityReceived - item.totalSent }}</span>
+                            </div>
+                        </td>
                         <td class="text-center val-sent">{{ item.totalSent }}</td>
                         <td class="text-center">
                             <div class="qty-control">
@@ -230,9 +239,11 @@ const handleConfirm = async () => {
                             </div>
                         </td>
                         <td>
-                            <span v-if="item.quantityReceived === item.totalSent" class="badge ok">Correcto</span>
-                            <span v-else-if="item.quantityReceived < item.totalSent" class="badge missing">Faltan {{ item.totalSent - item.quantityReceived }}</span>
-                            <span v-else class="badge excess">Sobran {{ item.quantityReceived - item.totalSent }}</span>
+                            <select v-model="item.itemStatus" :class="item.itemStatus">
+                                <option value="OK">Bien (Todo OK)</option>
+                                <option value="MISSING">Novedad: Faltante</option>
+                                <option value="DAMAGED">Novedad: Dañado</option>
+                            </select>
                         </td>
                     </tr>
                 </tbody>
@@ -240,17 +251,21 @@ const handleConfirm = async () => {
         </div>
 
         <div class="notes-section">
-            <label>Nota de Recepción (opcional):</label>
-            <input type="text" v-model="bulkNotes" placeholder="Ej: Todo conforme, recibido por X...">
+            <label><i class="fa-solid fa-comment-dots"></i> Observaciones Generales:</label>
+            <input type="text" v-model="bulkNotes" placeholder="Alguna observación general para este lote...">
         </div>
       </div>
 
       <div class="modal-footer">
         <button class="btn-cancel" @click="$emit('close')">Cancelar</button>
-        <button class="btn-confirm" @click="handleConfirm" :disabled="isProcessing || consolidatedItems.length === 0">
-            <i v-if="isProcessing" class="fa-solid fa-spinner fa-spin"></i>
-            <span v-else>Confirmar Recepción</span>
-        </button>
+        <div class="hold-btn-container">
+            <HoldConfirmButton 
+                label="Confirmar Recepción Masiva"
+                @confirmed="handleConfirm"
+                :disabled="isProcessing || consolidatedItems.length === 0"
+                color="#7C3AED"
+            />
+        </div>
       </div>
     </div>
   </div>
@@ -269,8 +284,8 @@ const handleConfirm = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
-  backdrop-filter: blur(2px);
+  z-index: 1200;
+  backdrop-filter: blur(4px);
 }
 
 .modal-content {
@@ -342,23 +357,25 @@ const handleConfirm = async () => {
 
 .filter-tabs {
   display: flex;
-  background: $gray-50;
-  padding: 4px;
-  border-radius: 8px;
+  flex-wrap: wrap;
+  background: #F1F5F9;
+  padding: 6px;
+  border-radius: 10px;
   margin-bottom: 1.5rem;
-  gap: 0.5rem;
+  gap: 0.4rem;
 
   button {
-    flex: 1;
+    flex: 1 1 auto;
     border: none;
     background: transparent;
-    padding: 0.5rem;
-    border-radius: 6px;
-    font-weight: 600;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    font-weight: 700;
     color: $text-light;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     transition: all 0.2s;
+    min-width: fit-content;
 
     &:hover {
       background: rgba(0, 0, 0, 0.03);
@@ -367,7 +384,7 @@ const handleConfirm = async () => {
     &.active {
       background: white;
       color: $NICOLE-PURPLE;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
     }
   }
 }
@@ -474,6 +491,36 @@ const handleConfirm = async () => {
   }
 }
 
+.diff-indicator {
+  font-size: 0.75rem;
+  font-weight: 800;
+  margin-top: 0.2rem;
+  color: $warning;
+}
+
+select {
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #E2E8F0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  width: 100%;
+
+  &.OK {
+    color: $success;
+  }
+
+  &.MISSING {
+    color: $warning;
+    border-color: $warning;
+  }
+
+  &.DAMAGED {
+    color: $error;
+    border-color: $error;
+  }
+}
+
 .notes-section {
   margin-top: 1.5rem;
 
@@ -482,6 +529,9 @@ const handleConfirm = async () => {
     font-size: 0.9rem;
     font-weight: 600;
     margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   input {
@@ -498,21 +548,18 @@ const handleConfirm = async () => {
   border-top: 1px solid $border-light;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 1rem;
   background: $gray-50;
   border-bottom-left-radius: 12px;
   border-bottom-right-radius: 12px;
 
-  button {
+  button.btn-cancel {
     padding: 0.7rem 1.5rem;
     border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
     font-size: 0.95rem;
-    transition: all 0.2s;
-  }
-
-  .btn-cancel {
     background: white;
     border: 1px solid $border-light;
     color: $text-light;
@@ -522,26 +569,11 @@ const handleConfirm = async () => {
       color: $text-dark;
     }
   }
+}
 
-  .btn-confirm {
-    background: $NICOLE-SECONDARY;
-    color: white;
-    border: none;
-    box-shadow: 0 4px 10px rgba($NICOLE-SECONDARY, 0.2);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-
-    &:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 6px 14px rgba($NICOLE-SECONDARY, 0.3);
-    }
-
-    &:disabled {
-      opacity: 0.7;
-      cursor: not-allowed;
-    }
-  }
+.hold-btn-container {
+  flex: 1;
+  max-width: 320px;
 }
 
 .empty-msg {

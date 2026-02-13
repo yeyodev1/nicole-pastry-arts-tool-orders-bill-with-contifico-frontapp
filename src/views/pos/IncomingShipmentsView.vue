@@ -1,26 +1,24 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import POSService, { type IncomingDispatch } from '@/services/pos.service'
+import { ref, onMounted, watch, computed } from 'vue'
+import POSService, { type POSOrder } from '@/services/pos.service'
 import ReceptionModal from './components/ReceptionModal.vue'
 import BulkReceptionModal from './components/BulkReceptionModal.vue'
+import DeliveryModal from './components/DeliveryModal.vue'
 import ToastNotification from '@/components/ToastNotification.vue'
-
-interface PickupOrder {
-  _id: string;
-  orderNumber: string;
-  customerName: string;
-  products: { _id: string; quantity: number; name: string }[];
-  deliveryDate: string;
-  deliveryTime?: string;
-  totalValue: number;
-  paymentMethod: string;
-}
+import POSFilterBar, { type POSFilterMode } from './components/POSFilterBar.vue'
+import { formatECT } from '@/utils/dateUtils'
 
 const isLoading = ref(false)
-const dispatches = ref<IncomingDispatch[]>([])
-const pickups = ref<PickupOrder[]>([]) // Store pickup orders
-const selectedBranch = ref('Mall del Sol') // Default per user context
+const orders = ref<POSOrder[]>([])
+const pendingDispatchesForBulk = ref<any[]>([])
+const selectedBranch = ref('Mall del Sol')
 const branches = ['San Marino', 'Mall del Sol', 'Centro de Producción']
+
+// POS-Specific Filter States
+const filterMode = ref<POSFilterMode>('today')
+const customDate = ref('')
+const searchQuery = ref('')
+const showDatePicker = computed(() => filterMode.value === 'custom')
 
 // Tab State
 const activeTab = ref<'dispatches' | 'pickups'>('dispatches')
@@ -28,54 +26,86 @@ const activeTab = ref<'dispatches' | 'pickups'>('dispatches')
 // Modal States
 const showReceptionModal = ref(false)
 const showBulkModal = ref(false)
+const showDeliveryModal = ref(false)
 const selectedDispatch = ref<any>(null)
 const selectedOrderId = ref('')
+const selectedOrder = ref<POSOrder | null>(null)
 
 // Toast
 const toast = ref<{ show: boolean; message: string; type: 'success' | 'error' | 'info' }>({ show: false, message: '', type: 'success' })
 
-const fetchDispatches = async () => {
+const fetchOrders = async () => {
   isLoading.value = true
   try {
-    const data = await POSService.getIncomingDispatches(selectedBranch.value)
-    dispatches.value = data
+    const isPickupTab = activeTab.value === 'pickups'
+    // For pickups, we apply receivedOnly if there's no search query, 
+    // but the user wants to be able to mark as delivered even if not received.
+    // We'll show only received by default in pickups unless searching.
+    const filters = {
+      search: searchQuery.value,
+      filterMode: filterMode.value,
+      date: customDate.value
+    }
+
+    const data = isPickupTab
+      ? await POSService.getPickupOrders(selectedBranch.value, filters)
+      : await POSService.getIncomingDispatches(selectedBranch.value, filters)
+
+    orders.value = data
   } catch (error) {
-    console.error('Error fetching dispatches:', error)
-    toast.value = { show: true, message: 'Error cargando envíos', type: 'error' }
+    console.error('Error fetching orders:', error)
+    toast.value = { show: true, message: 'Error cargando información', type: 'error' }
   } finally {
     isLoading.value = false
   }
 }
 
-const fetchPickups = async () => {
-  isLoading.value = true
+const fetchPendingForBulk = async () => {
   try {
-    const data = await POSService.getPickupOrders(selectedBranch.value)
-    pickups.value = data
-  } catch (error) {
-    console.error('Error fetching pickups:', error)
-    toast.value = { show: true, message: 'Error cargando retiros', type: 'error' }
-  } finally {
-    isLoading.value = false
+    // Fetch dispatches with "all" filter to get everything pending regardless of main view date
+    const data = await POSService.getIncomingDispatches(selectedBranch.value, { filterMode: 'all' })
+    pendingDispatchesForBulk.value = data.filter(o => o.posStatus === 'IN_TRANSIT').flatMap(o =>
+      o.dispatches.filter(d => d.receptionStatus === 'PENDING').map(d => ({ ...o, orderId: o._id, dispatch: d }))
+    )
+  } catch (e) {
+    console.error('Error fetching bulk dispatches:', e)
   }
 }
 
 const fetchData = () => {
-  if (activeTab.value === 'dispatches') {
-    fetchDispatches()
-  } else {
-    fetchPickups()
-  }
+  fetchOrders()
+  fetchPendingForBulk()
 }
 
-// Watchers
-watch([selectedBranch, activeTab], () => {
+// Search debounce
+let searchTimeout: any = null
+watch(searchQuery, () => {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    fetchData()
+  }, 500)
+})
+
+// Quick Filter Watchers
+watch([selectedBranch, activeTab, filterMode], () => {
   fetchData()
 })
 
-const openReceptionModal = (item: IncomingDispatch) => {
-  selectedDispatch.value = item.dispatch
-  selectedOrderId.value = item.orderId
+// Custom Date Watcher
+watch(customDate, (newVal) => {
+  if (newVal && filterMode.value === 'custom') {
+    fetchData()
+  }
+})
+
+const openReceptionModal = (order: POSOrder) => {
+  if (!order.dispatches || order.dispatches.length === 0) return
+
+  // If multiple dispatches, we might need a selection, but for now we pick the latest pending or first
+  const targetDispatch = order.dispatches.find(d => d.receptionStatus === 'PENDING') || order.dispatches[0]
+
+  selectedDispatch.value = targetDispatch
+  selectedOrderId.value = order._id
   showReceptionModal.value = true
 }
 
@@ -85,17 +115,50 @@ const handleReceptionConfirm = async (payload: any) => {
 
     toast.value = { show: true, message: 'Recepción registrada exitosamente', type: 'success' }
     showReceptionModal.value = false
-    fetchDispatches() // Refresh list
+    fetchOrders()
   } catch (error) {
     console.error('Error confirming reception:', error)
     toast.value = { show: true, message: 'Error al registrar recepción', type: 'error' }
   }
 }
 
+const handleMarkAsDeliveredPrep = (order: POSOrder) => {
+  selectedOrder.value = order
+  showDeliveryModal.value = true
+}
+
+const handleMarkAsDelivered = async (orderId: string) => {
+  try {
+    await POSService.markAsDelivered(orderId)
+    toast.value = { show: true, message: 'Orden marcada como entregada', type: 'success' }
+    showDeliveryModal.value = false
+    fetchOrders()
+  } catch (error) {
+    console.error('Error marking as delivered:', error)
+    toast.value = { show: true, message: 'Error al actualizar estado', type: 'error' }
+  }
+}
+
 const handleBulkSuccess = () => {
   toast.value = { show: true, message: 'Recepción Masiva Completada', type: 'success' };
   showBulkModal.value = false;
-  fetchDispatches();
+  fetchData();
+}
+
+// Helpers for Status Styling
+const getStatusLabel = (order: POSOrder) => {
+  if (order.posStatus === 'DELIVERED') return 'Entregado'
+  if (order.posStatus === 'RECEIVED') return 'Recibido en Sucursal'
+  if (order.posStatus === 'IN_TRANSIT') return 'En Tránsito'
+  return 'Esperando Producción'
+}
+
+const getStatusColorClass = (order: POSOrder) => {
+  const status = order.posStatus
+  if (status === 'RECEIVED') return 'status-blue'
+  if (status === 'IN_TRANSIT') return 'status-yellow'
+  if (status === 'DELIVERED') return 'status-green'
+  return 'status-gray'
 }
 
 onMounted(() => {
@@ -109,46 +172,65 @@ onMounted(() => {
       <div class="page-header">
         <div class="title-group">
             <h1><i class="fa-solid fa-store"></i> Gestión de Sucursal</h1>
-            <p class="subtitle">Administra recepciones y retiros en tienda</p>
+            <div class="active-location-banner" :class="selectedBranch.toLowerCase().replace(/\s+/g, '-')">
+                <div class="banner-icon">
+                    <i class="fa-solid fa-location-dot"></i>
+                </div>
+                <div class="banner-text">
+                    <span class="label">Operando en</span>
+                    <span class="branch-name">{{ selectedBranch }}</span>
+                </div>
+                <div class="banner-tag">ACTIVO</div>
+            </div>
         </div>
         
         <div class="controls">
-            <!-- Show Bulk Button only on Dispatches Tab -->
-            <button v-if="activeTab === 'dispatches'" class="btn-bulk" @click="showBulkModal = true">
+            <button v-if="activeTab === 'dispatches' && pendingDispatchesForBulk.length > 0" class="btn-bulk" @click="showBulkModal = true">
                 <i class="fa-solid fa-boxes-stacked"></i> Recepción Masiva
             </button>
 
             <div class="separator"></div>
 
-            <div class="branch-selector">
-                <i class="fa-solid fa-store"></i>
-                <select v-model="selectedBranch">
-                    <option v-for="branch in branches" :key="branch" :value="branch">
-                        {{ branch }}
-                    </option>
-                </select>
+            <div class="branch-selector-group">
+                <span class="selector-label">Estás en:</span>
+                <div class="branch-selector">
+                    <i class="fa-solid fa-store"></i>
+                    <select v-model="selectedBranch">
+                        <option v-for="branch in branches" :key="branch" :value="branch">
+                            {{ branch }}
+                        </option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down select-arrow"></i>
+                </div>
             </div>
-            <button class="btn-refresh" @click="fetchData" title="Actualizar">
+            <button class="btn-refresh" @click="fetchData" title="Actualizar" :class="{ 'fa-spin': isLoading }">
                 <i class="fa-solid fa-arrows-rotate"></i>
             </button>
         </div>
       </div>
 
-      <!-- Tabs Navigation -->
+      <POSFilterBar 
+        v-model:filterMode="filterMode"
+        v-model:customDate="customDate"
+        v-model:searchQuery="searchQuery"
+        :showDatePicker="showDatePicker"
+        @search="fetchData"
+      />
+
       <div class="tabs-container">
         <button 
           class="tab-btn" 
           :class="{ active: activeTab === 'dispatches' }" 
           @click="activeTab = 'dispatches'"
         >
-          <i class="fa-solid fa-truck-ramp-box"></i> Envíos Entrantes
+          <i class="fa-solid fa-clipboard-list"></i> Órdenes
         </button>
         <button 
           class="tab-btn" 
           :class="{ active: activeTab === 'pickups' }" 
           @click="activeTab = 'pickups'"
         >
-          <i class="fa-solid fa-bag-shopping"></i> Retiros en Tienda
+          <i class="fa-solid fa-bag-shopping"></i> Retiros
         </button>
       </div>
 
@@ -157,104 +239,41 @@ onMounted(() => {
         <span>Cargando información...</span>
       </div>
 
-      <!-- INCOMING DISPATCHES VIEW -->
-      <div v-else-if="activeTab === 'dispatches'" class="view-content">
-        <div class="info-bar" v-if="dispatches.length > 0">
-           <span><i class="fa-solid fa-info-circle"></i> Detalle de Envíos por Orden</span>
+      <div v-else class="view-content">
+        <div class="info-bar" v-if="orders.length > 0">
+           <span v-if="activeTab === 'dispatches'">
+             <i class="fa-solid fa-info-circle"></i> Mostrando todos los pedidos asignados a la sucursal.
+           </span>
+           <span v-else>
+             <i class="fa-solid fa-check-double"></i> Mostrando pedidos listos para entrega al cliente.
+           </span>
         </div>
 
         <div class="shipments-grid">
-           <div v-if="dispatches.length === 0" class="empty-state">
+           <div v-if="orders.length === 0" class="empty-state">
               <i class="fa-regular fa-folder-open"></i>
-              <h3>Todo al día en {{ selectedBranch }}</h3>
-              <p>No hay envíos pendientes de recepción.</p>
+              <h3>Sin pedidos para mostrar</h3>
+              <p v-if="searchQuery">No hay resultados para "{{ searchQuery }}".</p>
+              <p v-else-if="activeTab === 'pickups'">No hay retiros marcados como "Recibidos" hoy.</p>
+              <p v-else>No hay órdenes programadas para este periodo.</p>
            </div>
 
            <div 
               v-else 
-              v-for="(item, index) in dispatches" 
-              :key="item.dispatch._id || index" 
+              v-for="order in orders" 
+              :key="order._id" 
               class="shipment-card"
-              :class="item.dispatch.receptionStatus"
+              :class="getStatusColorClass(order)"
            >
               <div class="card-header">
                   <div class="status-indicator">
-                      <i v-if="item.dispatch.receptionStatus === 'RECEIVED'" class="fa-solid fa-check-circle"></i>
-                      <i v-else-if="item.dispatch.receptionStatus === 'PROBLEM'" class="fa-solid fa-triangle-exclamation"></i>
+                      <i v-if="order.posStatus === 'DELIVERED'" class="fa-solid fa-check-circle"></i>
+                      <i v-else-if="order.posStatus === 'RECEIVED'" class="fa-solid fa-store"></i>
+                      <i v-else-if="order.posStatus === 'IN_TRANSIT'" class="fa-solid fa-truck-fast"></i>
                       <i v-else class="fa-solid fa-clock"></i>
-                      <span>{{ item.dispatch.receptionStatus === 'RECEIVED' ? 'Completado' : (item.dispatch.receptionStatus === 'PROBLEM' ? 'Con Novedad' : 'En Tránsito') }}</span>
+                      <span>{{ getStatusLabel(order) }}</span>
                   </div>
-                  <span class="date">{{ new Date(item.dispatch.reportedAt).toLocaleDateString() }}</span>
-              </div>
-              
-              <div class="card-body">
-                  <div class="info-row highlight">
-                      <span class="label"><i class="fa-solid fa-hashtag"></i> Orden</span>
-                      <span class="value">#{{ item.orderNumber || 'N/A' }}</span>
-                  </div>
-                  <div class="info-row">
-                       <span class="label"><i class="fa-solid fa-user"></i> Cliente</span>
-                       <span class="value">{{ item.customerName }}</span>
-                  </div>
-                  
-                  <div class="items-preview">
-                      <div class="preview-header">
-                          <i class="fa-solid fa-box-open"></i> Contenido ({{ item.dispatch.items.length }})
-                      </div>
-                      <div class="preview-content">
-                          <span v-for="(p, i) in item.dispatch.items.slice(0, 3)" :key="p.productId">
-                              {{ p.quantitySent }} {{ p.name }}<span v-if="i < item.dispatch.items.length - 1">, </span>
-                          </span>
-                          <span v-if="item.dispatch.items.length > 3" class="more-items">
-                              +{{ item.dispatch.items.length - 3 }} más
-                          </span>
-                      </div>
-                  </div>
-              </div>
-
-              <div class="card-actions">
-                  <button 
-                      class="btn-receive" 
-                      :class="item.dispatch.receptionStatus"
-                      @click="openReceptionModal(item)"
-                  >
-                      <i class="fa-solid fa-clipboard-check"></i>
-                      {{ item.dispatch.receptionStatus === 'RECEIVED' ? 'Ver Detalles' : 'Verificar y Recibir' }}
-                  </button>
-              </div>
-           </div>
-        </div>
-      </div>
-
-      <!-- PICKUPS VIEW -->
-      <div v-else class="view-content">
-         <div class="info-bar" v-if="pickups.length > 0">
-           <span><i class="fa-solid fa-clock"></i> Próximos Retiros (Organizados por fecha)</span>
-        </div>
-
-        <div class="shipments-grid"> <!-- Reusing Grid Layout -->
-           <div v-if="pickups.length === 0" class="empty-state">
-              <i class="fa-solid fa-mug-hot"></i>
-              <h3>Sin Retiros Pendientes</h3>
-              <p>No hay órdenes programadas para retiro en esta sucursal próximamente.</p>
-           </div>
-
-           <div 
-              v-else 
-              v-for="order in pickups" 
-              :key="order._id" 
-              class="shipment-card PICKUP"
-           >
-              <div class="card-header">
-                  <div class="status-indicator" style="color: #6B7280;">
-                      <i class="fa-solid fa-calendar-day"></i>
-                      <!-- Display Date/Time -->
-                      <span>
-                        {{ new Date(order.deliveryDate).toLocaleDateString() }}
-                        <span v-if="order.deliveryTime"> - {{ order.deliveryTime }}</span>
-                      </span>
-                  </div>
-                  <span class="date" style="font-weight: 700; color: #4B5563;">Retiro</span>
+                  <span class="date">{{ formatECT(order.deliveryDate, false) }}</span>
               </div>
               
               <div class="card-body">
@@ -269,7 +288,7 @@ onMounted(() => {
                   
                   <div class="items-preview">
                       <div class="preview-header">
-                          <i class="fa-solid fa-bag-shopping"></i> Productos ({{ order.products.length }})
+                          <i class="fa-solid fa-box-open"></i> Productos ({{ order.products.length }})
                       </div>
                       <div class="preview-content">
                           <span v-for="(p, i) in order.products.slice(0, 3)" :key="p._id">
@@ -281,22 +300,53 @@ onMounted(() => {
                       </div>
                   </div>
 
-                  <!-- Payment Info (Optional but useful for pickup) -->
-                  <div class="items-preview" style="margin-top: 0.5rem; background: #F3F4F6;">
-                      <div class="preview-header">
-                          <i class="fa-solid fa-dollar-sign"></i> Pago: {{ order.paymentMethod }}
-                      </div>
-                      <div class="preview-content" style="font-weight: 600;">
-                          Total: ${{ order.totalValue.toFixed(2) }}
+                  <div v-if="activeTab === 'pickups'" class="payment-info">
+                      <div class="p-row">
+                          <span>Pago: {{ order.paymentMethod }}</span>
+                          <span class="amount">${{ order.totalValue.toFixed(2) }}</span>
                       </div>
                   </div>
               </div>
 
               <div class="card-actions">
-                  <!-- Future: Add 'Mark as Delivered' button here? -->
-                  <button class="btn-receive style-secondary" disabled>
-                      <i class="fa-solid fa-eye"></i> Ver Detalle (Pronto)
-                  </button>
+                  <!-- Dispatches Tab Actions -->
+                  <template v-if="activeTab === 'dispatches'">
+                      <button 
+                          v-if="order.posStatus === 'IN_TRANSIT'"
+                          class="btn-receive action-btn" 
+                          @click="openReceptionModal(order)"
+                      >
+                          <i class="fa-solid fa-clipboard-check"></i> Verificar y Recibir
+                      </button>
+                      <button 
+                          v-else-if="order.posStatus === 'RECEIVED' || order.posStatus === 'DELIVERED'"
+                          class="btn-details action-btn"
+                          @click="openReceptionModal(order)"
+                      >
+                          <i class="fa-solid fa-eye"></i> Ver Detalles
+                      </button>
+                      <button 
+                          v-else
+                          class="btn-disabled action-btn" 
+                          disabled
+                      >
+                          <i class="fa-solid fa-hourglass"></i> Pendiente Envío
+                      </button>
+                  </template>
+
+                  <!-- Pickups Tab Actions -->
+                  <template v-else>
+                      <button 
+                        v-if="order.posStatus !== 'DELIVERED'"
+                        class="btn-deliver action-btn" 
+                        @click="handleMarkAsDeliveredPrep(order)"
+                      >
+                          <i class="fa-solid fa-hand-holding-heart"></i> Entregar a Cliente
+                      </button>
+                      <button v-else class="btn-delivered-static action-btn" disabled>
+                          <i class="fa-solid fa-check-double"></i> Entregado
+                      </button>
+                  </template>
               </div>
            </div>
         </div>
@@ -314,9 +364,16 @@ onMounted(() => {
 
     <BulkReceptionModal
         :is-open="showBulkModal"
-        :dispatches="dispatches"
+        :dispatches="pendingDispatchesForBulk"
         @close="showBulkModal = false"
         @success="handleBulkSuccess"
+    />
+
+    <DeliveryModal
+        :is-open="showDeliveryModal"
+        :order="selectedOrder || ({} as POSOrder)"
+        @close="showDeliveryModal = false"
+        @confirm="handleMarkAsDelivered"
     />
 
     <ToastNotification 
@@ -325,6 +382,15 @@ onMounted(() => {
       :type="toast.type"
       @close="toast.show = false"
     />
+
+    <!-- Floating Flashy Location Badge -->
+    <div class="floating-location-badge" :class="selectedBranch.toLowerCase().replace(/\s+/g, '-')">
+        <div class="badge-icon"><i class="fa-solid fa-store"></i></div>
+        <div class="badge-content">
+            <span class="badge-label">Sucursal</span>
+            <span class="badge-name">{{ selectedBranch }}</span>
+        </div>
+    </div>
   </div>
 </template>
 
@@ -361,13 +427,11 @@ $desktop: 1024px;
   }
 }
 
-/* Page Header - Mobile First Structure */
 .page-header {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   padding: 1.5rem 0 1rem 0;
-  /* Reduced bottom padding */
   width: 100%;
 
   @include from-tablet {
@@ -400,15 +464,141 @@ $desktop: 1024px;
       }
     }
 
-    .subtitle {
-      margin: 0.3rem 0 0 0;
-      color: $text-light;
-      font-size: 0.85rem;
-      line-height: 1.4;
+    .active-location-banner {
+      margin-top: 1.25rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 1.5rem;
+      background: #F8FAFC;
+      padding: 1rem 2rem;
+      border-radius: 20px;
+      border-left: 8px solid $NICOLE-PURPLE;
+      animation: pulseIn 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      position: relative;
+      overflow: hidden;
 
-      @include from-tablet {
-        font-size: 0.9rem;
+      &.mall-del-sol {
+        border-left-color: #3B82F6;
+
+        .banner-icon {
+          background: rgba(#3B82F6, 0.1);
+
+          i {
+            color: #3B82F6;
+          }
+        }
       }
+
+      &.san-marino {
+        border-left-color: #A855F7;
+
+        .banner-icon {
+          background: rgba(#A855F7, 0.1);
+
+          i {
+            color: #A855F7;
+          }
+        }
+      }
+
+      &.centro-de-producción {
+        border-left-color: #F59E0B;
+
+        .banner-icon {
+          background: rgba(#F59E0B, 0.1);
+
+          i {
+            color: #F59E0B;
+          }
+        }
+      }
+
+      .banner-icon {
+        width: 48px;
+        height: 48px;
+        background: white;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+
+        i {
+          font-size: 1.5rem;
+          color: $NICOLE-PURPLE;
+        }
+      }
+
+      .banner-text {
+        display: flex;
+        flex-direction: column;
+
+        .label {
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: #64748B;
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          margin-bottom: 2px;
+        }
+
+        .branch-name {
+          font-size: 1.6rem;
+          font-weight: 900;
+          color: #0F172A;
+          line-height: 1;
+        }
+      }
+
+      .banner-tag {
+        font-size: 0.7rem;
+        background: #E2E8F0;
+        color: #475569;
+        padding: 0.2rem 0.7rem;
+        border-radius: 20px;
+        font-weight: 900;
+        margin-left: 1rem;
+        letter-spacing: 1px;
+      }
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+        transform: translateX(-100%);
+        animation: shine 3s infinite;
+      }
+    }
+  }
+
+  @keyframes pulseIn {
+    from {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes shine {
+    0% {
+      transform: translateX(-100%);
+    }
+
+    20% {
+      transform: translateX(100%);
+    }
+
+    100% {
+      transform: translateX(100%);
     }
   }
 
@@ -427,7 +617,6 @@ $desktop: 1024px;
     }
   }
 
-  /* Component Styles in Header */
   .btn-bulk {
     background: $NICOLE-SECONDARY;
     color: white;
@@ -469,33 +658,75 @@ $desktop: 1024px;
     }
   }
 
-  .branch-selector {
-    position: relative;
+  .branch-selector-group {
     display: flex;
     align-items: center;
-    background: white;
-    border-radius: 8px;
-    padding: 0 0.8rem;
-    border: 1px solid $border-light;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.03);
+    gap: 0.5rem;
     width: 100%;
 
     @include from-tablet {
       width: auto;
-      min-width: 180px;
     }
 
-    i {
+    .selector-label {
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      display: none;
+
+      @include from-tablet {
+        display: block;
+      }
+    }
+  }
+
+  .branch-selector {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: #F8FAFC;
+    border-radius: 12px;
+    padding: 0 1rem;
+    border: 1px solid #E2E8F0;
+    transition: all 0.2s;
+    width: 100%;
+    overflow: hidden;
+
+    @include from-tablet {
+      width: auto;
+      min-width: 200px;
+    }
+
+    &:hover {
+      border-color: $NICOLE-PURPLE;
+      background: white;
+      box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.08);
+    }
+
+    i:not(.select-arrow) {
       color: $NICOLE-PURPLE;
       margin-right: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .select-arrow {
+      position: absolute;
+      right: 1rem;
+      font-size: 0.7rem;
+      color: #94A3B8;
+      pointer-events: none;
     }
 
     select {
       border: none;
-      padding: 0.8rem 0.5rem;
-      font-family: $font-secondary;
+      padding: 0.8rem 1.5rem 0.8rem 1.5rem; // Adjust for arrow and icon
+      font-family: $font-principal;
       font-size: 0.95rem;
-      color: $text-dark;
+      font-weight: 700;
+      color: #1E293B;
       background: transparent;
       cursor: pointer;
       outline: none;
@@ -503,7 +734,7 @@ $desktop: 1024px;
       appearance: none;
 
       @include from-tablet {
-        padding: 0.6rem 0.5rem;
+        padding: 0.65rem 1.5rem 0.65rem 1.5rem;
       }
     }
   }
@@ -513,7 +744,6 @@ $desktop: 1024px;
     border: 1px solid $border-light;
     width: 100%;
     height: 44px;
-    /* Touchable area */
     border-radius: 8px;
     cursor: pointer;
     color: $text-light;
@@ -542,9 +772,6 @@ $desktop: 1024px;
   gap: 1rem;
   border-bottom: 2px solid $border-light;
   margin-bottom: 1.5rem;
-  overflow-x: auto;
-  /* Allow scroll on small mobile */
-  -webkit-overflow-scrolling: touch;
 }
 
 .tab-btn {
@@ -557,7 +784,6 @@ $desktop: 1024px;
   cursor: pointer;
   border-bottom: 3px solid transparent;
   margin-bottom: -2px;
-  /* Overlap border */
   white-space: nowrap;
   transition: all 0.2s;
 
@@ -576,22 +802,7 @@ $desktop: 1024px;
   }
 }
 
-/* Info Bar */
-.info-bar {
-  display: flex;
-  align-items: center;
-  text-align: left;
-  margin: 0 0 1.5rem 0;
-  color: $text-light;
-  font-size: 0.85rem;
-  font-weight: 600;
-
-  i {
-    margin-right: 0.5rem;
-  }
-}
-
-/* Shipments Grid - Defensive Responsive Grid */
+/* Shipments Grid */
 .shipments-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -599,7 +810,7 @@ $desktop: 1024px;
   width: 100%;
 
   @include from-tablet {
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 1.5rem;
   }
 }
@@ -608,34 +819,33 @@ $desktop: 1024px;
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-  border: 1px solid transparent;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   transition: all 0.2s ease;
   position: relative;
   max-width: 100%;
+  border-top: 5px solid #CBD5E1;
 
   &:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
   }
 
-  &.PENDING {
-    border-top: 4px solid $warning;
+  &.status-yellow {
+    border-top-color: #FACC15;
   }
 
-  &.RECEIVED {
-    border-top: 4px solid $success;
+  &.status-blue {
+    border-top-color: #3B82F6;
   }
 
-  &.PROBLEM {
-    border-top: 4px solid $error;
+  &.status-green {
+    border-top-color: #22C55E;
   }
 
-  /* Pickup Style */
-  &.PICKUP {
-    border-top: 4px solid $NICOLE-PURPLE;
+  &.status-gray {
+    border-top-color: #94A3B8;
   }
 }
 
@@ -646,38 +856,38 @@ $desktop: 1024px;
   align-items: center;
   border-bottom: 1px solid $border-light;
   background: #fafbfc;
-  flex-wrap: wrap;
   gap: 0.5rem;
 
   .status-indicator {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     font-weight: 700;
-
-    i {
-      font-size: 0.9rem;
-    }
+    color: #475569;
   }
 
   .date {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     color: $text-light;
-    font-weight: 500;
+    font-weight: 600;
   }
 }
 
-.shipment-card.PENDING .status-indicator {
-  color: $warning;
+.status-yellow .status-indicator {
+  color: #854D0E;
 }
 
-.shipment-card.RECEIVED .status-indicator {
-  color: $success;
+.status-blue .status-indicator {
+  color: #1E40AF;
 }
 
-.shipment-card.PROBLEM .status-indicator {
-  color: $error;
+.status-green .status-indicator {
+  color: #166534;
+}
+
+.status-gray .status-indicator {
+  color: #475569;
 }
 
 .card-body {
@@ -688,148 +898,180 @@ $desktop: 1024px;
     display: flex;
     justify-content: space-between;
     margin-bottom: 0.6rem;
-    font-size: 0.9rem;
-    flex-wrap: wrap;
+    font-size: 0.95rem;
 
     .label {
       color: $text-light;
-      font-size: 0.8rem;
+      font-size: 0.85rem;
       display: flex;
       align-items: center;
       gap: 0.4rem;
     }
 
     .value {
-      font-weight: 600;
+      font-weight: 700;
       color: $text-dark;
       text-align: right;
     }
 
     &.highlight .value {
       color: $NICOLE-PURPLE;
+      font-size: 1rem;
     }
   }
 
   .items-preview {
     margin-top: 1rem;
-    background: $gray-50;
+    background: #F8FAFC;
     padding: 0.8rem;
     border-radius: 8px;
+    border: 1px solid #F1F5F9;
 
     .preview-header {
       font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      color: $text-light;
-      margin-bottom: 0.4rem;
-      font-weight: 600;
+      color: #64748B;
+      margin-bottom: 0.5rem;
+      font-weight: 800;
       display: flex;
       align-items: center;
       gap: 0.4rem;
     }
 
     .preview-content {
-      font-size: 0.85rem;
-      color: $text-dark;
-      line-height: 1.4;
+      font-size: 0.9rem;
+      color: #334155;
+      line-height: 1.5;
     }
+  }
 
-    .more-items {
-      color: $text-light;
-      font-size: 0.75rem;
-      font-style: italic;
+  .payment-info {
+    margin-top: 0.8rem;
+    padding-top: 0.8rem;
+    border-top: 1px dashed #E2E8F0;
+
+    .p-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: #64748B;
+      font-weight: 600;
+
+      .amount {
+        color: $NICOLE-SECONDARY;
+        font-weight: 800;
+        font-size: 0.95rem;
+      }
     }
   }
 }
 
 .card-actions {
-  padding: 0.8rem 1rem;
-  border-top: 1px solid $border-light;
-  background: white;
+  padding: 1rem;
+  border-top: 1px solid #F1F5F9;
+  background: #FCFCFD;
 }
 
-.btn-receive {
+.action-btn {
   width: 100%;
-  background: $NICOLE-PURPLE;
-  color: white;
   border: none;
-  padding: 0.8rem;
-  border-radius: 8px;
-  font-weight: 600;
+  padding: 0.85rem;
+  border-radius: 10px;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 0.5rem;
-  box-shadow: 0 4px 10px rgba($NICOLE-PURPLE, 0.2);
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.btn-receive {
+  background: $NICOLE-PURPLE;
+  color: white;
 
   &:hover {
-    background: $purple-hover;
-    box-shadow: 0 6px 15px rgba($NICOLE-PURPLE, 0.3);
-  }
-
-  &.RECEIVED {
-    background: white;
-    color: $success;
-    border: 1px solid $success;
-    box-shadow: none;
-
-    &:hover {
-      background: $gray-50;
-    }
-  }
-
-  &.style-secondary {
-    background: transparent;
-    border: 1px solid $border-light;
-    color: $text-light;
-    box-shadow: none;
-    cursor: default;
-
-    &:hover {
-      background: transparent;
-      box-shadow: none;
-    }
+    background: darken($NICOLE-PURPLE, 5%);
   }
 }
 
-/* Empty & Loading States */
+.btn-details {
+  background: #EFF6FF;
+  color: #3B82F6;
+  border: 1px solid #DBEAFE;
+
+  &:hover {
+    background: #DBEAFE;
+  }
+}
+
+.btn-deliver {
+  background: #22C55E;
+  color: white;
+
+  &:hover {
+    background: #16A34A;
+  }
+}
+
+.btn-delivered-static {
+  background: #F0FDF4;
+  color: #16A34A;
+  border: 1px solid #DCFCE7;
+  cursor: default;
+}
+
+.btn-disabled {
+  background: #F1F5F9;
+  color: #94A3B8;
+  border: 1px solid #E2E8F0;
+  cursor: not-allowed;
+}
+
+.info-bar {
+  background: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  color: #0369A1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .loading-state,
 .empty-state {
   grid-column: 1 / -1;
   text-align: center;
-  padding: 3rem 1rem;
-  color: $text-light;
+  padding: 4rem 1rem;
   background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-  width: 100%;
+  border-radius: 16px;
+  border: 1px dashed #E2E8F0;
 
   i {
-    font-size: 2.5rem;
-    margin-bottom: 1rem;
-    color: $gray-300;
+    font-size: 3rem;
+    margin-bottom: 1.5rem;
+    color: #CBD5E1;
   }
 
   h3 {
     margin: 0.5rem 0;
-    color: $text-dark;
+    color: #1E293B;
     font-family: $font-principal;
-    font-size: 1.2rem;
-  }
-
-  p {
-    font-size: 0.9rem;
-    margin: 0;
+    font-size: 1.3rem;
   }
 }
 
-.loading-state .spinner {
+.spinner {
   margin: 0 auto 1.5rem;
-  width: 35px;
-  height: 35px;
-  border: 3px solid rgba($NICOLE-PURPLE, 0.2);
+  width: 40px;
+  height: 40px;
+  border: 4px solid #F1F5F9;
   border-top-color: $NICOLE-PURPLE;
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -838,6 +1080,115 @@ $desktop: 1024px;
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Floating Location Badge */
+.floating-location-badge {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background: white;
+  padding: 1.2rem 2.2rem;
+  border-radius: 60px;
+  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  z-index: 1000;
+  border: 3px solid $NICOLE-PURPLE;
+  animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.98);
+
+  @include from-tablet {
+    bottom: 3rem;
+    right: 3rem;
+    padding: 1.5rem 2.5rem;
+  }
+
+  &.mall-del-sol {
+    border-color: #3B82F6;
+
+    .badge-icon {
+      background: rgba(#3B82F6, 0.1);
+      color: #3B82F6;
+    }
+  }
+
+  &.san-marino {
+    border-color: #A855F7;
+
+    .badge-icon {
+      background: rgba(#A855F7, 0.1);
+      color: #A855F7;
+    }
+  }
+
+  &.centro-de-producción {
+    border-color: #F59E0B;
+
+    .badge-icon {
+      background: rgba(#F59E0B, 0.1);
+      color: #F59E0B;
+    }
+  }
+
+  .badge-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    flex-shrink: 0;
+  }
+
+  .badge-content {
+    display: flex;
+    flex-direction: column;
+
+    .badge-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      font-weight: 900;
+      color: #64748B;
+      letter-spacing: 2px;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .badge-name {
+      font-size: 1.3rem;
+      font-weight: 900;
+      color: #0F172A;
+      line-height: 1;
+      white-space: nowrap;
+    }
+  }
+
+  // Hide on very small screens or make mini
+  @media (max-width: 480px) {
+    padding: 0.6rem;
+
+    .badge-content {
+      display: none;
+    }
+
+    border-radius: 50%;
+  }
+}
+
+@keyframes slideUpFade {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 </style>

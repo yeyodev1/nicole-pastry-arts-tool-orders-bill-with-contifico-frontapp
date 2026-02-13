@@ -28,13 +28,39 @@ export interface IncomingDispatch {
   }
 }
 
+export interface POSOrder {
+  _id: string;
+  orderNumber: string;
+  customerName: string;
+  deliveryDate: string;
+  deliveryTime?: string;
+  products: any[];
+  totalValue: number;
+  paymentMethod: string;
+  status: string;
+  posStatus: "NOT_SENT" | "IN_TRANSIT" | "RECEIVED" | "DELIVERED";
+  dispatches: any[];
+}
+
+export interface POSFilters {
+  search?: string;
+  filterMode?: string;
+  date?: string;
+  receivedOnly?: boolean;
+}
+
 class POSService extends APIBase {
   /**
-   * Get incoming dispatches for a specific branch (e.g., 'San Marino', 'Mall del Sol')
+   * Get orders for a specific branch
    */
-  async getIncomingDispatches(branch: string): Promise<IncomingDispatch[]> {
+  async getIncomingDispatches(branch: string, filters: POSFilters = {}): Promise<POSOrder[]> {
     try {
-      const response = await this.get<{ data: IncomingDispatch[] }>(`pos/dispatches?branch=${encodeURIComponent(branch)}`)
+      let url = `pos/dispatches?branch=${encodeURIComponent(branch)}`
+      if (filters.search) url += `&search=${encodeURIComponent(filters.search)}`
+      if (filters.filterMode) url += `&filterMode=${encodeURIComponent(filters.filterMode)}`
+      if (filters.date) url += `&date=${encodeURIComponent(filters.date)}`
+
+      const response = await this.get<{ data: POSOrder[] }>(url)
       return response.data.data
     } catch (error) {
       console.error('Error fetching incoming dispatches:', error)
@@ -66,12 +92,31 @@ class POSService extends APIBase {
   /**
    * Get pickup orders for a branch
    */
-  async getPickupOrders(branch: string): Promise<any[]> {
+  async getPickupOrders(branch: string, filters: POSFilters = {}): Promise<POSOrder[]> {
     try {
-      const response = await this.get<{ data: any[] }>(`pos/pickups?branch=${encodeURIComponent(branch)}`)
+      let url = `pos/pickups?branch=${encodeURIComponent(branch)}`
+      if (filters.search) url += `&search=${encodeURIComponent(filters.search)}`
+      if (filters.filterMode) url += `&filterMode=${encodeURIComponent(filters.filterMode)}`
+      if (filters.date) url += `&date=${encodeURIComponent(filters.date)}`
+      if (filters.receivedOnly) url += `&receivedOnly=true`
+
+      const response = await this.get<{ data: POSOrder[] }>(url)
       return response.data.data
     } catch (error) {
       console.error('Error fetching pickups:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Mark a pickup order as delivered
+   */
+  async markAsDelivered(orderId: string): Promise<any> {
+    try {
+      const response = await this.put(`pos/pickups/${orderId}/deliver`, {})
+      return response.data
+    } catch (error) {
+      console.error('Error marking as delivered:', error)
       throw error
     }
   }
