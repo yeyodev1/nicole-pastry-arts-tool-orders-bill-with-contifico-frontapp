@@ -21,6 +21,7 @@ const isSubmitting = ref(false)
 const showWhatsAppModal = ref(false)
 const showConfirmationModal = ref(false)
 const generatedWhatsAppMessage = ref('')
+const createdOrderId = ref<string | null>(null)
 const isCourtesyMode = ref(false)
 const isEditMode = ref(false)
 const editingOrderId = ref<string | null>(null)
@@ -230,6 +231,7 @@ const executeOrderAction = async () => {
     } else {
       const response = await OrderService.createOrder(payload)
       generatedWhatsAppMessage.value = response.whatsappMessage
+      createdOrderId.value = response.order._id // Capture Created Order ID from response.order
       resetForm()
       showWhatsAppModal.value = true
     }
@@ -418,6 +420,7 @@ onMounted(async () => {
     <OrderWhatsAppModal 
       :is-open="showWhatsAppModal" 
       :message="generatedWhatsAppMessage"
+      :order-id="createdOrderId"
       @close="showWhatsAppModal = false"
       @send="sendWhatsApp"
     />
