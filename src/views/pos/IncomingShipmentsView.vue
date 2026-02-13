@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
 import POSService, { type POSOrder } from '@/services/pos.service'
-import ReceptionModal from './components/ReceptionModal.vue'
 import BulkReceptionModal from './components/BulkReceptionModal.vue'
 import DeliveryModal from './components/DeliveryModal.vue'
 import ToastNotification from '@/components/ToastNotification.vue'
@@ -20,15 +19,9 @@ const customDate = ref('')
 const searchQuery = ref('')
 const showDatePicker = computed(() => filterMode.value === 'custom')
 
-// Tab State
-const activeTab = ref<'dispatches' | 'pickups'>('dispatches')
-
 // Modal States
-const showReceptionModal = ref(false)
 const showBulkModal = ref(false)
 const showDeliveryModal = ref(false)
-const selectedDispatch = ref<any>(null)
-const selectedOrderId = ref('')
 const selectedOrder = ref<POSOrder | null>(null)
 
 // Toast
@@ -37,20 +30,14 @@ const toast = ref<{ show: boolean; message: string; type: 'success' | 'error' | 
 const fetchOrders = async () => {
   isLoading.value = true
   try {
-    const isPickupTab = activeTab.value === 'pickups'
-    // For pickups, we apply receivedOnly if there's no search query, 
-    // but the user wants to be able to mark as delivered even if not received.
-    // We'll show only received by default in pickups unless searching.
     const filters = {
       search: searchQuery.value,
       filterMode: filterMode.value,
       date: customDate.value
     }
 
-    const data = isPickupTab
-      ? await POSService.getPickupOrders(selectedBranch.value, filters)
-      : await POSService.getIncomingDispatches(selectedBranch.value, filters)
-
+    // Now focusing only on pickup/delivery ready orders
+    const data = await POSService.getPickupOrders(selectedBranch.value, filters)
     orders.value = data
   } catch (error) {
     console.error('Error fetching orders:', error)
@@ -87,7 +74,7 @@ watch(searchQuery, () => {
 })
 
 // Quick Filter Watchers
-watch([selectedBranch, activeTab, filterMode], () => {
+watch([selectedBranch, filterMode], () => {
   fetchData()
 })
 
@@ -97,30 +84,6 @@ watch(customDate, (newVal) => {
     fetchData()
   }
 })
-
-const openReceptionModal = (order: POSOrder) => {
-  if (!order.dispatches || order.dispatches.length === 0) return
-
-  // If multiple dispatches, we might need a selection, but for now we pick the latest pending or first
-  const targetDispatch = order.dispatches.find(d => d.receptionStatus === 'PENDING') || order.dispatches[0]
-
-  selectedDispatch.value = targetDispatch
-  selectedOrderId.value = order._id
-  showReceptionModal.value = true
-}
-
-const handleReceptionConfirm = async (payload: any) => {
-  try {
-    await POSService.confirmReception(payload.orderId, payload.dispatchId, payload.data)
-
-    toast.value = { show: true, message: 'Recepción registrada exitosamente', type: 'success' }
-    showReceptionModal.value = false
-    fetchOrders()
-  } catch (error) {
-    console.error('Error confirming reception:', error)
-    toast.value = { show: true, message: 'Error al registrar recepción', type: 'error' }
-  }
-}
 
 const handleMarkAsDeliveredPrep = (order: POSOrder) => {
   selectedOrder.value = order
@@ -185,7 +148,7 @@ onMounted(() => {
         </div>
         
         <div class="controls">
-            <button v-if="activeTab === 'dispatches' && pendingDispatchesForBulk.length > 0" class="btn-bulk" @click="showBulkModal = true">
+            <button v-if="pendingDispatchesForBulk.length > 0" class="btn-bulk" @click="showBulkModal = true">
                 <i class="fa-solid fa-boxes-stacked"></i> Recepción Masiva
             </button>
 
@@ -217,29 +180,6 @@ onMounted(() => {
         @search="fetchData"
       />
 
-      <div class="tabs-container">
-        <div class="tabs-list">
-            <button 
-              class="tab-btn" 
-              :class="{ active: activeTab === 'dispatches' }" 
-              @click="activeTab = 'dispatches'"
-            >
-              <i class="fa-solid fa-truck-ramp-box"></i> Recepción (Sucursal)
-            </button>
-            <button 
-              class="tab-btn" 
-              :class="{ active: activeTab === 'pickups' }" 
-              @click="activeTab = 'pickups'"
-            >
-              <i class="fa-solid fa-handshake"></i> Entrega (Clientes)
-            </button>
-        </div>
-        <div class="active-tab-indicator">
-            <span class="label">Gestionando:</span>
-            <span class="branch">{{ selectedBranch }}</span>
-        </div>
-      </div>
-
       <div v-if="isLoading" class="loading-state">
         <div class="spinner"></div>
         <span>Cargando información...</span>
@@ -247,10 +187,7 @@ onMounted(() => {
 
       <div v-else class="view-content">
         <div class="info-bar" v-if="orders.length > 0">
-           <span v-if="activeTab === 'dispatches'">
-             <i class="fa-solid fa-circle-info"></i> Gestión de <strong>{{ selectedBranch }}</strong>: Revisa y confirma la mercadería que llega desde Planta.
-           </span>
-           <span v-else>
+           <span>
              <i class="fa-solid fa-circle-check"></i> Gestión de <strong>{{ selectedBranch }}</strong>: Pedidos listos para entrega al cliente.
            </span>
         </div>
@@ -260,7 +197,6 @@ onMounted(() => {
               <i class="fa-regular fa-calendar-xmark"></i>
               <h3>Todo al día en {{ selectedBranch }}</h3>
               <p v-if="searchQuery">No encontramos ningún pedido o cliente con "{{ searchQuery }}".</p>
-              <p v-else-if="activeTab === 'dispatches'">No tienes ingresos de mercadería programados para <strong>{{ selectedBranch }}</strong> hoy.</p>
               <p v-else>No hay pedidos pendientes de entrega en <strong>{{ selectedBranch }}</strong> por ahora.</p>
            </div>
 
@@ -306,7 +242,7 @@ onMounted(() => {
                       </div>
                   </div>
 
-                  <div v-if="activeTab === 'pickups'" class="payment-info">
+                  <div class="payment-info">
                       <div class="p-row">
                           <span>Pago: {{ order.paymentMethod }}</span>
                           <span class="amount">${{ order.totalValue.toFixed(2) }}</span>
@@ -315,58 +251,22 @@ onMounted(() => {
               </div>
 
               <div class="card-actions">
-                  <!-- Dispatches Tab Actions -->
-                  <template v-if="activeTab === 'dispatches'">
-                      <button 
-                          v-if="order.posStatus === 'IN_TRANSIT'"
-                          class="btn-receive action-btn" 
-                          @click="openReceptionModal(order)"
-                      >
-                          <i class="fa-solid fa-clipboard-check"></i> Verificar y Recibir
-                      </button>
-                      <button 
-                          v-else-if="order.posStatus === 'RECEIVED' || order.posStatus === 'DELIVERED'"
-                          class="btn-details action-btn"
-                          @click="openReceptionModal(order)"
-                      >
-                          <i class="fa-solid fa-eye"></i> Ver Detalles
-                      </button>
-                      <button 
-                          v-else
-                          class="btn-disabled action-btn" 
-                          disabled
-                      >
-                          <i class="fa-solid fa-hourglass"></i> Pendiente Envío
-                      </button>
-                  </template>
-
-                  <!-- Pickups Tab Actions -->
-                  <template v-else>
-                      <button 
-                        v-if="order.posStatus !== 'DELIVERED'"
-                        class="btn-deliver action-btn" 
-                        @click="handleMarkAsDeliveredPrep(order)"
-                      >
-                          <i class="fa-solid fa-hand-holding-heart"></i> Entregar a Cliente
-                      </button>
-                      <button v-else class="btn-delivered-static action-btn" disabled>
-                          <i class="fa-solid fa-check-double"></i> Entregado
-                      </button>
-                  </template>
+                  <button 
+                    v-if="order.posStatus !== 'DELIVERED'"
+                    class="btn-deliver action-btn" 
+                    @click="handleMarkAsDeliveredPrep(order)"
+                  >
+                      <i class="fa-solid fa-hand-holding-heart"></i> Entregar a Cliente
+                  </button>
+                  <button v-else class="btn-delivered-static action-btn" disabled>
+                      <i class="fa-solid fa-check-double"></i> Entregado
+                  </button>
               </div>
            </div>
         </div>
       </div>
 
     </main>
-
-    <ReceptionModal
-        :is-open="showReceptionModal"
-        :dispatch="selectedDispatch"
-        :order-id="selectedOrderId"
-        @close="showReceptionModal = false"
-        @confirm="handleReceptionConfirm"
-    />
 
     <BulkReceptionModal
         :is-open="showBulkModal"
@@ -772,87 +672,6 @@ $desktop: 1024px;
   }
 }
 
-/* Tabs */
-.tabs-container {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  border-bottom: 2px solid $border-light;
-  margin-bottom: 1.5rem;
-
-  @include from-tablet {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-}
-
-.tabs-list {
-  display: flex;
-  gap: 0.5rem;
-
-  @include from-tablet {
-    gap: 1rem;
-  }
-}
-
-.active-tab-indicator {
-  padding: 0.4rem 1rem;
-  background: #F1F5F9;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.8rem;
-  border: 1px solid #E2E8F0;
-
-  @include from-tablet {
-    margin-bottom: 0;
-    transform: translateY(-5px);
-  }
-
-  .label {
-    font-size: 0.65rem;
-    font-weight: 800;
-    color: #64748B;
-    text-transform: uppercase;
-  }
-
-  .branch {
-    font-size: 0.85rem;
-    font-weight: 950;
-    color: $NICOLE-PURPLE;
-  }
-}
-
-.tab-btn {
-  background: transparent;
-  border: none;
-  padding: 0.8rem 1rem;
-  font-family: $font-principal;
-  font-size: 1rem;
-  color: $text-light;
-  cursor: pointer;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -2px;
-  white-space: nowrap;
-  transition: all 0.2s;
-
-  &:hover {
-    color: $NICOLE-PURPLE;
-  }
-
-  &.active {
-    color: $NICOLE-PURPLE;
-    border-bottom-color: $NICOLE-PURPLE;
-    font-weight: 700;
-  }
-
-  i {
-    margin-right: 0.5rem;
-  }
-}
-
 /* Shipments Grid */
 .shipments-grid {
   display: grid;
@@ -1068,22 +887,11 @@ $desktop: 1024px;
 }
 
 .btn-receive {
-  background: $NICOLE-PURPLE;
-  color: white;
-
-  &:hover {
-    background: darken($NICOLE-PURPLE, 5%);
-  }
+  display: none;
 }
 
 .btn-details {
-  background: #EFF6FF;
-  color: #3B82F6;
-  border: 1px solid #DBEAFE;
-
-  &:hover {
-    background: #DBEAFE;
-  }
+  display: none;
 }
 
 .btn-deliver {
@@ -1103,10 +911,7 @@ $desktop: 1024px;
 }
 
 .btn-disabled {
-  background: #F1F5F9;
-  color: #94A3B8;
-  border: 1px solid #E2E8F0;
-  cursor: not-allowed;
+  display: none;
 }
 
 .info-bar {
