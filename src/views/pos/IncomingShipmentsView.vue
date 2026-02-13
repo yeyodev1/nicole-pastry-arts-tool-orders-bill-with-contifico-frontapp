@@ -218,20 +218,26 @@ onMounted(() => {
       />
 
       <div class="tabs-container">
-        <button 
-          class="tab-btn" 
-          :class="{ active: activeTab === 'dispatches' }" 
-          @click="activeTab = 'dispatches'"
-        >
-          <i class="fa-solid fa-clipboard-list"></i> Órdenes
-        </button>
-        <button 
-          class="tab-btn" 
-          :class="{ active: activeTab === 'pickups' }" 
-          @click="activeTab = 'pickups'"
-        >
-          <i class="fa-solid fa-bag-shopping"></i> Retiros
-        </button>
+        <div class="tabs-list">
+            <button 
+              class="tab-btn" 
+              :class="{ active: activeTab === 'dispatches' }" 
+              @click="activeTab = 'dispatches'"
+            >
+              <i class="fa-solid fa-truck-ramp-box"></i> Recepción (Sucursal)
+            </button>
+            <button 
+              class="tab-btn" 
+              :class="{ active: activeTab === 'pickups' }" 
+              @click="activeTab = 'pickups'"
+            >
+              <i class="fa-solid fa-handshake"></i> Entrega (Clientes)
+            </button>
+        </div>
+        <div class="active-tab-indicator">
+            <span class="label">Gestionando:</span>
+            <span class="branch">{{ selectedBranch }}</span>
+        </div>
       </div>
 
       <div v-if="isLoading" class="loading-state">
@@ -242,20 +248,20 @@ onMounted(() => {
       <div v-else class="view-content">
         <div class="info-bar" v-if="orders.length > 0">
            <span v-if="activeTab === 'dispatches'">
-             <i class="fa-solid fa-info-circle"></i> Mostrando todos los pedidos asignados a la sucursal.
+             <i class="fa-solid fa-circle-info"></i> Gestión de <strong>{{ selectedBranch }}</strong>: Revisa y confirma la mercadería que llega desde Planta.
            </span>
            <span v-else>
-             <i class="fa-solid fa-check-double"></i> Mostrando pedidos listos para entrega al cliente.
+             <i class="fa-solid fa-circle-check"></i> Gestión de <strong>{{ selectedBranch }}</strong>: Pedidos listos para entrega al cliente.
            </span>
         </div>
 
         <div class="shipments-grid">
            <div v-if="orders.length === 0" class="empty-state">
-              <i class="fa-regular fa-folder-open"></i>
-              <h3>Sin pedidos para mostrar</h3>
-              <p v-if="searchQuery">No hay resultados para "{{ searchQuery }}".</p>
-              <p v-else-if="activeTab === 'pickups'">No hay retiros marcados como "Recibidos" hoy.</p>
-              <p v-else>No hay órdenes programadas para este periodo.</p>
+              <i class="fa-regular fa-calendar-xmark"></i>
+              <h3>Todo al día en {{ selectedBranch }}</h3>
+              <p v-if="searchQuery">No encontramos ningún pedido o cliente con "{{ searchQuery }}".</p>
+              <p v-else-if="activeTab === 'dispatches'">No tienes ingresos de mercadería programados para <strong>{{ selectedBranch }}</strong> hoy.</p>
+              <p v-else>No hay pedidos pendientes de entrega en <strong>{{ selectedBranch }}</strong> por ahora.</p>
            </div>
 
            <div 
@@ -769,9 +775,54 @@ $desktop: 1024px;
 /* Tabs */
 .tabs-container {
   display: flex;
+  flex-direction: column;
   gap: 1rem;
   border-bottom: 2px solid $border-light;
   margin-bottom: 1.5rem;
+
+  @include from-tablet {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+.tabs-list {
+  display: flex;
+  gap: 0.5rem;
+
+  @include from-tablet {
+    gap: 1rem;
+  }
+}
+
+.active-tab-indicator {
+  padding: 0.4rem 1rem;
+  background: #F1F5F9;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+  border: 1px solid #E2E8F0;
+
+  @include from-tablet {
+    margin-bottom: 0;
+    transform: translateY(-5px);
+  }
+
+  .label {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: #64748B;
+    text-transform: uppercase;
+  }
+
+  .branch {
+    font-size: 0.85rem;
+    font-weight: 950;
+    color: $NICOLE-PURPLE;
+  }
 }
 
 .tab-btn {
@@ -826,36 +877,64 @@ $desktop: 1024px;
   position: relative;
   max-width: 100%;
   border-top: 5px solid #CBD5E1;
+  border: 1px solid #E2E8F0;
 
   &:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
   }
 
   &.status-yellow {
-    border-top-color: #FACC15;
+    background: #FFFBEB;
+    border-color: #FDE047;
+    border-top: 6px solid #FACC15;
+
+    .card-header {
+      background: rgba(#FDE68A, 0.2);
+      border-bottom-color: rgba(#FACC15, 0.1);
+    }
   }
 
   &.status-blue {
-    border-top-color: #3B82F6;
+    background: #EFF6FF;
+    border-color: #BFDBFE;
+    border-top: 6px solid #3B82F6;
+
+    .card-header {
+      background: rgba(#DBEAFE, 0.3);
+      border-bottom-color: rgba(#3B82F6, 0.1);
+    }
   }
 
   &.status-green {
-    border-top-color: #22C55E;
+    background: #F0FDF4;
+    border-color: #BBF7D0;
+    border-top: 6px solid #22C55E;
+
+    .card-header {
+      background: rgba(#DCFCE7, 0.3);
+      border-bottom-color: rgba(#22C55E, 0.1);
+    }
   }
 
   &.status-gray {
-    border-top-color: #94A3B8;
+    background: #F8FAFC;
+    border-color: #E2E8F0;
+    border-top: 6px solid #94A3B8;
+
+    .card-header {
+      background: #F1F5F9;
+      border-bottom-color: #E2E8F0;
+    }
   }
 }
 
 .card-header {
-  padding: 0.8rem 1rem;
+  padding: 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid $border-light;
-  background: #fafbfc;
+  border-bottom: 1px solid transparent;
   gap: 0.5rem;
 
   .status-indicator {
