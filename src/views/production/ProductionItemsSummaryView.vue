@@ -39,10 +39,10 @@ const {
 import { useToast } from '@/composables/useToast'
 import ActionHoldButton from '@/components/common/ActionHoldButton.vue'
 
-const { isExporting, exportDispatchOrder } = useOrderExport()
+const { isExporting, exportDispatchOrder, exportProductionOrder } = useOrderExport()
 const showExportModal = ref(false)
+const exportMode = ref<'dispatch' | 'production'>('dispatch')
 
-// ... existing refs ...
 const { success, error: showError } = useToast()
 
 const isBatchModalOpen = ref(false)
@@ -159,6 +159,18 @@ const handleRawToggle = () => {
   fetchSummary()
 }
 
+const handleExportClick = (mode: 'dispatch' | 'production') => {
+  exportMode.value = mode
+  showExportModal.value = true
+}
+
+const exportSingleItem = (productName: string) => {
+  // Select ONLY this product and trigger production export
+  clearRawSelection()
+  toggleRawProductSelection(productName)
+  handleExportClick('production')
+}
+
 const handleExportProduction = async (responsibleName: string) => {
   try {
     // 1. Get selected products
@@ -188,8 +200,12 @@ const handleExportProduction = async (responsibleName: string) => {
       return
     }
 
-    // 3. Export using the dispatch report style
-    await exportDispatchOrder(ordersToExport)
+    // 3. Export based on mode
+    if (exportMode.value === 'dispatch') {
+      await exportDispatchOrder(ordersToExport)
+    } else {
+      await exportProductionOrder(ordersToExport, responsibleName)
+    }
 
     success('Orden de Producción exportada exitosamente')
     showExportModal.value = false
@@ -286,12 +302,20 @@ onMounted(async () => {
 
             <div class="raw-export-actions" v-if="rawOrders.length > 0">
                <button 
-                class="btn-export-prod" 
+                class="btn-export-prod delivery" 
                 :disabled="isExporting"
-                @click="showExportModal = true"
+                @click="handleExportClick('dispatch')"
                >
-                 <i class="fas" :class="isExporting ? 'fa-spinner fa-spin' : 'fa-file-export'"></i>
-                 {{ selectedRawProducts.size > 0 ? `Exportar Seleccionados (${selectedRawProducts.size})` : 'Exportar Vista Actual' }}
+                 <i class="fas" :class="isExporting && exportMode === 'dispatch' ? 'fa-spinner fa-spin' : 'fa-truck-loading'"></i>
+                 {{ selectedRawProducts.size > 0 ? `Entrega Seleccionados (${selectedRawProducts.size})` : 'Orden de Entrega' }}
+               </button>
+               <button 
+                class="btn-export-prod production" 
+                :disabled="isExporting"
+                @click="handleExportClick('production')"
+               >
+                 <i class="fas" :class="isExporting && exportMode === 'production' ? 'fa-spinner fa-spin' : 'fa-bread-slice'"></i>
+                 {{ selectedRawProducts.size > 0 ? `Producción Seleccionados (${selectedRawProducts.size})` : 'Orden de Producción' }}
                </button>
             </div>
           </div>
@@ -334,7 +358,12 @@ onMounted(async () => {
                       </div>
                     </td>
                     <td>{{ productName }}</td>
-                    <td class="col-qty"><strong>{{ qty }}</strong></td>
+                    <td class="col-qty">
+                      <strong>{{ qty }}</strong>
+                      <button class="btn-item-export" @click.stop="exportSingleItem(productName)" title="Exportar Producción de este item">
+                        <i class="fas fa-file-export"></i>
+                      </button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -510,9 +539,13 @@ onMounted(async () => {
         </div>
         <div class="batch-actions">
           <button class="btn-clear" @click="clearRawSelection">Deseleccionar</button>
-          <button class="btn-process" @click="showExportModal = true" :disabled="isExporting">
-            <i class="fas fa-file-export"></i>
-            Exportar Orden de Producción
+          <button class="btn-process delivery" @click="handleExportClick('dispatch')" :disabled="isExporting">
+            <i class="fas fa-truck-loading"></i>
+            Entrega
+          </button>
+          <button class="btn-process production" @click="handleExportClick('production')" :disabled="isExporting">
+            <i class="fas fa-bread-slice"></i>
+            Producción
           </button>
         </div>
       </div>
@@ -603,31 +636,34 @@ $color-delayed: #e67e22;
 
   .header-actions {
     display: flex;
+    flex-direction: column;
     gap: 0.75rem;
     width: 100%;
 
     @media (min-width: 768px) {
+      flex-direction: row;
       width: auto;
     }
 
     button {
-      flex: 1;
+      width: 100%;
       background: white;
       border: 1px solid #e1e8ed;
-      padding: 0.75rem 1rem;
+      padding: 0.85rem 1.25rem;
       border-radius: 12px;
       font-weight: 700;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
       color: #2c3e50;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 0.5rem;
+      gap: 0.6rem;
       transition: all 0.2s;
       white-space: nowrap;
 
       @media (min-width: 768px) {
+        width: auto;
         flex: none;
         padding: 0.6rem 1.2rem;
         border-radius: 8px;
@@ -706,15 +742,26 @@ $color-delayed: #e67e22;
 
     .raw-filter-pills {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.75rem;
+      gap: 0.5rem;
+      overflow-x: auto;
       padding: 0.5rem;
       background: white;
       border-radius: 16px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
       border: 1px solid #f1f2f6;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 0.5rem;
+      width: 100%;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+
+      -ms-overflow-style: none;
+      scrollbar-width: none;
 
       .raw-pill {
+        flex-shrink: 0;
         background: transparent;
         border: 1px solid #f1f2f6;
         color: #64748b;
@@ -764,25 +811,34 @@ $color-delayed: #e67e22;
           }
         }
       }
+
+      @media (min-width: 1024px) {
+        flex-wrap: wrap;
+        width: auto;
+        margin-bottom: 0;
+      }
     }
   }
 
   .raw-actions-row {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1.5rem;
-    margin-top: 1rem;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1.5rem;
 
     .raw-export-actions {
       display: flex;
+      flex-direction: column;
       gap: 0.75rem;
+      width: 100%;
 
       .btn-export-prod {
+        width: 100%;
+        justify-content: center;
         background: #8e44ad;
         color: white;
         border: none;
-        padding: 0.75rem 1.5rem;
+        padding: 0.75rem 1.25rem;
         border-radius: 12px;
         font-weight: 700;
         cursor: pointer;
@@ -792,16 +848,49 @@ $color-delayed: #e67e22;
         transition: all 0.2s;
         box-shadow: 0 4px 12px rgba(142, 68, 173, 0.25);
 
+        &.delivery {
+          background: #3498db;
+          box-shadow: 0 4px 12px rgba(52, 152, 219, 0.25);
+
+          &:hover:not(:disabled) {
+            background: darken(#3498db, 5%);
+          }
+        }
+
+        &.production {
+          background: #e67e22;
+          box-shadow: 0 4px 12px rgba(230, 126, 34, 0.25);
+
+          &:hover:not(:disabled) {
+            background: darken(#e67e22, 5%);
+          }
+        }
+
         &:hover:not(:disabled) {
-          background: darken(#8e44ad, 5%);
           transform: translateY(-2px);
-          box-shadow: 0 6px 15px rgba(142, 68, 173, 0.3);
+          box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
         }
 
         &:disabled {
           background: #cbd5e1;
           box-shadow: none;
           cursor: not-allowed;
+          color: #94a3b8;
+        }
+      }
+    }
+
+    @media (min-width: 1024px) {
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+
+      .raw-export-actions {
+        flex-direction: row;
+        width: auto;
+
+        .btn-export-prod {
+          width: auto;
         }
       }
     }
@@ -850,13 +939,47 @@ $color-delayed: #e67e22;
         border-color: #8e44ad;
       }
     }
+
+    .col-qty {
+      width: 100px;
+      text-align: right;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.75rem;
+
+      .btn-item-export {
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        color: #64748b;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+          background: #e2e8f0;
+          color: #e67e22;
+          border-color: #e67e22;
+        }
+      }
+    }
   }
 }
 
 .destination-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+
+  @media (min-width: 768px) {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+  }
 }
 
 .destination-card {
@@ -1303,24 +1426,42 @@ $color-delayed: #e67e22;
     }
 
     .btn-process {
-      background: white;
-      color: #1e293b;
       border: none;
-      padding: 0.5rem 1.2rem;
-      border-radius: 8px;
-      font-weight: 800;
+      padding: 0.75rem 1.5rem;
+      border-radius: 12px;
+      font-weight: 700;
       cursor: pointer;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.75rem;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 
-      i {
-        color: $color-info;
+      &.delivery {
+        background: #3498db;
+        color: white;
+
+        &:hover:not(:disabled) {
+          background: darken(#3498db, 5%);
+          transform: translateY(-2px);
+        }
       }
 
-      &:hover {
-        transform: translateY(-2px);
+      &.production {
+        background: #e67e22;
+        color: white;
+
+        &:hover:not(:disabled) {
+          background: darken(#e67e22, 5%);
+          transform: translateY(-2px);
+        }
+      }
+
+      &:disabled {
+        background: #cbd5e1;
+        color: #94a3b8;
+        cursor: not-allowed;
+        box-shadow: none;
       }
     }
   }
