@@ -82,6 +82,10 @@ const holdProgress = ref(0)
 let holdTimer: any = null
 const HOLD_DURATION = 1200 // 1.2s
 
+// Celebration Effects
+const showCelebration = ref(false)
+const celebrationType = ref<'in' | 'out'>('in')
+
 // Timer for auto-update
 let dateTimeInterval: any = null
 
@@ -243,11 +247,23 @@ const confirmIn = async () => {
       date: combinedDate,
       user: user._id // Send user ID explicitly
     })
+
+    // Trigger celebration effect
+    celebrationType.value = 'in'
+    showCelebration.value = true
+    setTimeout(() => {
+      showCelebration.value = false
+    }, 3000)
+
     success('Recepción registrada correctamente')
     // Reset but keep date/time current
     resetForms()
     updateDateTime()
-    activeTab.value = 'movements'
+
+    // Delay tab change for celebration
+    setTimeout(() => {
+      activeTab.value = 'movements'
+    }, 500)
   } catch (err: any) {
     showError(err.response?.data?.message || 'Error al registrar recepción')
   } finally {
@@ -330,6 +346,14 @@ const confirmOut = async () => {
       date: combinedDate,
       user: user._id // Send user ID explicitly
     })
+
+    // Trigger celebration effect
+    celebrationType.value = 'out'
+    showCelebration.value = true
+    setTimeout(() => {
+      showCelebration.value = false
+    }, 3000)
+
     success('Despacho registrado correctamente')
     // Update local material quantity immediately
     if (selectedOutMaterial.value) {
@@ -337,7 +361,11 @@ const confirmOut = async () => {
     }
     resetForms()
     updateDateTime()
-    activeTab.value = 'movements'
+
+    // Delay tab change for celebration
+    setTimeout(() => {
+      activeTab.value = 'movements'
+    }, 500)
   } catch (err: any) {
     showError(err.response?.data?.message || 'Error al registrar despacho')
   } finally {
@@ -376,6 +404,17 @@ const formatDate = (date: string) => {
     hour: '2-digit',
     minute: '2-digit'
   }).format(new Date(date))
+}
+
+// Confetti positioning helper
+const getConfettiStyle = (index: number) => {
+  const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+  return {
+    left: `${Math.random() * 100}%`,
+    animationDelay: `${Math.random() * 0.5}s`,
+    backgroundColor: colors[Math.floor(Math.random() * colors.length)],
+    animationDuration: `${2 + Math.random() * 1}s`
+  }
 }
 
 watch(activeTab, (newTab) => {
@@ -652,6 +691,34 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Celebration Overlay -->
+    <transition name="celebration">
+      <div v-if="showCelebration" class="celebration-overlay">
+        <div class="celebration-content">
+          <div class="success-icon" :class="{ 'fade-in': showCelebration }">
+            <i v-if="celebrationType === 'in'" class="fas fa-box-open"></i>
+            <i v-else class="fas fa-truck-loading"></i>
+          </div>
+          <h2 class="celebration-title" :class="{ 'fade-in': showCelebration }">
+            {{ celebrationType === 'in' ? '¡Recepción Exitosa!' : '¡Despacho Exitoso!' }}
+          </h2>
+          <p class="celebration-subtitle" :class="{ 'fade-in-delay': showCelebration }">
+            {{ celebrationType === 'in' ? 'Inventario actualizado correctamente' : 'Material despachado correctamente' }}
+          </p>
+        </div>
+        
+        <!-- Confetti Effect -->
+        <div class="confetti-container">
+          <div 
+            v-for="i in 50" 
+            :key="i" 
+            class="confetti"
+            :style="getConfettiStyle(i)"
+          ></div>
+        </div>
+      </div>
+    </transition>
 
   </div>
 </template>
