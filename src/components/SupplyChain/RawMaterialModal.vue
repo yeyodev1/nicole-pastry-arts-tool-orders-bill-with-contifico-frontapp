@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import HoldConfirmButton from '@/components/ui/HoldConfirmButton.vue'
+import DeleteMaterialModal from '@/views/SupplyChain/components/DeleteMaterialModal.vue'
 
 const props = defineProps({
   isOpen: { type: Boolean, required: true },
@@ -24,16 +25,13 @@ const form = ref({
   presentationName: '',
   presentationPrice: 0,
   presentationQuantity: 1,
-  incomingQuantity: 0,
-  lastInvoice: '',
-  lastEntryNumber: '',
   wastePercentage: 0
 })
 
 const units = [
-  { value: 'g', label: 'Gramos (g/kg)' },
-  { value: 'ml', label: 'Mililitros (ml/L)' },
-  { value: 'u', label: 'Unidades (u)' }
+  { value: 'u', label: 'Unidades (u)' },
+  { value: 'g', label: 'Gramos (g) / Kilogramos (kg)' },
+  { value: 'ml', label: 'Mililitros (ml) / Litros (L)' }
 ]
 
 const calculatedUnitCost = computed(() => {
@@ -72,9 +70,6 @@ const resetForm = () => {
     presentationName: '',
     presentationPrice: 0,
     presentationQuantity: 1,
-    incomingQuantity: 0,
-    lastInvoice: '',
-    lastEntryNumber: '',
     wastePercentage: 0
   }
 }
@@ -88,16 +83,13 @@ watch(() => props.isOpen, (newVal) => {
         item: m.item || '',
         code: m.code || '',
         unit: m.unit || 'u',
-        quantity: getDisplayQuantity(m.quantity || 0, m.unit),
+        quantity: m.quantity || 0, // Keep raw quantity for preservation
         minStock: getDisplayQuantity(m.minStock || 0, m.unit),
         provider: m.provider?._id || m.provider || '',
         category: m.category || '',
         presentationName: m.presentationName || '',
         presentationPrice: m.presentationPrice || 0,
         presentationQuantity: m.presentationQuantity || 1,
-        incomingQuantity: 0,
-        lastInvoice: m.lastInvoice || '',
-        lastEntryNumber: m.lastEntryNumber || '',
         wastePercentage: m.wastePercentage || 0
       }
     } else {
@@ -116,16 +108,11 @@ const generateCode = (category: string, item: string) => {
 const handleSubmit = () => {
   const payload: any = { ...form.value }
 
-  if (payload.incomingQuantity > 0) {
-    const currentInBase = toBackendQuantity(form.value.quantity, form.value.unit)
-    const incomingInBase = payload.incomingQuantity * payload.presentationQuantity
-    payload.quantity = currentInBase + incomingInBase
-    payload.lastMovementDate = new Date()
-  } else {
-    payload.quantity = toBackendQuantity(payload.quantity, payload.unit)
-  }
-
+  // We preserve the quantity as is (already in backend unit if editing, 0 if new)
+  // But minStock needs conversion back to base unit
   payload.minStock = toBackendQuantity(payload.minStock || 0, payload.unit)
+
+  // Cost is correctly calculated per base unit
   payload.cost = calculatedUnitCost.value
 
   if (!payload.code) {
@@ -133,9 +120,22 @@ const handleSubmit = () => {
   }
 
   if (!payload.provider) delete payload.provider
-  delete payload.incomingQuantity
 
   emit('save', payload)
+}
+
+// Delete Logic
+const isDeleteModalOpen = ref(false)
+
+const openDeleteModal = () => {
+  isDeleteModalOpen.value = true
+}
+
+const handleConfirmDelete = () => {
+  if (props.materialToEdit) {
+    emit('delete', props.materialToEdit._id)
+    isDeleteModalOpen.value = false
+  }
 }
 </script>
 
@@ -144,17 +144,17 @@ const handleSubmit = () => {
     <div class="modal-content pro-modal">
       <div class="modal-header">
         <div class="header-info">
-          <h2>{{ materialToEdit ? 'Detalle y Gestión de Stock' : 'Nuevo Ingreso de Material' }}</h2>
+          <h2>{{ materialToEdit ? 'Editar Material' : 'Nuevo Material' }}</h2>
           <p v-if="materialToEdit" class="sku-subtitle">SKU: {{ form.code }} | {{ form.item }}</p>
         </div>
         <button class="btn-close" @click="$emit('close')">&times;</button>
       </div>
 
       <div class="modal-body">
-        <div class="section-title">Información del Producto</div>
+        <div class="section-title">Información Básica</div>
         <div class="form-row">
           <div class="form-group flex-2">
-            <label>Nombre Específico / Marca</label>
+            <label>Nombre Comercial / Marca</label>
             <input v-model="form.name" placeholder="Ej. Chocolate Callebaut 70%" />
           </div>
           <div class="form-group flex-1">
@@ -172,18 +172,18 @@ const handleSubmit = () => {
             </select>
           </div>
           <div class="form-group">
-            <label>Unidad Base</label>
-            <select v-model="form.unit" :disabled="!!materialToEdit">
+            <label>Unidad de Medida</label>
+            <select v-model="form.unit">
               <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
             </select>
           </div>
         </div>
 
         <div class="section-divider"></div>
-        <div class="section-title">Datos del Proveedor y Compra</div>
+        <div class="section-title">Definición de Costo</div>
         
         <div class="form-group">
-          <label>Proveedor Asociado</label>
+          <label>Proveedor Principal</label>
           <select v-model="form.provider">
             <option value="">-- Seleccionar Proveedor --</option>
             <option v-for="p in providers" :key="p._id" :value="p._id">{{ p.name }}</option>
@@ -192,65 +192,45 @@ const handleSubmit = () => {
 
         <div class="form-row highlight">
           <div class="form-group flex-2">
-            <label>Presentación del Proveedor</label>
-            <input v-model="form.presentationName" placeholder="Ej. Saco 25kg, Galón 4L" />
+            <label>Presentación de Compra</label>
+            <input v-model="form.presentationName" placeholder="Ej. Saco 25kg, Cubeta 30u, Botella 1L" />
           </div>
           <div class="form-group flex-1">
-            <label>Cant. en {{ form.unit }}</label>
-            <input type="number" v-model.number="form.presentationQuantity" />
+            <label>Contenido ({{ form.unit }})</label>
+            <input type="number" v-model.number="form.presentationQuantity" placeholder="0" min="0" step="any" />
+            <span class="input-hint" v-if="form.unit !== 'u'">
+              Ej. Si es 1kg, pon 1000g
+            </span>
           </div>
           <div class="form-group flex-1">
             <label>Precio Compra ($)</label>
-            <input type="number" v-model.number="form.presentationPrice" step="0.01" />
+            <input type="number" v-model.number="form.presentationPrice" step="0.01" placeholder="0.00" />
           </div>
         </div>
 
         <div class="cost-summary" v-if="calculatedUnitCost > 0">
-          <span class="label">Costo por {{ getDisplayUnit(form.unit) }}:</span>
-          <span class="value">${{ (calculatedUnitCost * (form.unit === 'u' ? 1 : 1000)).toFixed(4) }}</span>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>No. Factura</label>
-            <input v-model="form.lastInvoice" placeholder="001-001..." />
+          <div class="summary-item">
+            <span class="label">Costo por {{ getDisplayUnit(form.unit) }}:</span>
+            <span class="value main">${{ (calculatedUnitCost * (form.unit === 'u' ? 1 : 1000)).toFixed(4) }}</span>
           </div>
-          <div class="form-group">
-            <label>No. de Ingreso</label>
-            <input v-model="form.lastEntryNumber" placeholder="Ej. ENT-123" />
+          <div class="summary-item sub">
+             <span class="label">Costo unitario ({{ form.unit }}):</span>
+             <span class="value">${{ calculatedUnitCost.toFixed(6) }}</span>
           </div>
-        </div>
-
-        <div class="section-divider"></div>
-        <div class="section-title highlight-title">Gestión de Stock</div>
-        <div class="stock-action-box">
-           <div class="stock-current">
-              <label>Inventario Actual</label>
-              <div class="value">{{ form.quantity }} {{ getDisplayUnit(form.unit) }}</div>
-           </div>
-           <div class="stock-incoming">
-              <label>CUANTO LLEGARÍA (Presentaciones)</label>
-              <input type="number" v-model.number="form.incomingQuantity" class="entry-field" />
-           </div>
-           <div class="stock-total">
-              <label>Existencia Final</label>
-              <div class="value total">{{ (Number(form.quantity) + (Number(form.incomingQuantity) * (form.unit === 'u' ? form.presentationQuantity : form.presentationQuantity / 1000))).toFixed(2) }} {{ getDisplayUnit(form.unit) }}</div>
-           </div>
         </div>
       </div>
 
       <div class="modal-footer pro-footer">
-        <HoldConfirmButton 
-          v-if="materialToEdit"
-          label="ELIMINAR REGISTRO"
-          color="#ef4444"
-          class="btn-delete"
-          @confirmed="$emit('delete', materialToEdit._id)"
-        />
+        <div v-if="materialToEdit" class="delete-section">
+          <button class="btn-delete" @click="openDeleteModal">
+            <i class="fas fa-trash-alt"></i> ELIMINAR REGISTRO
+          </button>
+        </div>
+        
         <div class="main-actions">
           <button class="btn-cancel" @click="$emit('close')">Cerrar</button>
           <HoldConfirmButton 
-            :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CONFIRMAR INGRESO'"
+            :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CREAR MATERIAL'"
             :disabled="isSaving || !form.name || !form.item"
             :hold-time="1200"
             @confirmed="handleSubmit"
@@ -258,6 +238,14 @@ const handleSubmit = () => {
         </div>
       </div>
     </div>
+
+    <!-- Delete Confirmation Modal -->
+    <DeleteMaterialModal
+      :is-open="isDeleteModalOpen"
+      :material-name="materialToEdit?.name || ''"
+      @close="isDeleteModalOpen = false"
+      @confirm="handleConfirmDelete"
+    />
   </div>
 </template>
 
@@ -523,36 +511,62 @@ const handleSubmit = () => {
 
 .cost-summary {
   display: flex;
-  justify-content: flex-end; // Right align
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 0.5rem;
-  margin-top: -0.5rem;
+  margin-top: 0;
   margin-bottom: 1.5rem;
-  flex-wrap: wrap;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 16px;
+  border: 1px solid #f1f5f9;
 
   @media (min-width: 640px) {
-    gap: 1rem;
     margin-bottom: 2rem;
+  }
+
+  .summary-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    &.sub {
+      opacity: 0.6;
+
+      .label {
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+
+      .value {
+        font-size: 0.9rem;
+      }
+    }
   }
 
   .label {
     font-weight: 800;
     color: #94a3b8;
     font-size: 0.8rem;
+    text-transform: uppercase;
 
     @media (min-width: 640px) {
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
   }
 
   .value {
     font-weight: 900;
     color: #0f172a;
-    font-size: 1.1rem;
     font-family: 'JetBrains Mono', monospace;
 
-    @media (min-width: 640px) {
+    &.main {
       font-size: 1.25rem;
+      color: $NICOLE-PURPLE;
+
+      @media (min-width: 640px) {
+        font-size: 1.5rem;
+      }
     }
   }
 }
@@ -656,11 +670,34 @@ const handleSubmit = () => {
     padding: 2rem 2.5rem;
   }
 
-  .btn-delete {
+  .delete-section {
     width: 100%;
-    border-radius: 18px;
-    height: 52px;
-    font-weight: 900;
+
+    .btn-delete {
+      width: 100%;
+      height: 52px;
+      border-radius: 18px;
+      background: #fee2e2;
+      color: #ef4444;
+      font-weight: 900;
+      border: 1px solid #fca5a5;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+
+      &:active {
+        transform: scale(0.98);
+      }
+
+      @media(hover: hover) {
+        &:hover {
+          background: #fecaca;
+        }
+      }
+    }
   }
 
   .main-actions {
