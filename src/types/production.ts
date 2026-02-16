@@ -4,6 +4,8 @@ export interface OrderDetail {
   client: string
   delivery: string
   stage: string
+  branch?: string
+  deliveryType?: string
 }
 
 export interface SummaryItem {

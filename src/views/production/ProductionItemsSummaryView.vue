@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import ProductionService from '@/services/production.service'
 import ProductionCategoryGroup from './components/ProductionCategoryGroup.vue'
 import ProductionHistoryPanel from './components/ProductionHistoryPanel.vue'
@@ -22,7 +23,10 @@ const {
   selectedItemIds,
   toggleSelection,
   clearSelection,
-  batchRegister
+  batchRegister,
+  isRawMode,
+  rawBucketFilter,
+  rawStatsByDestination
 } = useProductionSummary()
 
 import { useToast } from '@/composables/useToast'
@@ -140,7 +144,16 @@ const toggleHistoryPanel = () => {
   }
 }
 
+const handleRawToggle = () => {
+  isRawMode.value = !isRawMode.value
+  fetchSummary()
+}
+
 onMounted(async () => {
+  const route = useRoute()
+  if (route.query.mode === 'raw') {
+    isRawMode.value = true
+  }
   await fetchSummary()
 })
 </script>
@@ -162,6 +175,10 @@ onMounted(async () => {
         <button class="btn-history" @click="toggleHistoryPanel" :class="{ active: showHistory }">
           <i class="fas" :class="showHistory ? 'fa-arrow-left' : 'fa-history'"></i>
           {{ showHistory ? 'Volver' : 'Ver Completados' }}
+        </button>
+        <button v-if="!showHistory" class="btn-raw" @click="handleRawToggle" :class="{ active: isRawMode }">
+          <i class="fas fa-eye"></i>
+          {{ isRawMode ? 'Vista Normal' : 'Ver Crudo' }}
         </button>
         <button class="btn-refresh" @click="fetchSummary(false)" :disabled="isLoading || isBackgroundLoading" v-if="!showHistory">
           <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading || isBackgroundLoading }"></i>
@@ -189,8 +206,76 @@ onMounted(async () => {
 
     <div v-else class="content-wrapper">
 
-      <!-- Loop for Delayed, Today, Tomorrow, Future -->
-      <div v-for="(timeGroup, type) in { delayed: delayedGroups, today: todayGroups, tomorrow: tomorrowGroups, future: futureGroups }" :key="type">
+      <!-- Raw Mode View -->
+      <div v-if="isRawMode" class="raw-mode-container">
+        <div class="raw-header">
+          <div class="raw-info-bar">
+            <i class="fas fa-info-circle"></i>
+            <span>Mostrando totales "en crudo" (incluye producidos). Acciones deshabilitadas.</span>
+          </div>
+
+          <!-- Raw Filter Bar -->
+          <div class="raw-filter-pills">
+            <button 
+              v-for="bucket in ['delayed', 'today', 'tomorrow', 'future']" 
+              :key="bucket"
+              class="raw-pill"
+              :class="{ active: rawBucketFilter === bucket, [bucket]: true }"
+              @click="rawBucketFilter = bucket as any"
+            >
+              <i v-if="bucket === 'delayed'" class="fas fa-clock"></i>
+              <i v-else-if="bucket === 'today'" class="fas fa-calendar-day"></i>
+              <i v-else-if="bucket === 'tomorrow'" class="fas fa-sun"></i>
+              <i v-else class="fas fa-calendar-alt"></i>
+              {{ bucket === 'delayed' ? 'Atrasados' : bucket === 'today' ? 'Hoy' : bucket === 'tomorrow' ? 'Mañana' : 'Futuro' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="destination-grid">
+          <div v-for="(products, destination) in rawStatsByDestination" :key="destination" class="destination-card">
+            <div class="dest-title">
+              <div class="dest-icon-box">
+                <i v-if="destination === 'San Marino'" class="fas fa-store"></i>
+                <i v-else-if="destination === 'Mall del Sol'" class="fas fa-shopping-bag"></i>
+                <i v-else-if="destination === 'Centro Prod.'" class="fas fa-industry"></i>
+                <i v-else-if="destination === 'Delivery'" class="fas fa-motorcycle"></i>
+                <i v-else class="fas fa-map-marker-alt"></i>
+              </div>
+              <div class="dest-info">
+                <h3>{{ destination }}</h3>
+                <span class="dest-total">{{Object.values(products).reduce((a, b) => a + b, 0)}} unids</span>
+              </div>
+            </div>
+            <div class="dest-table-container">
+              <table class="raw-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th class="col-qty">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(qty, productName) in products" :key="productName">
+                    <td>{{ productName }}</td>
+                    <td class="col-qty"><strong>{{ qty }}</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="Object.keys(rawStatsByDestination).length === 0" class="empty-raw">
+          <i class="fas fa-folder-open"></i>
+          <p>No hay items registrados para este periodo en modo crudo.</p>
+        </div>
+      </div>
+
+      <!-- Normal View -->
+      <template v-else>
+        <!-- Loop for Delayed, Today, Tomorrow, Future -->
+        <div v-for="(timeGroup, type) in { delayed: delayedGroups, today: todayGroups, tomorrow: tomorrowGroups, future: futureGroups }" :key="type">
         
         <section v-if="timeGroup.length > 0" class="list-section" :class="type">
           <div class="section-title" :class="type">
@@ -226,11 +311,13 @@ onMounted(async () => {
         </section>
       </div>
 
-      <div v-if="delayedGroups.length === 0 && todayGroups.length === 0 && tomorrowGroups.length === 0 && futureGroups.length === 0" class="empty-state">
-        <i class="fas fa-check-circle"></i>
-        <p>No hay producción pendiente</p>
-        <span>Buen trabajo, el tablero está limpio.</span>
-      </div>
+        <div v-if="delayedGroups.length === 0 && todayGroups.length === 0 && tomorrowGroups.length === 0 && futureGroups.length === 0" class="empty-state">
+          <i class="fas fa-check-circle"></i>
+          <p>No hay producción pendiente</p>
+          <span>Buen trabajo, el tablero está limpio.</span>
+        </div>
+      </template>
+
     </div>
 
     <!-- Floating Action Bar for Batch Selection -->
@@ -472,6 +559,228 @@ $color-delayed: #e67e22;
           border-color: $color-info;
         }
       }
+
+      &.btn-raw {
+        color: $color-delayed;
+        border-color: rgba($color-delayed, 0.3);
+
+        &.active {
+          background: $color-delayed;
+          color: white;
+          border-color: $color-delayed;
+        }
+
+        &:hover:not(.active) {
+          background: rgba($color-delayed, 0.05);
+          border-color: $color-delayed;
+        }
+      }
+    }
+  }
+}
+
+.raw-mode-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+
+  .raw-header {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+
+    .raw-info-bar {
+      background: #fff8e1;
+      border-left: 4px solid #ffc107;
+      color: #856404;
+      padding: 1rem 1.25rem;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .raw-filter-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      padding: 0.5rem;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+      border: 1px solid #f1f2f6;
+
+      .raw-pill {
+        background: transparent;
+        border: 1px solid #f1f2f6;
+        color: #64748b;
+        padding: 0.6rem 1.25rem;
+        border-radius: 12px;
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+        &:hover {
+          background: #f8fafc;
+          border-color: #cbd5e1;
+        }
+
+        &.active {
+          color: white;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+          transform: translateY(-1px);
+
+          &.delayed {
+            background: $color-delayed;
+            border-color: $color-delayed;
+          }
+
+          &.today {
+            background: $color-urgent;
+            border-color: $color-urgent;
+          }
+
+          &.tomorrow {
+            background: $color-warning;
+            border-color: $color-warning;
+          }
+
+          &.future {
+            background: $color-info;
+            border-color: $color-info;
+          }
+        }
+      }
+    }
+  }
+
+  .destination-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .destination-card {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+    border: 1px solid #f1f2f6;
+    transition: transform 0.2s, box-shadow 0.2s;
+
+    &:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+    }
+
+    .dest-title {
+      background: #fcfcfc;
+      padding: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      border-bottom: 2px solid #f8f9fa;
+
+      .dest-icon-box {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        background: #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4rem;
+        color: $color-info;
+      }
+
+      .dest-info {
+        flex: 1;
+
+        h3 {
+          margin: 0;
+          font-size: 1.1rem;
+          font-weight: 800;
+          color: #1e293b;
+        }
+
+        .dest-total {
+          font-size: 0.8rem;
+          color: #94a3b8;
+          font-weight: 600;
+          text-transform: uppercase;
+        }
+      }
+    }
+
+    .dest-table-container {
+      padding: 1rem;
+    }
+
+    .raw-table {
+      width: 100%;
+      border-collapse: collapse;
+
+      th {
+        padding: 0.5rem 0.75rem 1rem;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: #94a3b8;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        border-bottom: 1px solid #f1f5f9;
+      }
+
+      td {
+        padding: 1rem 0.75rem;
+        font-size: 0.95rem;
+        color: #334155;
+        border-bottom: 1px solid #f8fafc;
+        font-weight: 500;
+      }
+
+      .col-qty {
+        text-align: right;
+        width: 100px;
+
+        strong {
+          color: $color-info;
+          font-weight: 800;
+          font-size: 1.1rem;
+        }
+      }
+
+      tr:last-child td {
+        border-bottom: none;
+      }
+
+      tr:hover td {
+        background: #fdfdfd;
+      }
+    }
+  }
+
+  .empty-raw {
+    padding: 6rem 2rem;
+    text-align: center;
+    color: #cbd5e1;
+
+    i {
+      font-size: 4rem;
+      margin-bottom: 1.5rem;
+      opacity: 0.3;
+    }
+
+    p {
+      font-size: 1.1rem;
+      font-weight: 600;
     }
   }
 }
