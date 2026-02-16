@@ -168,8 +168,9 @@ const getDisplayQuantity = (quantity: number, unit: string) => {
 
 const getMovementValue = (m: any) => {
   if (!m.rawMaterial || !m.rawMaterial.quantity || !m.rawMaterial.cost) return 0
-  // Value = movement amount * (material total cost / material total quantity)
-  const unitCost = m.rawMaterial.cost / m.rawMaterial.quantity
+  // Value = movement amount * unit cost
+  // The cost in the DB is already the Unit Cost (e.g. 0.001836)
+  const unitCost = m.rawMaterial.cost
   return m.quantity * unitCost
 }
 

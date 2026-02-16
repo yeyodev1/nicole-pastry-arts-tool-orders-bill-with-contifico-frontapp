@@ -216,7 +216,7 @@ const categoryOptions = computed(() => {
           </div>
           <div class="stock-level">
             <span class="current">{{ form.quantity }} {{ form.unit }}</span>
-            <span class="label">en stock</span>
+            <span class="label">en stock <span v-if="calculatedUnitCost > 0">(${{ (form.quantity * calculatedUnitCost).toFixed(2) }})</span></span>
           </div>
         </div>
 
