@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import ProductionService from '@/services/production.service'
 import type { SummaryItem, CategoryGroup } from '@/types/production'
-import { parseECTDate, getECTNow, getECTTodayString } from '@/utils/dateUtils'
+import { parseECTDate, getECTNow, getECTTodayString, isSameDayECT } from '@/utils/dateUtils'
 
 export function useProductionSummary() {
   const isLoading = ref(true)
@@ -15,8 +15,9 @@ export function useProductionSummary() {
   const futureItems = ref<SummaryItem[]>([])
   const collapsedCategoryIds = ref<Set<string>>(new Set())
   const isRawMode = ref(false)
-  const rawBucketFilter = ref<'delayed' | 'today' | 'tomorrow' | 'future'>('today')
+  const rawBucketFilter = ref<'delayed' | 'today' | 'tomorrow' | 'future' | 'all'>('today')
   const rawOrders = ref<any[]>([])
+  const selectedRawProducts = ref<Set<string>>(new Set())
 
   // History Data
   const showHistory = ref(false)
@@ -70,29 +71,39 @@ export function useProductionSummary() {
     const stats: Record<string, Record<string, number>> = {}
     if (!rawOrders.value.length) return stats
 
-    const todayStr = getECTTodayString()
+    const today = getECTNow()
+    today.setHours(0, 0, 0, 0)
+
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
 
     // Manual bucketing
     const bucketedOrders = rawOrders.value.filter(order => {
-      const deliveryDate = order.deliveryDate ? order.deliveryDate.split('T')[0] : ''
+      if (rawBucketFilter.value === 'all') {
+        return order.productionStage !== 'VOID'
+      }
+
+      if (!order.deliveryDate) return false
+      const dDate = parseECTDate(order.deliveryDate)
 
       if (rawBucketFilter.value === 'today') {
-        return deliveryDate === todayStr && order.productionStage !== 'VOID'
+        return isSameDayECT(dDate, today) && order.productionStage !== 'VOID'
       }
       if (rawBucketFilter.value === 'tomorrow') {
-        const tomorrow = getECTNow()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        const tomStr = tomorrow.toISOString().split('T')[0]
-        return deliveryDate === tomStr && order.productionStage !== 'VOID'
+        return isSameDayECT(dDate, tomorrow) && order.productionStage !== 'VOID'
       }
       if (rawBucketFilter.value === 'delayed') {
-        return deliveryDate < todayStr && order.productionStage !== 'VOID' && order.productionStage !== 'FINISHED'
+        // For delayed, we now include everything from the past (finished or not) 
+        // to show historical "crudo" demand if needed, BUT usually "Atrasados" 
+        // in raw mode should probably match the "Today and before" demand?
+        // Let's stick to "Past dates that are NOT VOID" to be inclusive as requested.
+        return dDate < today && order.productionStage !== 'VOID'
       }
       if (rawBucketFilter.value === 'future') {
-        const tomorrow = getECTNow()
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        const tomStr = tomorrow.toISOString().split('T')[0]
-        return tomStr ? deliveryDate > tomStr && order.productionStage !== 'VOID' : false
+        const afterTomorrow = new Date(tomorrow)
+        afterTomorrow.setDate(afterTomorrow.getDate() + 1)
+        afterTomorrow.setHours(0, 0, 0, 0)
+        return dDate >= afterTomorrow && order.productionStage !== 'VOID'
       }
       return false
     })
@@ -305,6 +316,33 @@ export function useProductionSummary() {
       isLoading.value = false
     }
   }
+  const toggleRawProductSelection = (productName: string) => {
+    if (selectedRawProducts.value.has(productName)) {
+      selectedRawProducts.value.delete(productName)
+    } else {
+      selectedRawProducts.value.add(productName)
+    }
+  }
+
+  const toggleRawAllSelection = () => {
+    // Get all product names currently visible in rawStatsByDestination
+    const allProductNames = new Set<string>()
+    Object.values(rawStatsByDestination.value).forEach(destGroup => {
+      Object.keys(destGroup).forEach(prodName => allProductNames.add(prodName))
+    })
+
+    const allAreSelected = Array.from(allProductNames).every(name => selectedRawProducts.value.has(name))
+
+    if (allAreSelected) {
+      allProductNames.forEach(name => selectedRawProducts.value.delete(name))
+    } else {
+      allProductNames.forEach(name => selectedRawProducts.value.add(name))
+    }
+  }
+
+  const clearRawSelection = () => {
+    selectedRawProducts.value.clear()
+  }
 
   return {
     isLoading,
@@ -330,6 +368,11 @@ export function useProductionSummary() {
     // Raw Mode
     isRawMode,
     rawBucketFilter,
-    rawStatsByDestination
+    rawStatsByDestination,
+    selectedRawProducts,
+    toggleRawProductSelection,
+    toggleRawAllSelection,
+    clearRawSelection,
+    rawOrders
   }
 }

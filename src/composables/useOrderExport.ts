@@ -194,9 +194,21 @@ export function useOrderExport() {
     try {
       const wsData: any[][] = []
 
+      // Header row
       wsData.push(['FECHA DE ENTREGA', 'CLIENTE', 'PEDIDO', 'HORA DE ENTREGA', 'DIRECCION DE ENTREGA', 'ESTADO DE PAGO', 'COMENTARIOS'])
 
-      orders.forEach(order => {
+      // Sort orders: Time ASC, then Address/Branch Alphabetical ASC
+      const sortedOrders = [...orders].sort((a, b) => {
+        const timeA = a.deliveryTime || '99:99'
+        const timeB = b.deliveryTime || '99:99'
+        if (timeA !== timeB) return timeA.localeCompare(timeB)
+
+        const addrA = (a.deliveryType === 'delivery' ? (a.deliveryAddress || '') : (a.branch || '')).toLowerCase()
+        const addrB = (b.deliveryType === 'delivery' ? (b.deliveryAddress || '') : (b.branch || '')).toLowerCase()
+        return addrA.localeCompare(addrB)
+      })
+
+      sortedOrders.forEach(order => {
         const dateStr = order.deliveryDate ? formatECT(order.deliveryDate, false) : ''
         const products = order.products || []
         const itemsStr = products.map((p: any) => `${p.quantity} ${p.name}`).join(' + ')
