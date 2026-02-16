@@ -22,7 +22,6 @@ const form = ref({
   minStock: 0,
   provider: '',
   category: '',
-  presentationName: '',
   presentationPrice: 0,
   presentationQuantity: 1,
   wastePercentage: 0
@@ -67,7 +66,6 @@ const resetForm = () => {
     minStock: 0,
     provider: '',
     category: '',
-    presentationName: '',
     presentationPrice: 0,
     presentationQuantity: 1,
     wastePercentage: 0
@@ -87,7 +85,6 @@ watch(() => props.isOpen, (newVal) => {
         minStock: getDisplayQuantity(m.minStock || 0, m.unit),
         provider: m.provider?._id || m.provider || '',
         category: m.category || '',
-        presentationName: m.presentationName || '',
         presentationPrice: m.presentationPrice || 0,
         presentationQuantity: m.presentationQuantity || 1,
         wastePercentage: m.wastePercentage || 0
@@ -192,18 +189,20 @@ const handleConfirmDelete = () => {
 
         <div class="form-row highlight">
           <div class="form-group flex-2">
-            <label>Presentación de Compra</label>
-            <input v-model="form.presentationName" placeholder="Ej. Saco 25kg, Cubeta 30u, Botella 1L" />
+            <label>Unidad de Compra</label>
+            <select :value="form.unit" disabled class="disabled-select">
+              <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
+            </select>
           </div>
           <div class="form-group flex-1">
-            <label>Contenido ({{ form.unit }})</label>
+            <label>Cantidad</label>
             <input type="number" v-model.number="form.presentationQuantity" placeholder="0" min="0" step="any" />
             <span class="input-hint" v-if="form.unit !== 'u'">
               Ej. Si es 1kg, pon 1000g
             </span>
           </div>
           <div class="form-group flex-1">
-            <label>Precio Compra ($)</label>
+            <label>Costo Total ($)</label>
             <input type="number" v-model.number="form.presentationPrice" step="0.01" placeholder="0.00" />
           </div>
         </div>
