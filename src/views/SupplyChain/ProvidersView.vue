@@ -11,17 +11,26 @@ const isLoading = ref(false)
 const isSaving = ref(false)
 const showModal = ref(false)
 const providerToEdit = ref<any>(null)
+const searchQuery = ref('')
+let searchTimeout: any = null
 
 const fetchData = async () => {
   isLoading.value = true
   try {
-    const data = await ProviderService.getProviders()
+    const data = await ProviderService.getProviders(searchQuery.value)
     providers.value = data
   } catch (err: any) {
     showError('Error al cargar datos')
   } finally {
     isLoading.value = false
   }
+}
+
+const handleSearch = () => {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    fetchData()
+  }, 400)
 }
 
 const openNewProviderModal = () => {
@@ -75,6 +84,15 @@ onMounted(() => {
       <div class="title">
         <h1>Proveedores</h1>
         <p>Catálogo de aliados y suministros</p>
+      </div>
+      <div class="search-container">
+        <i class="fas fa-search"></i>
+        <input 
+          v-model="searchQuery" 
+          @input="handleSearch"
+          placeholder="Buscar proveedor, ruc, teléfono..." 
+          type="text"
+        />
       </div>
       <div class="header-actions">
         <button class="btn-primary" @click="openNewProviderModal">
@@ -202,6 +220,41 @@ onMounted(() => {
   p {
     color: #64748b;
     margin: 0.25rem 0 0;
+  }
+}
+
+.search-container {
+  flex: 1;
+  max-width: 400px;
+  position: relative;
+
+  @media (max-width: 768px) {
+    max-width: 100%;
+  }
+
+  i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+  }
+
+  input {
+    width: 100%;
+    padding: 0.75rem 1rem 0.75rem 2.75rem;
+    border: 2px solid #f1f5f9;
+    border-radius: 14px;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    background: #f8fafc;
+
+    &:focus {
+      outline: none;
+      border-color: $NICOLE-PURPLE;
+      background: white;
+      box-shadow: 0 0 0 4px rgba($NICOLE-PURPLE, 0.1);
+    }
   }
 }
 

@@ -38,9 +38,20 @@ const getDisplayQuantity = (quantity: number, unit: string) => {
 type Status = 'low' | 'warning' | 'optimal'
 
 const getStockStatus = (m: any): Status => {
-  if (!m.minStock) return 'optimal'
-  if (m.quantity < m.minStock) return 'low'
-  if (m.quantity < m.minStock * 1.5) return 'warning'
+  const current = m.quantity || 0
+  const min = m.minStock || 0
+  const max = m.maxStock || 0
+
+  // Si no hay stock, siempre es crítico (sin importar configuración de límites)
+  if (current === 0) return 'low'
+
+  // Si no se configuraron límites (min y max = 0) pero hay stock, considerar óptimo
+  if (min === 0 && max === 0) return 'optimal'
+
+  // Lógica normal cuando hay límites configurados
+  if (current < min) return 'low'
+  if (current >= min && current < (min * 1.5)) return 'warning'
+  // Si está entre min*1.5 y max (o si no hay max), es óptimo
   return 'optimal'
 }
 

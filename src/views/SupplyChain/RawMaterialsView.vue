@@ -13,12 +13,14 @@ const isLoading = ref(false)
 const isSaving = ref(false)
 const showModal = ref(false)
 const materialToEdit = ref<any>(null)
+const searchQuery = ref('')
+let searchTimeout: any = null
 
 const fetchData = async () => {
   isLoading.value = true
   try {
     const [materialsData, providersData] = await Promise.all([
-      RawMaterialService.getRawMaterials(),
+      RawMaterialService.getRawMaterials(searchQuery.value),
       ProviderService.getProviders()
     ])
     materials.value = materialsData
@@ -28,6 +30,13 @@ const fetchData = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+const handleSearch = () => {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
+    fetchData()
+  }, 400)
 }
 
 // Derived categories from materials
@@ -111,6 +120,15 @@ onMounted(() => {
       <div class="title">
         <h1>Centro de Suministros</h1>
         <p>Gestión profesional de materia prima y adquisiciones</p>
+      </div>
+      <div class="search-container">
+        <i class="fas fa-search"></i>
+        <input 
+          v-model="searchQuery" 
+          @input="handleSearch"
+          placeholder="Buscar material, código, item..." 
+          type="text"
+        />
       </div>
       <div class="header-actions">
         <button class="btn-primary" @click="openModal()">
@@ -262,6 +280,42 @@ onMounted(() => {
       font-size: 1.1rem;
       margin-top: 0.5rem;
       font-weight: 500;
+    }
+  }
+}
+
+.search-container {
+  flex: 1;
+  max-width: 450px;
+  position: relative;
+  margin: 1rem 0;
+
+  @media (min-width: 1024px) {
+    margin: 0 2rem;
+  }
+
+  i {
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+  }
+
+  input {
+    width: 100%;
+    padding: 0.9rem 1rem 0.9rem 2.75rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 16px;
+    font-size: 1rem;
+    transition: all 0.2s;
+    background: white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+
+    &:focus {
+      outline: none;
+      border-color: $NICOLE-PURPLE;
+      box-shadow: 0 0 0 4px rgba($NICOLE-PURPLE, 0.1);
     }
   }
 }

@@ -20,6 +20,7 @@ const form = ref({
   unit: 'u',
   quantity: 0,
   minStock: 0,
+  maxStock: 0,
   provider: '',
   category: '',
   presentationPrice: 0,
@@ -53,6 +54,7 @@ const resetForm = () => {
     unit: 'u',
     quantity: 0,
     minStock: 0,
+    maxStock: 0,
     provider: '',
     category: '',
     presentationPrice: 0,
@@ -72,6 +74,7 @@ watch(() => props.isOpen, (newVal) => {
         unit: m.unit || 'u',
         quantity: m.quantity || 0, // Keep raw quantity for preservation
         minStock: getDisplayQuantity(m.minStock || 0, m.unit),
+        maxStock: getDisplayQuantity(m.maxStock || 0, m.unit),
         provider: m.provider?._id || m.provider || '',
         category: m.category || '',
         presentationPrice: m.presentationPrice || 0,
@@ -84,6 +87,26 @@ watch(() => props.isOpen, (newVal) => {
   }
 }, { immediate: true })
 
+const stockStatus = computed(() => {
+  const current = form.value.quantity || 0
+  const min = form.value.minStock || 0
+  const max = form.value.maxStock || 0
+
+  // Si no hay stock, siempre es urgente (sin importar configuración de límites)
+  if (current === 0) return { label: 'URGENTE / INSUFICIENTE', class: 'status-urgent' }
+
+  // Si no se configuraron límites (min y max = 0) pero hay stock, no evaluar
+  if (min === 0 && max === 0) return { label: '---', class: '' }
+
+  // Lógica normal cuando hay límites configurados
+  if (current < min) return { label: 'URGENTE / INSUFICIENTE', class: 'status-urgent' }
+  if (current >= min && current < (min * 1.5)) return { label: 'ESCASO / ALERTA', class: 'status-warning' }
+  if (current >= (min * 1.5) && (max === 0 || current <= max)) return { label: 'ÓPTIMO', class: 'status-optimal' }
+  if (max > 0 && current > max) return { label: 'SOBRESTOCK', class: 'status-overstock' }
+
+  return { label: '---', class: '' }
+})
+
 const generateCode = (category: string, item: string) => {
   const catChar = category && category.length > 0 ? category.charAt(0).toUpperCase() : 'X'
   const itemChar = item && item.length > 1 ? item.charAt(1).toLowerCase() : (item && item.length > 0 ? item.charAt(0).toLowerCase() : 'x')
@@ -95,8 +118,9 @@ const handleSubmit = () => {
   const payload: any = { ...form.value }
 
   // We preserve the quantity as is (already in backend unit if editing, 0 if new)
-  // But minStock needs conversion back to base unit
+  // But min/max need conversion back to base unit if logic changes (currently identity)
   payload.minStock = toBackendQuantity(payload.minStock || 0, payload.unit)
+  payload.maxStock = toBackendQuantity(payload.maxStock || 0, payload.unit)
 
   // Cost is correctly calculated per base unit
   payload.cost = calculatedUnitCost.value
@@ -162,6 +186,33 @@ const handleConfirmDelete = () => {
             <select v-model="form.unit">
               <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
             </select>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+        <div class="section-title">Control de Inventario</div>
+        
+        <div class="stock-status-bar" v-if="materialToEdit">
+          <div class="status-indicator">
+            <span class="label">Estado Actual:</span>
+            <span class="badge" :class="stockStatus.class">{{ stockStatus.label }}</span>
+          </div>
+          <div class="stock-level">
+            <span class="current">{{ form.quantity }} {{ form.unit }}</span>
+            <span class="label">en stock</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Stock Mínimo (Alerta)</label>
+            <input type="number" v-model.number="form.minStock" placeholder="0" />
+            <span class="input-hint">Punto de re-orden</span>
+          </div>
+          <div class="form-group">
+            <label>Stock Máximo (Límite)</label>
+            <input type="number" v-model.number="form.maxStock" placeholder="0" />
+            <span class="input-hint">Capacidad o límite deseado</span>
           </div>
         </div>
 
@@ -413,6 +464,75 @@ const handleConfirmDelete = () => {
 
   @media (min-width: 640px) {
     margin: 2rem -2.5rem;
+  }
+}
+
+.stock-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+  border: 1px solid #f1f5f9;
+
+  .status-indicator {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    .label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+    }
+
+    .badge {
+      font-size: 0.85rem;
+      font-weight: 900;
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      text-transform: uppercase;
+      display: inline-block;
+
+      &.status-urgent {
+        background: #fee2e2;
+        color: #ef4444;
+      }
+
+      &.status-warning {
+        background: #ffedd5;
+        color: #f97316;
+      }
+
+      &.status-optimal {
+        background: #dcfce7;
+        color: #16a34a;
+      }
+
+      &.status-overstock {
+        background: #dbeafe;
+        color: #2563eb;
+      }
+    }
+  }
+
+  .stock-level {
+    text-align: right;
+
+    .current {
+      display: block;
+      font-size: 1.25rem;
+      font-weight: 900;
+      color: #1e293b;
+    }
+
+    .label {
+      font-size: 0.75rem;
+      color: #64748b;
+    }
   }
 }
 

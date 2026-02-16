@@ -1,8 +1,9 @@
 import APIBase from './httpBase'
 
 class ProviderService extends APIBase {
-  async getProviders() {
-    const response = await this.get<any>('providers')
+  async getProviders(search?: string) {
+    const params = search ? { search } : {}
+    const response = await this.get<any>('providers', undefined, { params })
     return response.data.data
   }
 

@@ -1,8 +1,9 @@
 import APIBase from './httpBase'
 
 class RawMaterialService extends APIBase {
-  async getRawMaterials() {
-    const response = await this.get<any>('raw-materials')
+  async getRawMaterials(search?: string) {
+    const params = search ? { search } : {}
+    const response = await this.get<any>('raw-materials', undefined, { params })
     return response.data.data
   }
 
