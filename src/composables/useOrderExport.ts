@@ -188,14 +188,36 @@ export function useOrderExport() {
   }
 
   // --- Dispatch Export ---
-  // Keeping as is, but ensuring it uses the new XLSX import which is compatible
   const exportDispatchOrder = async (orders: any[]) => {
     isExporting.value = true
     try {
       const wsData: any[][] = []
+      const wsStyle: Record<string, any> = {}
+
+      // Helper to set style
+      const setStyle = (row: number, col: number, style: any) => {
+        const cellRef = XLSX.utils.encode_cell({ r: row, c: col })
+        wsStyle[cellRef] = style
+      }
 
       // Header row
-      wsData.push(['FECHA DE ENTREGA', 'CLIENTE', 'PEDIDO', 'HORA DE ENTREGA', 'DIRECCION DE ENTREGA', 'ESTADO DE PAGO', 'COMENTARIOS'])
+      const headers = ['FECHA DE ENTREGA', 'CLIENTE', 'PEDIDO', 'HORA DE ENTREGA', 'DIRECCION DE ENTREGA', 'ESTADO DE PAGO', 'COMENTARIOS']
+      wsData.push(headers)
+
+      // Header Style
+      for (let c = 0; c < headers.length; c++) {
+        setStyle(0, c, {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "2C3E50" } }, // Dark Blue Header
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: {
+            top: { style: 'thin', color: { rgb: "000000" } },
+            bottom: { style: 'thin', color: { rgb: "000000" } },
+            left: { style: 'thin', color: { rgb: "000000" } },
+            right: { style: 'thin', color: { rgb: "000000" } }
+          }
+        })
+      }
 
       // Sort orders: Time ASC, then Address/Branch Alphabetical ASC
       const sortedOrders = [...orders].sort((a, b) => {
@@ -208,7 +230,7 @@ export function useOrderExport() {
         return addrA.localeCompare(addrB)
       })
 
-      sortedOrders.forEach(order => {
+      sortedOrders.forEach((order, index) => {
         const dateStr = order.deliveryDate ? formatECT(order.deliveryDate, false) : ''
         const products = order.products || []
         const itemsStr = products.map((p: any) => `${p.quantity} ${p.name}`).join(' + ')
@@ -224,6 +246,7 @@ export function useOrderExport() {
         const paymentMethod = order.paymentDetails?.method ? `(${order.paymentDetails.method})` : ''
         const paymentStr = `${paymentStatus} ${paymentMethod}`
 
+        const rowIdx = index + 1
         wsData.push([
           dateStr,
           order.customerName,
@@ -233,6 +256,29 @@ export function useOrderExport() {
           paymentStr,
           order.comments || ''
         ])
+
+        // Determine Row Style based on Destination
+        let rowColor = 'FFFFFF' // Default white
+        const addrLower = address.toLowerCase()
+        if (addrLower.includes('mall del sol')) {
+          rowColor = 'FFF9C4' // Light Yellow
+        } else if (addrLower.includes('san marino')) {
+          rowColor = 'E1F5FE' // Light Blue
+        }
+
+        // Apply style to all cells in the row
+        for (let c = 0; c < headers.length; c++) {
+          setStyle(rowIdx, c, {
+            fill: { fgColor: { rgb: rowColor } },
+            border: {
+              top: { style: 'thin', color: { rgb: "CCCCCC" } },
+              bottom: { style: 'thin', color: { rgb: "CCCCCC" } },
+              left: { style: 'thin', color: { rgb: "CCCCCC" } },
+              right: { style: 'thin', color: { rgb: "CCCCCC" } }
+            },
+            alignment: { vertical: 'center' }
+          })
+        }
       })
 
       const wb = XLSX.utils.book_new()
@@ -240,6 +286,13 @@ export function useOrderExport() {
 
       // Column Widths
       ws['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 40 }, { wch: 15 }, { wch: 30 }, { wch: 25 }, { wch: 40 }]
+
+      // Apply styles from wsStyle to ws
+      Object.keys(wsStyle).forEach(cellRef => {
+        if (ws[cellRef]) {
+          ws[cellRef].s = wsStyle[cellRef]
+        }
+      })
 
       XLSX.utils.book_append_sheet(wb, ws, 'Despacho')
       saveExcelFile(wb, `Orden_Despacho_${formatECT(new Date().toISOString(), false)}`)
