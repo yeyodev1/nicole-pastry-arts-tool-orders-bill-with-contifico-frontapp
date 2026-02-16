@@ -4,7 +4,9 @@ import { useRoute } from 'vue-router'
 import ProductionService from '@/services/production.service'
 import ProductionCategoryGroup from './components/ProductionCategoryGroup.vue'
 import ProductionHistoryPanel from './components/ProductionHistoryPanel.vue'
+import ExportProductionModal from '../orders/components/ExportProductionModal.vue'
 import { useProductionSummary } from '@/composables/useProductionSummary'
+import { useOrderExport } from '@/composables/useOrderExport'
 import type { SummaryItem } from '@/types/production'
 
 const {
@@ -26,11 +28,19 @@ const {
   batchRegister,
   isRawMode,
   rawBucketFilter,
-  rawStatsByDestination
+  rawStatsByDestination,
+  selectedRawProducts,
+  toggleRawProductSelection,
+  toggleRawAllSelection,
+  clearRawSelection,
+  rawOrders
 } = useProductionSummary()
 
 import { useToast } from '@/composables/useToast'
 import ActionHoldButton from '@/components/common/ActionHoldButton.vue'
+
+const { isExporting, exportDispatchOrder } = useOrderExport()
+const showExportModal = ref(false)
 
 // ... existing refs ...
 const { success, error: showError } = useToast()
@@ -149,6 +159,46 @@ const handleRawToggle = () => {
   fetchSummary()
 }
 
+const handleExportProduction = async (responsibleName: string) => {
+  try {
+    // 1. Get selected products
+    const selectedProducts = Array.from(selectedRawProducts.value)
+    if (selectedProducts.length === 0) {
+      showError('Seleccione al menos un producto para exportar')
+      return
+    }
+
+    // 2. Filter rawOrders to find orders that contain these products
+    const filteredOrders = rawOrders.value.filter((order: any) => {
+      return order.products.some((p: any) => selectedProducts.includes(p.name))
+    }).map((order: any) => {
+      // Create a shallow copy of the order with ONLY the selected products? 
+      // User said "según lo seleccionado", usually this means if I select product A, 
+      // I want a report of all orders showing their demand for product A.
+      return {
+        ...order,
+        products: order.products.filter((p: any) => selectedProducts.includes(p.name))
+      }
+    })
+
+    if (filteredOrders.length === 0) {
+      showError('No se encontraron órdenes para los productos seleccionados')
+      return
+    }
+
+    // 3. Export using the dispatch report style (which we updated with sorting)
+    // We pass it to exportDispatchOrder but it will act as our "Production Order" listing deliveries.
+    await exportDispatchOrder(filteredOrders)
+
+    success('Orden de Producción exportada exitosamente')
+    showExportModal.value = false
+    clearRawSelection()
+  } catch (err) {
+    console.error(err)
+    showError('Error al exportar orden de producción')
+  }
+}
+
 onMounted(async () => {
   const route = useRoute()
   if (route.query.mode === 'raw') {
@@ -215,20 +265,41 @@ onMounted(async () => {
           </div>
 
           <!-- Raw Filter Bar -->
-          <div class="raw-filter-pills">
-            <button 
-              v-for="bucket in ['delayed', 'today', 'tomorrow', 'future']" 
-              :key="bucket"
-              class="raw-pill"
-              :class="{ active: rawBucketFilter === bucket, [bucket]: true }"
-              @click="rawBucketFilter = bucket as any"
-            >
-              <i v-if="bucket === 'delayed'" class="fas fa-clock"></i>
-              <i v-else-if="bucket === 'today'" class="fas fa-calendar-day"></i>
-              <i v-else-if="bucket === 'tomorrow'" class="fas fa-sun"></i>
-              <i v-else class="fas fa-calendar-alt"></i>
-              {{ bucket === 'delayed' ? 'Atrasados' : bucket === 'today' ? 'Hoy' : bucket === 'tomorrow' ? 'Mañana' : 'Futuro' }}
-            </button>
+          <div class="raw-actions-row">
+            <div class="raw-filter-pills">
+              <button 
+                v-for="bucket in ['delayed', 'today', 'tomorrow', 'future', 'all']" 
+                :key="bucket"
+                class="raw-pill"
+                :class="{ active: rawBucketFilter === bucket, [bucket]: true }"
+                @click="rawBucketFilter = bucket as any"
+              >
+                <i v-if="bucket === 'delayed'" class="fas fa-clock"></i>
+                <i v-else-if="bucket === 'today'" class="fas fa-calendar-day"></i>
+                <i v-else-if="bucket === 'tomorrow'" class="fas fa-sun"></i>
+                <i v-else-if="bucket === 'future'" class="fas fa-calendar-alt"></i>
+                <i v-else class="fas fa-layer-group"></i>
+                {{ bucket === 'delayed' ? 'Atrasados' : bucket === 'today' ? 'Hoy' : bucket === 'tomorrow' ? 'Mañana' : bucket === 'future' ? 'Futuro' : 'Todos' }}
+              </button>
+            </div>
+
+            <div class="raw-export-actions" v-if="rawOrders.length > 0">
+               <button 
+                class="btn-select-all"
+                @click="toggleRawAllSelection"
+               >
+                 <i class="fas" :class="selectedRawProducts.size > 0 ? 'fa-check-double' : 'fa-list-check'"></i>
+                 Seleccionar Todos
+               </button>
+               <button 
+                class="btn-export-prod" 
+                :disabled="selectedRawProducts.size === 0 || isExporting"
+                @click="showExportModal = true"
+               >
+                 <i class="fas" :class="isExporting ? 'fa-spinner fa-spin' : 'fa-file-export'"></i>
+                 Exportar Seleccionados ({{ selectedRawProducts.size }})
+               </button>
+            </div>
           </div>
         </div>
 
@@ -256,7 +327,18 @@ onMounted(async () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(qty, productName) in products" :key="productName">
+                  <tr 
+                    v-for="(qty, productName) in products" 
+                    :key="productName"
+                    class="raw-row"
+                    :class="{ selected: selectedRawProducts.has(productName) }"
+                    @click="toggleRawProductSelection(productName)"
+                  >
+                    <td class="col-check">
+                      <div class="custom-checkbox" :class="{ checked: selectedRawProducts.has(productName) }">
+                        <i v-if="selectedRawProducts.has(productName)" class="fas fa-check"></i>
+                      </div>
+                    </td>
                     <td>{{ productName }}</td>
                     <td class="col-qty"><strong>{{ qty }}</strong></td>
                   </tr>
@@ -424,6 +506,30 @@ onMounted(async () => {
         </div>
       </div>
     </Transition>
+
+    <!-- Selection Tooltip / Float Bar for Raw -->
+    <Transition name="slide-up">
+      <div v-if="isRawMode && selectedRawProducts.size > 0" class="floating-batch-bar raw">
+        <div class="batch-info">
+          <span class="count">{{ selectedRawProducts.size }}</span>
+          <span class="label">Productos seleccionados</span>
+        </div>
+        <div class="batch-actions">
+          <button class="btn-clear" @click="clearRawSelection">Deseleccionar</button>
+          <button class="btn-process" @click="showExportModal = true" :disabled="isExporting">
+            <i class="fas fa-file-export"></i>
+            Exportar Orden de Producción
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <ExportProductionModal 
+      :is-open="showExportModal"
+      :is-loading="isExporting"
+      @close="showExportModal = false"
+      @confirm="handleExportProduction"
+    />
 
   </div>
 </template>
@@ -657,130 +763,262 @@ $color-delayed: #e67e22;
             background: $color-info;
             border-color: $color-info;
           }
+
+          &.all {
+            background: #64748b;
+            border-color: #64748b;
+          }
         }
       }
     }
   }
 
-  .destination-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  .raw-actions-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     gap: 1.5rem;
-  }
+    margin-top: 1rem;
 
-  .destination-card {
-    background: white;
-    border-radius: 20px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
-    overflow: hidden;
-    border: 1px solid #f1f2f6;
-    transition: transform 0.2s, box-shadow 0.2s;
-
-    &:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
-    }
-
-    .dest-title {
-      background: #fcfcfc;
-      padding: 1.25rem;
+    .raw-export-actions {
       display: flex;
-      align-items: center;
-      gap: 1rem;
-      border-bottom: 2px solid #f8f9fa;
+      gap: 0.75rem;
 
-      .dest-icon-box {
-        width: 48px;
-        height: 48px;
-        border-radius: 14px;
-        background: #f1f5f9;
+      .btn-select-all {
+        background: white;
+        color: #64748b;
+        border: 1px solid #e2e8f0;
+        padding: 0.75rem 1.25rem;
+        border-radius: 12px;
+        font-weight: 700;
+        cursor: pointer;
         display: flex;
         align-items: center;
-        justify-content: center;
-        font-size: 1.4rem;
-        color: $color-info;
-      }
+        gap: 0.5rem;
+        transition: all 0.2s;
 
-      .dest-info {
-        flex: 1;
-
-        h3 {
-          margin: 0;
-          font-size: 1.1rem;
-          font-weight: 800;
+        &:hover {
+          border-color: #cbd5e1;
+          background: #f8fafc;
           color: #1e293b;
         }
 
-        .dest-total {
-          font-size: 0.8rem;
-          color: #94a3b8;
-          font-weight: 600;
-          text-transform: uppercase;
+        i {
+          color: #8e44ad;
         }
       }
-    }
 
-    .dest-table-container {
-      padding: 1rem;
-    }
-
-    .raw-table {
-      width: 100%;
-      border-collapse: collapse;
-
-      th {
-        padding: 0.5rem 0.75rem 1rem;
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        color: #94a3b8;
+      .btn-export-prod {
+        background: #8e44ad;
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
         font-weight: 700;
-        letter-spacing: 0.05em;
-        border-bottom: 1px solid #f1f5f9;
-      }
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        transition: all 0.2s;
+        box-shadow: 0 4px 12px rgba(142, 68, 173, 0.25);
 
-      td {
-        padding: 1rem 0.75rem;
-        font-size: 0.95rem;
-        color: #334155;
-        border-bottom: 1px solid #f8fafc;
-        font-weight: 500;
-      }
-
-      .col-qty {
-        text-align: right;
-        width: 100px;
-
-        strong {
-          color: $color-info;
-          font-weight: 800;
-          font-size: 1.1rem;
+        &:hover:not(:disabled) {
+          background: darken(#8e44ad, 5%);
+          transform: translateY(-2px);
+          box-shadow: 0 6px 15px rgba(142, 68, 173, 0.3);
         }
-      }
 
-      tr:last-child td {
-        border-bottom: none;
-      }
-
-      tr:hover td {
-        background: #fdfdfd;
+        &:disabled {
+          background: #cbd5e1;
+          box-shadow: none;
+          cursor: not-allowed;
+        }
       }
     }
   }
 
-  .empty-raw {
-    padding: 6rem 2rem;
-    text-align: center;
-    color: #cbd5e1;
+  .raw-row {
+    cursor: pointer;
+    transition: all 0.2s;
 
-    i {
-      font-size: 4rem;
-      margin-bottom: 1.5rem;
-      opacity: 0.3;
+    &:hover {
+      background: #f8fafc !important;
     }
 
-    p {
-      font-size: 1.1rem;
-      font-weight: 600;
+    &.selected {
+      background: rgba(142, 68, 173, 0.05) !important;
+
+      td {
+        color: #8e44ad !important;
+        font-weight: 700;
+      }
+    }
+
+    .col-check {
+      width: 40px;
+      padding-right: 0;
+    }
+
+    .custom-checkbox {
+      width: 20px;
+      height: 20px;
+      border: 2px solid #cbd5e1;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      background: white;
+
+      i {
+        font-size: 0.8rem;
+        color: white;
+      }
+
+      &.checked {
+        background: #8e44ad;
+        border-color: #8e44ad;
+      }
+    }
+  }
+}
+
+.destination-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.5rem;
+}
+
+.destination-card {
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  border: 1px solid #f1f2f6;
+  transition: transform 0.2s, box-shadow 0.2s;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+  }
+
+  .dest-title {
+    background: #fcfcfc;
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border-bottom: 2px solid #f8f9fa;
+
+    .dest-icon-box {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      color: $color-info;
+    }
+
+    .dest-info {
+      flex: 1;
+
+      h3 {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: #1e293b;
+      }
+
+      .dest-total {
+        font-size: 0.8rem;
+        color: #94a3b8;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+    }
+  }
+
+  .dest-table-container {
+    padding: 1rem;
+  }
+
+  .raw-table {
+    width: 100%;
+    border-collapse: collapse;
+
+    th {
+      padding: 0.5rem 0.75rem 1rem;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: #94a3b8;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    td {
+      padding: 1rem 0.75rem;
+      font-size: 0.95rem;
+      color: #334155;
+      border-bottom: 1px solid #f8fafc;
+      font-weight: 500;
+    }
+
+    .col-qty {
+      text-align: right;
+      width: 100px;
+
+      strong {
+        color: $color-info;
+        font-weight: 800;
+        font-size: 1.1rem;
+      }
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: #fdfdfd;
+    }
+  }
+}
+
+.empty-raw {
+  padding: 6rem 2rem;
+  text-align: center;
+  color: #cbd5e1;
+
+  i {
+    font-size: 4rem;
+    margin-bottom: 1.5rem;
+    opacity: 0.3;
+  }
+
+  p {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+}
+
+.floating-batch-bar.raw {
+  background: #47195c;
+  border-top: 2px solid #8e44ad;
+
+  .count {
+    background: #8e44ad;
+  }
+
+  .btn-process {
+    background: #8e44ad;
+    color: white;
+
+    i {
+      color: white;
     }
   }
 }

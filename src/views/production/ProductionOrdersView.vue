@@ -390,7 +390,7 @@ const getDispatchBadge = (status?: string) => {
     <div class="filter-bar-container">
       <div class="filter-bar">
         <button 
-          v-for="mode in ['yesterday', 'today', 'tomorrow', 'future', 'all']" 
+          v-for="mode in ['yesterday', 'today', 'tomorrow', 'future']" 
           :key="mode"
           class="filter-pill"
           :class="{ active: filterMode === mode }"
@@ -399,8 +399,7 @@ const getDispatchBadge = (status?: string) => {
           <span v-if="mode === 'yesterday'">Ayer</span>
           <span v-else-if="mode === 'today'">Hoy</span>
           <span v-else-if="mode === 'tomorrow'">Mañana</span>
-          <span v-else-if="mode === 'future'">Próximos Días</span>
-          <span v-else>Todos</span>
+          <span v-else>Próximos Días</span>
         </button>
       </div>
     </div>
