@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import ProductionService from '@/services/production.service'
 import { parseECTDate, getECTNow, isSameDayECT } from '@/utils/dateUtils'
 import DispatchReportModal from './components/DispatchReportModal.vue'
@@ -40,6 +41,7 @@ interface Order {
 const orders = ref<Order[]>([])
 const isLoading = ref(true)
 const error = ref('')
+const router = useRouter()
 
 // Filter State
 const filterMode = ref('today') // Default to Today for focus
@@ -171,6 +173,10 @@ const handleDispatchConfirm = async (payload: any) => {
   } finally {
     isLoading.value = false
   }
+}
+
+const goToRawSummary = () => {
+  router.push({ name: 'production-summary', query: { mode: 'raw' } })
 }
 
 // Actions
@@ -368,6 +374,9 @@ const getDispatchBadge = (status?: string) => {
         <p>Listado general - Ventas WhatsApp y Local</p>
       </div>
       <div class="actions-header">
+        <button class="btn-raw" @click="goToRawSummary">
+          <i class="fas fa-eye"></i> Ver Resumen Crudo
+        </button>
         <button class="btn-primary" @click="showGlobalBatchModal = true">
           <i class="fas fa-shipping-fast"></i> Nuevo Envío Masivo
         </button>
@@ -786,6 +795,27 @@ $color-danger: #e74c3c;
 
       &:active {
         transform: translateY(0);
+      }
+    }
+
+    .btn-raw {
+      background: white;
+      border: 1px solid rgba($color-warning, 0.4);
+      color: darken($color-warning, 15%);
+      padding: 0.6rem 1.2rem;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba($color-warning, 0.05);
+        border-color: $color-warning;
+        transform: translateY(-2px);
       }
     }
 

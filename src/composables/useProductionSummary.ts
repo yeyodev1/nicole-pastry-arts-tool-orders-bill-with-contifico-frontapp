@@ -1,7 +1,7 @@
 import { ref, computed } from 'vue'
 import ProductionService from '@/services/production.service'
 import type { SummaryItem, CategoryGroup } from '@/types/production'
-import { parseECTDate } from '@/utils/dateUtils'
+import { parseECTDate, getECTNow, getECTTodayString } from '@/utils/dateUtils'
 
 export function useProductionSummary() {
   const isLoading = ref(true)
@@ -14,6 +14,9 @@ export function useProductionSummary() {
   const tomorrowItems = ref<SummaryItem[]>([])
   const futureItems = ref<SummaryItem[]>([])
   const collapsedCategoryIds = ref<Set<string>>(new Set())
+  const isRawMode = ref(false)
+  const rawBucketFilter = ref<'delayed' | 'today' | 'tomorrow' | 'future'>('today')
+  const rawOrders = ref<any[]>([])
 
   // History Data
   const showHistory = ref(false)
@@ -63,6 +66,60 @@ export function useProductionSummary() {
   const tomorrowGroups = computed(() => groupByCategory(tomorrowItems.value, 'tomorrow'))
   const futureGroups = computed(() => groupByCategory(futureItems.value, 'future'))
 
+  const rawStatsByDestination = computed(() => {
+    const stats: Record<string, Record<string, number>> = {}
+    if (!rawOrders.value.length) return stats
+
+    const todayStr = getECTTodayString()
+
+    // Manual bucketing
+    const bucketedOrders = rawOrders.value.filter(order => {
+      const deliveryDate = order.deliveryDate ? order.deliveryDate.split('T')[0] : ''
+
+      if (rawBucketFilter.value === 'today') {
+        return deliveryDate === todayStr && order.productionStage !== 'VOID'
+      }
+      if (rawBucketFilter.value === 'tomorrow') {
+        const tomorrow = getECTNow()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const tomStr = tomorrow.toISOString().split('T')[0]
+        return deliveryDate === tomStr && order.productionStage !== 'VOID'
+      }
+      if (rawBucketFilter.value === 'delayed') {
+        return deliveryDate < todayStr && order.productionStage !== 'VOID' && order.productionStage !== 'FINISHED'
+      }
+      if (rawBucketFilter.value === 'future') {
+        const tomorrow = getECTNow()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const tomStr = tomorrow.toISOString().split('T')[0]
+        return tomStr ? deliveryDate > tomStr && order.productionStage !== 'VOID' : false
+      }
+      return false
+    })
+
+    bucketedOrders.forEach(order => {
+      let dest = 'Otros / Sin Local'
+      if (order.deliveryType === 'delivery') {
+        dest = 'Delivery'
+      } else if (order.branch) {
+        const b = order.branch.toLowerCase()
+        if (b.includes('marino')) dest = 'San Marino'
+        else if (b.includes('mall') || b.includes('sol')) dest = 'Mall del Sol'
+        else if (b.includes('centro') || b.includes('producci')) dest = 'Centro Prod.'
+        else dest = order.branch
+      }
+
+      if (!stats[dest]) stats[dest] = {}
+      const destGroup = stats[dest] as Record<string, number>
+
+      order.products.forEach((p: any) => {
+        destGroup[p.name] = (destGroup[p.name] || 0) + (p.quantity || 0)
+      })
+    })
+
+    return stats
+  })
+
   const hasItems = computed(() => {
     return delayedItems.value.length > 0 || todayItems.value.length > 0 || tomorrowItems.value.length > 0 || futureItems.value.length > 0
   })
@@ -79,6 +136,7 @@ export function useProductionSummary() {
     rawItems.forEach(group => {
       // Filter out valid orders
       const activeOrders = group.orders.filter((o: any) => {
+        if (isRawMode.value) return true // Show all orders in Raw Mode
         const isFinished = o.stage === 'FINISHED'
         const qty = o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)
         return !isFinished && qty > 0
@@ -94,15 +152,20 @@ export function useProductionSummary() {
 
       result.push({
         _id: group._id,
-        totalQuantity: activeOrders.reduce((acc: number, o: any) => acc + (o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0)), 0),
+        totalQuantity: activeOrders.reduce((acc: number, o: any) => {
+          if (isRawMode.value) return acc + (o.quantity || 0)
+          return acc + (o.pendingInOrder !== undefined ? o.pendingInOrder : (o.quantity || 0))
+        }, 0),
         urgency: new Date(minDate).toISOString(),
         category: group.category,
         orders: activeOrders.map((o: any) => ({
           id: o.id,
-          quantity: o.pendingInOrder !== undefined ? o.pendingInOrder : o.quantity,
+          quantity: isRawMode.value ? (o.quantity || 0) : (o.pendingInOrder !== undefined ? o.pendingInOrder : o.quantity),
           client: o.client,
           delivery: o.delivery,
-          stage: o.stage
+          stage: o.stage,
+          branch: o.branch,
+          deliveryType: o.deliveryType
         })),
         mode: 'custom' as const,
         currentInput: undefined
@@ -115,10 +178,6 @@ export function useProductionSummary() {
   const fetchBucket = async (bucket: 'delayed' | 'today' | 'tomorrow' | 'future') => {
     try {
       const response = await ProductionService.getSummary(bucket)
-      // Response format: { [bucket]: [...] } or just data object?
-      // Service returns response.data.dashboard.
-      // Backend returns { [bucket]: groupedItems }
-
       const items = response && response[bucket] ? response[bucket] : []
       const processed = processBucketItems(items)
 
@@ -126,11 +185,8 @@ export function useProductionSummary() {
       else if (bucket === 'today') todayItems.value = processed
       else if (bucket === 'tomorrow') tomorrowItems.value = processed
       else if (bucket === 'future') futureItems.value = processed
-
     } catch (err) {
       console.error(`Error loading bucket ${bucket}:`, err)
-      // Handle specific bucket failure silently or notify?
-      // We rely on global error if critical ones fail
     }
   }
 
@@ -139,17 +195,17 @@ export function useProductionSummary() {
     try {
       if (!background) {
         isLoading.value = true
-        // Clear previous state if not background refresh? 
-        // Actually, better to keep stale data until new data arrives to avoid flicker,
-        // OR clear it to show we are reloading. 
-        // User asked for "chunks", so clearing might show the "loading" state better?
-        // Let's clear for initial load, keep for refresh.
       }
-
       error.value = ''
 
+      if (isRawMode.value) {
+        // Professional approach: fetch all orders and process locally for true demand
+        rawOrders.value = await ProductionService.getAllOrders()
+        if (!background) isLoading.value = false
+        return
+      }
+
       // 1. Critical Path: Delayed & Today
-      // Run in parallel for speed
       await Promise.all([
         fetchBucket('delayed'),
         fetchBucket('today')
@@ -160,20 +216,13 @@ export function useProductionSummary() {
 
       // 3. Background Path: Tomorrow & Future
       isBackgroundLoading.value = true
-      // We don't await this to block the function return if it was called by a component, 
-      // but if we are in an async setup, we might want to just let it float.
-      // However, usually we want to know when EVERYTHING is done for indicators.
-      // But the requirement is "show info as it arrives".
-
       await Promise.all([
         fetchBucket('tomorrow'),
         fetchBucket('future')
       ])
-
     } catch (err) {
       console.error(err)
       error.value = 'No se pudo cargar el resumen de producción.'
-      isLoading.value = false
     } finally {
       if (!background) isLoading.value = false
       isBackgroundLoading.value = false
@@ -277,6 +326,10 @@ export function useProductionSummary() {
     selectedItemIds,
     toggleSelection,
     clearSelection,
-    batchRegister
+    batchRegister,
+    // Raw Mode
+    isRawMode,
+    rawBucketFilter,
+    rawStatsByDestination
   }
 }
