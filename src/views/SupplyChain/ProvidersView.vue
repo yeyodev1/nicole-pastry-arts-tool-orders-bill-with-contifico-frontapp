@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import ProviderService from '@/services/provider.service'
 import ProviderCategoryService from '@/services/provider-category.service'
 import { useToast } from '@/composables/useToast'
 import ProviderModal from '@/components/SupplyChain/ProviderModal.vue'
-import CategoryDeleteModal from './components/CategoryDeleteModal.vue' // Reuse the cool modal
+import CategoryManagementModal from './components/CategoryManagementModal.vue'
 
 const { success, error: showError } = useToast()
 
 const providers = ref<any[]>([])
 const categories = ref<any[]>([])
 const isLoading = ref(false)
-const showModal = ref(false)
-const showCatDeleteModal = ref(false)
-const providerToEdit = ref<any>(null)
 const isSaving = ref(false)
+const showModal = ref(false)
+const showCatModal = ref(false)
+const providerToEdit = ref<any>(null)
 
 const fetchData = async () => {
   isLoading.value = true
@@ -27,11 +27,19 @@ const fetchData = async () => {
     categories.value = categoriesData
   } catch (err: any) {
     showError('Error al cargar datos')
-    console.error(err)
   } finally {
     isLoading.value = false
   }
 }
+
+const itemsCountByCategory = computed(() => {
+  const counts: Record<string, number> = {}
+  providers.value.forEach(p => {
+    const cat = p.category?.name || 'Sin Categoría'
+    counts[cat] = (counts[cat] || 0) + 1
+  })
+  return counts
+})
 
 const openNewProviderModal = () => {
   providerToEdit.value = null
@@ -63,27 +71,13 @@ const handleSave = async (formData: any) => {
 }
 
 const handleDelete = async (id: string) => {
-  if (!confirm('¿Estás seguro de eliminar este proveedor?')) return
   try {
     await ProviderService.deleteProvider(id)
     success('Proveedor eliminado')
+    showModal.value = false // Close modal after delete
     fetchData()
   } catch (err: any) {
     showError('Error al eliminar proveedor')
-  }
-}
-
-const handleDeleteCategory = async (categoryName: string) => {
-  try {
-    const category = categories.value.find(c => c.name === categoryName)
-    if (!category) return
-
-    await ProviderCategoryService.deleteCategory(category._id)
-    success('Categoría eliminada')
-    showCatDeleteModal.value = false
-    fetchData()
-  } catch (err: any) {
-    showError(err.response?.data?.message || 'Error al eliminar categoría')
   }
 }
 
@@ -93,7 +87,29 @@ const handleCreateCategory = async (name: string) => {
     success('Categoría creada')
     fetchData()
   } catch (err: any) {
-    showError(err.response?.data?.message || 'Error al crear categoría')
+    showError('Error al crear categoría')
+  }
+}
+
+const handleDeleteCategory = async ({ categoryId, reassignId }: { categoryId: string, reassignId: string | null }) => {
+  try {
+    const category = categories.value.find(c => c._id === categoryId)
+    if (!category) return
+
+    // Reassign providers logic
+    const providersToUpdate = providers.value.filter(p => p.category?._id === categoryId)
+    if (providersToUpdate.length > 0) {
+      const targetCat = categories.value.find(c => c.name === reassignId)
+      await Promise.all(providersToUpdate.map(p =>
+        ProviderService.updateProvider(p._id, { category: targetCat?._id || null })
+      ))
+    }
+
+    await ProviderCategoryService.deleteCategory(categoryId)
+    success('Categoría eliminada')
+    fetchData()
+  } catch (err) {
+    showError('Error al eliminar categoría')
   }
 }
 
@@ -107,11 +123,11 @@ onMounted(() => {
     <div class="header">
       <div class="title">
         <h1>Proveedores</h1>
-        <p>Gestiona tus proveedores y agentes comerciales</p>
+        <p>Catálogo de aliados y suministros</p>
       </div>
       <div class="header-actions">
-        <button class="btn-secondary" @click="showCatDeleteModal = true">
-          <i class="fas fa-tags"></i> Gestionar Categorías
+        <button class="btn-secondary" @click="showCatModal = true">
+          <i class="fas fa-tags"></i> Categorías
         </button>
         <button class="btn-primary" @click="openNewProviderModal">
           <i class="fas fa-plus"></i> Nuevo Proveedor
@@ -120,50 +136,77 @@ onMounted(() => {
     </div>
 
     <!-- Loading -->
-    <div v-if="isLoading" class="loading-container">
+    <div v-if="isLoading" class="loading-state">
       <div class="spinner"></div>
       <p>Cargando proveedores...</p>
     </div>
 
-    <!-- List -->
-    <div v-else class="providers-grid">
+    <!-- Content -->
+    <div v-else class="content-wrapper">
       <div v-if="providers.length === 0" class="empty-state">
         <i class="fas fa-truck-loading"></i>
-        <p>No hay proveedores registrados.</p>
+        <p>Aún no tienes proveedores registrados.</p>
       </div>
 
-      <div v-for="provider in providers" :key="provider._id" class="provider-card">
-        <div class="card-header">
-          <div class="header-main">
-            <h3>{{ provider.name }}</h3>
-            <span v-if="provider.category" class="category-badge">
-              {{ provider.category.name }}
-            </span>
+      <div class="mobile-cards">
+        <div v-for="p in providers" :key="p._id" class="provider-card" @click="openEditModal(p)">
+          <div class="card-top">
+            <div class="card-title">
+              <span class="cat-tag" v-if="p.category">{{ p.category.name }}</span>
+              <h3>{{ p.name }}</h3>
+            </div>
           </div>
-          <div class="actions">
-            <button @click="openEditModal(provider)" class="btn-icon"><i class="fas fa-edit"></i></button>
-            <button @click="handleDelete(provider._id)" class="btn-icon delete"><i class="fas fa-trash"></i></button>
+          <div class="card-details">
+            <div class="detail" v-if="p.phone">
+              <i class="fas fa-phone"></i> {{ p.phone }}
+            </div>
+            <div class="detail" v-if="p.email">
+              <i class="fas fa-envelope"></i> {{ p.email }}
+            </div>
+            <div class="agents-row" v-if="p.commercialAgents?.length">
+              <span class="agent-count">{{ p.commercialAgents.length }} Agentes</span>
+            </div>
           </div>
         </div>
-        
-        <div class="card-body">
-          <p v-if="provider.ruc"><i class="fas fa-id-card"></i> {{ provider.ruc }}</p>
-          <p v-if="provider.phone"><i class="fas fa-phone"></i> {{ provider.phone }}</p>
-          <p v-if="provider.email"><i class="fas fa-envelope"></i> {{ provider.email }}</p>
-          
-          <div v-if="provider.commercialAgents?.length" class="agents-preview">
-            <span>{{ provider.commercialAgents.length }} Agentes</span>
-            <div class="agent-avatars">
-               <div v-for="(agent, i) in provider.commercialAgents.slice(0, 3)" :key="i" class="avatar" :title="agent.name">
+      </div>
+
+      <!-- Desktop Grid -->
+      <div class="desktop-grid">
+        <div v-for="p in providers" :key="p._id" class="provider-card-desktop" @click="openEditModal(p)">
+          <div class="card-header">
+            <div class="header-info">
+              <span class="category" v-if="p.category">{{ p.category.name }}</span>
+              <h3>{{ p.name }}</h3>
+            </div>
+            <div class="actions">
+               <div class="btn-view"><i class="fas fa-edit"></i></div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="info-row" v-if="p.ruc">
+              <i class="fas fa-id-card"></i> {{ p.ruc }}
+            </div>
+            <div class="info-row" v-if="p.phone">
+              <i class="fas fa-phone"></i> {{ p.phone }}
+            </div>
+            <div class="info-row" v-if="p.email">
+              <i class="fas fa-envelope"></i> {{ p.email }}
+            </div>
+          </div>
+          <div class="card-footer" v-if="p.commercialAgents?.length">
+             <div class="agents-avatars">
+               <div v-for="(agent, i) in p.commercialAgents.slice(0, 3)" :key="i" class="avatar">
                  {{ agent.name.charAt(0) }}
                </div>
-               <div v-if="provider.commercialAgents.length > 3" class="avatar more">+{{ provider.commercialAgents.length - 3 }}</div>
-            </div>
+               <div v-if="p.commercialAgents.length > 3" class="avatar more">+{{ p.commercialAgents.length - 3 }}</div>
+             </div>
+             <span class="agents-label">{{ p.commercialAgents.length }} agentes</span>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- Modals -->
     <ProviderModal
       :is-open="showModal"
       :provider-to-edit="providerToEdit"
@@ -171,279 +214,357 @@ onMounted(() => {
       :is-loading="isSaving"
       @close="showModal = false"
       @save="handleSave"
+      @delete="handleDelete"
       @create-category="handleCreateCategory"
     />
 
-    <CategoryDeleteModal
-       :is-open="showCatDeleteModal"
-       :categories="categories.map(c => c.name)"
-       :materials="providers.map(p => ({ ...p, category: p.category?.name || '' }))" 
-       @close="showCatDeleteModal = false"
-       @delete="handleDeleteCategory"
+    <CategoryManagementModal
+      :is-open="showCatModal"
+      :categories="categories"
+      :items-count-by-category="itemsCountByCategory"
+      @close="showCatModal = false"
+      @create="handleCreateCategory"
+      @delete="handleDeleteCategory"
     />
   </div>
 </template>
 
 <style lang="scss" scoped>
 .providers-view {
-  padding: 2rem;
+  padding: 1rem;
   max-width: 1200px;
   margin: 0 auto;
-  min-height: 80vh;
-  /* Ensure full height for centering */
-  display: flex;
-  flex-direction: column;
+
+  @media (min-width: 768px) {
+    padding: 2rem;
+  }
 }
 
 .header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+
+  @media (min-width: 768px) {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
 
   h1 {
     color: $NICOLE-PURPLE;
     margin: 0;
+    font-size: 1.75rem;
+    font-weight: 800;
   }
 
   p {
-    color: $text-light;
-    margin: 0.5rem 0 0;
+    color: #64748b;
+    margin: 0.25rem 0 0;
   }
 }
 
 .header-actions {
   display: flex;
   gap: 1rem;
-}
 
-.btn-secondary {
-  background: white;
-  border: 1px solid $border-light;
-  color: $text-dark;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  transition: all 0.2s;
+  button {
+    flex: 1;
 
-  &:hover {
-    background: $gray-50;
-    border-color: $gray-300;
+    @media (min-width: 768px) {
+      flex: none;
+    }
   }
 }
 
-.category-badge {
-  background: $purple-overlay;
-  color: $NICOLE-PURPLE;
-  padding: 0.2rem 0.6rem;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-top: 0.25rem;
-  display: inline-block;
-}
-
-.header-main {
+// Mobile Layout
+.mobile-cards {
   display: flex;
   flex-direction: column;
+  gap: 1rem;
+
+  @media (min-width: 768px) {
+    display: none;
+  }
+
+  .provider-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 24px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border: 1px solid #f1f5f9;
+    cursor: pointer;
+
+    .cat-tag {
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: $NICOLE-PURPLE;
+      text-transform: uppercase;
+      background: rgba($NICOLE-PURPLE, 0.1);
+      padding: 0.25rem 0.6rem;
+      border-radius: 8px;
+    }
+
+    h3 {
+      margin: 0.75rem 0;
+      font-size: 1.2rem;
+      color: #1e293b;
+      font-weight: 900;
+    }
+
+    .card-details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+
+      .detail {
+        font-size: 0.9rem;
+        color: #475569;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+
+        i {
+          color: #cbd5e1;
+          width: 14px;
+        }
+      }
+
+      .agent-count {
+        font-size: 0.8rem;
+        color: $NICOLE-PURPLE;
+        font-weight: 700;
+        margin-top: 0.5rem;
+        display: block;
+        border-top: 1px solid #f1f5f9;
+        padding-top: 0.5rem;
+      }
+    }
+  }
+}
+
+// Desktop Layout
+.desktop-grid {
+  display: none;
+
+  @media (min-width: 768px) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .provider-card-desktop {
+    background: white;
+    border-radius: 28px;
+    padding: 1.75rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
+    border: 2px solid #f1f5f9;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+
+    &:hover {
+      transform: translateY(-8px);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      border-color: $NICOLE-PURPLE;
+
+      .btn-view {
+        background: $NICOLE-PURPLE;
+        color: white;
+      }
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+
+      .category {
+        font-size: 0.65rem;
+        font-weight: 900;
+        color: $NICOLE-PURPLE;
+        text-transform: uppercase;
+        background: rgba($NICOLE-PURPLE, 0.1);
+        padding: 0.25rem 0.6rem;
+        border-radius: 8px;
+      }
+
+      h3 {
+        margin: 0.75rem 0 0;
+        font-size: 1.35rem;
+        color: #0f172a;
+        font-weight: 900;
+      }
+
+      .btn-view {
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+        background: #f1f5f9;
+        color: #94a3b8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      }
+    }
+
+    .card-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      margin-bottom: 1.5rem;
+
+      .info-row {
+        font-size: 0.95rem;
+        color: #475569;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+
+        i {
+          color: #cbd5e1;
+          font-size: 0.85rem;
+        }
+      }
+    }
+
+    .card-footer {
+      padding-top: 1.25rem;
+      border-top: 1px solid #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+
+      .agents-avatars {
+        display: flex;
+
+        .avatar {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: $NICOLE-PURPLE;
+          color: white;
+          border: 3px solid white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.7rem;
+          font-weight: 900;
+          margin-left: -12px;
+
+          &:first-child {
+            margin-left: 0;
+          }
+
+          &.more {
+            background: #f1f5f9;
+            color: #64748b;
+          }
+        }
+      }
+
+      .agents-label {
+        font-size: 0.85rem;
+        color: #94a3b8;
+        font-weight: 600;
+      }
+    }
+  }
 }
 
 .btn-primary {
   background: $NICOLE-PURPLE;
   color: white;
   border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
+  padding: 1rem 1.75rem;
+  border-radius: 16px;
+  font-weight: 800;
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
-  font-weight: 500;
   transition: all 0.2s;
 
   &:hover {
-    background: $purple-dark;
+    background: darken($NICOLE-PURPLE, 5%);
     transform: translateY(-1px);
+    box-shadow: 0 10px 15px rgba($NICOLE-PURPLE, 0.2);
   }
 }
 
-.providers-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-  width: 100%;
-}
-
-.provider-card {
+.btn-secondary {
   background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid $border-light;
-  transition: all 0.2s;
-
-  &:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
-  }
-
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1rem;
-
-    h3 {
-      margin: 0;
-      color: $text-dark;
-      font-size: 1.2rem;
-    }
-  }
-
-  .card-body {
-    p {
-      margin: 0.5rem 0;
-      color: $text-light;
-      font-size: 0.9rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-
-      i {
-        color: $gray-400;
-        width: 16px;
-      }
-    }
-  }
-}
-
-.actions {
+  color: #475569;
+  border: 2px solid #f1f5f9;
+  padding: 1rem 1.75rem;
+  border-radius: 16px;
+  font-weight: 800;
+  cursor: pointer;
   display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 0.5rem;
 
-  .btn-icon {
-    background: none;
-    border: none;
-    color: $gray-400;
-    cursor: pointer;
-    padding: 0.25rem;
-    transition: color 0.2s;
-
-    &:hover {
-      color: $NICOLE-PURPLE;
-    }
-
-    &.delete:hover {
-      color: $error;
-    }
+  &:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
   }
 }
 
-.agents-preview {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid $border-light;
+.loading-state {
+  flex: 1;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: 1.5rem;
 
-  span {
-    font-size: 0.8rem;
-    color: $gray-500;
-    font-weight: 500;
-  }
-}
-
-.agent-avatars {
-  display: flex;
-
-  .avatar {
-    width: 24px;
-    height: 24px;
-    background: $purple-light;
-    color: $NICOLE-PURPLE;
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #f1f5f9;
+    border-top-color: $NICOLE-PURPLE;
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.7rem;
-    border: 2px solid white;
-    margin-left: -8px;
-    font-weight: bold;
+    animation: spin 1s linear infinite;
+  }
 
-    &:first-child {
-      margin-left: 0;
-    }
-
-    &.more {
-      background: $gray-200;
-      color: $text-light;
-    }
+  p {
+    color: #64748b;
+    font-weight: 600;
+    font-size: 1.1rem;
   }
 }
 
 .empty-state {
-  grid-column: 1 / -1;
   text-align: center;
-  padding: 4rem;
-  color: $gray-400;
+  padding: 6rem 1rem;
+  background: white;
+  border-radius: 32px;
+  border: 2px dashed #e2e8f0;
+  color: #94a3b8;
+  margin: 2rem 0;
 
   i {
-    font-size: 3rem;
-    margin-bottom: 1rem;
+    font-size: 4rem;
+    margin-bottom: 2rem;
+    opacity: 0.3;
   }
-}
-
-/* Professional Loading Spinner */
-.loading-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-  gap: 1.5rem;
 
   p {
-    color: $text-light;
+    font-size: 1.2rem;
     font-weight: 500;
-    font-size: 1.1rem;
-    animation: pulse 1.5s infinite ease-in-out;
   }
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid rgba($NICOLE-PURPLE, 0.1);
-  border-left-color: $NICOLE-PURPLE;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
+  to {
     transform: rotate(360deg);
-  }
-}
-
-@keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 0.6;
-  }
-
-  50% {
-    opacity: 1;
   }
 }
 </style>

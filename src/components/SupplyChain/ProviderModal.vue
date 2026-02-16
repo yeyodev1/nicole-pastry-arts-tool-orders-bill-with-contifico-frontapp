@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import HoldConfirmButton from '@/components/ui/HoldConfirmButton.vue'
 
 const props = defineProps<{
   isOpen: boolean
@@ -8,7 +9,7 @@ const props = defineProps<{
   isLoading: boolean
 }>()
 
-const emit = defineEmits(['close', 'save', 'create-category'])
+const emit = defineEmits(['close', 'save', 'delete', 'create-category'])
 
 const form = ref({
   name: '',
@@ -39,7 +40,7 @@ const openCategoryModal = () => {
 const createCategory = () => {
   if (newCategoryName.value.trim()) {
     emit('create-category', newCategoryName.value.trim())
-    form.value.category = '' // Reset selection or we can try to guess ID if we want, but letting user select is safer
+    form.value.category = ''
     showCategoryModal.value = false
   }
 }
@@ -61,7 +62,6 @@ const resetForm = () => {
 watch(() => props.providerToEdit, (newVal) => {
   if (newVal) {
     form.value = JSON.parse(JSON.stringify(newVal))
-    // category might be an object if populated, we need the ID
     if (newVal.category && typeof newVal.category === 'object') {
       form.value.category = newVal.category._id
     }
@@ -83,13 +83,22 @@ const removeAgent = (index: number) => {
 const handleSubmit = () => {
   emit('save', form.value)
 }
+
+const handleDelete = () => {
+  if (props.providerToEdit) {
+    emit('delete', props.providerToEdit._id)
+  }
+}
 </script>
 
 <template>
   <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal-content">
+    <div class="modal-content provider-modal">
       <div class="modal-header">
-        <h2>{{ isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor' }}</h2>
+        <div class="header-title">
+          <h2>{{ isEditing ? 'Editar Proveedor' : 'Nuevo Proveedor' }}</h2>
+          <p v-if="isEditing" class="provider-id">ID: {{ providerToEdit._id.slice(-6).toUpperCase() }}</p>
+        </div>
         <button class="btn-close" @click="$emit('close')">&times;</button>
       </div>
 
@@ -145,8 +154,8 @@ const handleSubmit = () => {
           <h3>Agentes Comerciales</h3>
           
           <div class="add-agent-form">
-            <input v-model="newAgent.name" placeholder="Nombre Agente" />
-            <input v-model="newAgent.phone" placeholder="Teléfono" />
+            <input v-model="newAgent.name" placeholder="Nombre" />
+            <input v-model="newAgent.phone" placeholder="Celular" />
             <input v-model="newAgent.email" placeholder="Email" />
             <button @click="addAgent" class="btn-add-agent" :disabled="!newAgent.name">
               <i class="fas fa-plus"></i>
@@ -160,41 +169,60 @@ const handleSubmit = () => {
             <div v-for="(agent, idx) in form.commercialAgents" :key="idx" class="agent-item">
               <div class="agent-info">
                 <strong>{{ agent.name }}</strong>
-                <span v-if="agent.phone">{{ agent.phone }}</span>
-                <span v-if="agent.email">{{ agent.email }}</span>
+                <div class="agent-meta">
+                  <span v-if="agent.phone"><i class="fas fa-phone"></i> {{ agent.phone }}</span>
+                  <span v-if="agent.email"><i class="fas fa-envelope"></i> {{ agent.email }}</span>
+                </div>
               </div>
-              <button @click="removeAgent(idx)" class="btn-remove-agent">&times;</button>
+              <button @click="removeAgent(idx)" class="btn-remove-agent"><i class="fas fa-times"></i></button>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="modal-footer">
-        <button class="btn-secondary" @click="$emit('close')">Cancelar</button>
-        <button class="btn-primary" @click="handleSubmit" :disabled="!form.name || isLoading">
-          {{ isLoading ? 'Guardando...' : (isEditing ? 'Actualizar' : 'Guardar') }}
-        </button>
+      <div class="modal-footer flex-column">
+        <HoldConfirmButton 
+          v-if="isEditing"
+          label="MANTÉN PARA ELIMINAR"
+          color="#EF4444"
+          class="btn-delete-hold"
+          :hold-time="1200"
+          @confirmed="handleDelete"
+        />
+        
+        <div class="footer-actions">
+          <button class="btn-secondary" @click="$emit('close')">Cancelar</button>
+          <HoldConfirmButton 
+            :label="isEditing ? 'MANTÉN PARA ACTUALIZAR' : 'MANTÉN PARA GUARDAR'"
+            :disabled="!form.name || isLoading"
+            :hold-time="1200"
+            @confirmed="handleSubmit"
+          />
+        </div>
       </div>
 
       <!-- Nested Category Modal -->
-      <div v-if="showCategoryModal" class="modal-overlay z-high" @click.self="showCategoryModal = false">
-        <div class="modal-content small-modal">
-          <div class="modal-header">
-             <h2>Nueva Categoría</h2>
-             <button class="btn-close" @click="showCategoryModal = false">&times;</button>
-          </div>
-          <div class="modal-body">
-             <div class="form-group">
-               <label>Nombre de Categoría</label>
-               <input v-model="newCategoryName" placeholder="Ej. Lácteos" @keyup.enter="createCategory" ref="categoryInput" />
-             </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn-secondary" @click="showCategoryModal = false">Cancelar</button>
-            <button class="btn-primary" @click="createCategory" :disabled="!newCategoryName">Crear</button>
+      <Transition name="sub-modal">
+        <div v-if="showCategoryModal" class="sub-modal-overlay" @click.self="showCategoryModal = false">
+          <div class="sub-modal-card">
+            <div class="sub-header">
+               <h4>Nueva Categoría</h4>
+            </div>
+            <div class="sub-body">
+               <input v-model="newCategoryName" placeholder="Ej. Lácteos" ref="categoryInput" />
+            </div>
+            <div class="sub-footer">
+              <button class="btn-secondary-sm" @click="showCategoryModal = false">Cancelar</button>
+              <HoldConfirmButton 
+                label="MANTÉN PARA CREAR"
+                :disabled="!newCategoryName"
+                :hold-time="1200"
+                @confirmed="createCategory"
+              />
+            </div>
           </div>
         </div>
-      </div>
+      </Transition>
     </div>
   </div>
 </template>
@@ -202,70 +230,116 @@ const handleSubmit = () => {
 <style lang="scss" scoped>
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1000;
+  padding: 1rem;
 }
 
 .modal-content {
   background: white;
-  padding: 2rem;
-  border-radius: 12px;
-  width: 90%;
+  border-radius: 28px;
+  width: 95%;
   max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  animation: modalIn 0.3s ease-out;
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .modal-header {
+  padding: 1.5rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
 
-  h2 {
-    color: $NICOLE-PURPLE;
-    margin: 0;
-    font-size: 1.5rem;
+  .header-title {
+    h2 {
+      color: $NICOLE-PURPLE;
+      margin: 0;
+      font-size: 1.5rem;
+      font-weight: 900;
+    }
+
+    .provider-id {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      font-weight: 700;
+      margin: 2px 0 0;
+    }
   }
 
   .btn-close {
-    background: none;
+    background: #f1f5f9;
     border: none;
-    font-size: 1.5rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    color: #64748b;
+    font-size: 1.25rem;
     cursor: pointer;
-    color: $text-light;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+
+    &:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
   }
 }
 
+.modal-body {
+  padding: 2rem;
+}
+
 .form-group {
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
 
   label {
     display: block;
-    margin-bottom: 0.5rem;
-    color: $text-dark;
-    font-weight: 500;
+    margin-bottom: 0.6rem;
+    font-weight: 700;
+    color: #475569;
+    font-size: 0.8rem;
+    text-transform: uppercase;
   }
 
-  input {
+  input,
+  select {
     width: 100%;
-    padding: 0.75rem;
-    border: 1px solid $border-light;
-    border-radius: 6px;
-    font-size: 0.95rem;
+    padding: 1rem;
+    border: 2px solid #f1f5f9;
+    border-radius: 14px;
+    font-size: 1rem;
+    background: #f8fafc;
+    transition: all 0.2s;
 
     &:focus {
       outline: none;
       border-color: $NICOLE-PURPLE;
-      box-shadow: 0 0 0 2px $purple-overlay;
+      background: white;
+      box-shadow: 0 0 0 4px rgba($NICOLE-PURPLE, 0.1);
     }
   }
 }
@@ -273,145 +347,162 @@ const handleSubmit = () => {
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 1.5rem;
 }
 
 .agents-section {
-  margin-top: 1.5rem;
-  border-top: 1px solid $border-light;
-  padding-top: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid #f1f5f9;
 
   h3 {
     font-size: 1.1rem;
-    color: $text-dark;
-    margin-bottom: 1rem;
+    color: #1e293b;
+    margin-bottom: 1.25rem;
+    font-weight: 800;
   }
 }
 
 .add-agent-form {
-  display: grid;
-  grid-template-columns: 2fr 1.5fr 1.5fr auto;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 16px;
+  border: 1px solid #f1f5f9;
+
+  @media (min-width: 640px) {
+    flex-direction: row;
+
+    input {
+      flex: 1;
+    }
+  }
 
   input {
-    padding: 0.5rem;
-    border: 1px solid $border-light;
-    border-radius: 4px;
-    font-size: 0.85rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 0.9rem;
   }
 
   .btn-add-agent {
     background: $NICOLE-PURPLE;
     color: white;
     border: none;
-    border-radius: 4px;
-    width: 32px;
+    border-radius: 10px;
+    width: 44px;
+    height: 44px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
 
     &:disabled {
-      background: $gray-300;
+      background: #cbd5e1;
       cursor: not-allowed;
     }
   }
 }
 
 .agents-list {
-  background: $gray-50;
-  border-radius: 6px;
-  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .agent-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.5rem;
-  border-bottom: 1px solid $border-light;
-  font-size: 0.9rem;
-
-  &:last-child {
-    border-bottom: none;
-  }
+  padding: 1rem;
+  background: white;
+  border: 1px solid #f1f5f9;
+  border-radius: 14px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 
   .agent-info {
-    display: flex;
-    gap: 1rem;
-    align-items: center;
-    flex-wrap: wrap;
-
     strong {
-      color: $text-dark;
+      color: #1e293b;
+      font-size: 0.95rem;
     }
 
-    span {
-      color: $text-light;
-      font-size: 0.85rem;
+    .agent-meta {
+      display: flex;
+      gap: 1rem;
+      margin-top: 0.25rem;
+      font-size: 0.8rem;
+      color: #64748b;
+
+      i {
+        color: #cbd5e1;
+      }
     }
   }
 
   .btn-remove-agent {
-    background: none;
+    background: #fee2e2;
     border: none;
-    color: $error;
+    color: #ef4444;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
   }
 }
 
 .empty-agents {
   text-align: center;
   padding: 1rem;
-  color: $gray-500;
+  color: #94a3b8;
   font-style: italic;
   font-size: 0.9rem;
 }
 
 .modal-footer {
-  margin-top: 2rem;
-  display: flex;
-  justify-content: flex-end;
+  padding: 1.5rem 2rem 2.5rem;
+  background: #f8fafc;
+  border-top: 1px solid #f1f5f9;
   gap: 1rem;
 
-  button {
-    padding: 0.75rem 1.5rem;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-    font-size: 0.95rem;
-    border: none;
+  .btn-delete-hold {
+    width: 100%;
+    margin-bottom: 0.5rem;
   }
 
-  .btn-secondary {
-    background: $gray-200;
-    color: $text-dark;
+  .footer-actions {
+    display: flex;
+    gap: 1rem;
+    width: 100%;
 
-    &:hover {
-      background: $gray-300;
-    }
-  }
-
-  .btn-primary {
-    background: $NICOLE-PURPLE;
-    color: white;
-
-    &:hover {
-      background: $purple-dark;
+    .btn-secondary {
+      flex: 0 0 100px;
+      padding: 0;
+      background: white;
+      border: 2px solid #f1f5f9;
+      border-radius: 16px;
+      font-weight: 800;
+      color: #64748b;
     }
 
-    &:disabled {
-      opacity: 0.7;
-      cursor: not-allowed;
+    .hold-confirm-btn {
+      flex: 1;
     }
   }
 }
 
-// Category selection styles
 .label-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.6rem;
 
   label {
     margin-bottom: 0;
@@ -422,14 +513,14 @@ const handleSubmit = () => {
   background: none;
   border: none;
   color: $NICOLE-PURPLE;
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 800;
   cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 
   &:hover {
-    color: $purple-dark;
+    color: darken($NICOLE-PURPLE, 10%);
   }
 }
 
@@ -437,41 +528,92 @@ const handleSubmit = () => {
   position: relative;
 
   .styled-select {
-    width: 100%;
-    padding: 0.75rem;
     padding-right: 2.5rem;
-    border: 1px solid $border-light;
-    border-radius: 6px;
-    appearance: none;
-    background-color: white;
     cursor: pointer;
-    font-size: 0.95rem;
-    color: $text-dark;
-
-    &:focus {
-      outline: none;
-      border-color: $NICOLE-PURPLE;
-      box-shadow: 0 0 0 2px $purple-overlay;
-    }
   }
 
   .select-icon {
     position: absolute;
-    right: 1rem;
+    right: 1.25rem;
     top: 50%;
     transform: translateY(-50%);
     pointer-events: none;
-    color: $text-light;
+    color: #64748b;
     font-size: 0.8rem;
   }
 }
 
-.z-high {
-  z-index: 1100 !important;
+/* Nested Category Modal Styles */
+.sub-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  z-index: 2010;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.5rem;
 }
 
-.small-modal {
-  max-width: 400px !important;
-  margin: auto;
+.sub-modal-card {
+  background: white;
+  width: 100%;
+  max-width: 360px;
+  border-radius: 28px;
+  padding: 2rem;
+  box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.3);
+
+  .sub-header h4 {
+    margin: 0 0 1.5rem;
+    text-align: center;
+    font-size: 1.25rem;
+    font-weight: 900;
+    color: #1e293b;
+  }
+
+  .sub-body input {
+    width: 100%;
+    padding: 1rem;
+    border: 2px solid #f1f5f9;
+    border-radius: 14px;
+    font-size: 1rem;
+    background: #f8fafc;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    font-weight: 700;
+
+    &:focus {
+      border-color: $NICOLE-PURPLE;
+      background: white;
+    }
+  }
+}
+
+.sub-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  .btn-secondary-sm {
+    background: #f1f5f9;
+    color: #64748b;
+    border: none;
+    padding: 0.9rem;
+    border-radius: 14px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+}
+
+.sub-modal-enter-active,
+.sub-modal-leave-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sub-modal-enter-from,
+.sub-modal-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
 }
 </style>
