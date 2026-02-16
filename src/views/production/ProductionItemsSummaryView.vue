@@ -28,10 +28,10 @@ const {
   batchRegister,
   isRawMode,
   rawBucketFilter,
+  rawFilteredOrders,
   rawStatsByDestination,
   selectedRawProducts,
   toggleRawProductSelection,
-  toggleRawAllSelection,
   clearRawSelection,
   rawOrders
 } = useProductionSummary()
@@ -163,32 +163,33 @@ const handleExportProduction = async (responsibleName: string) => {
   try {
     // 1. Get selected products
     const selectedProducts = Array.from(selectedRawProducts.value)
+
+    // 2. Determine orders to export (always filtered by the active bucket/pills)
+    let ordersToExport: any[] = []
+
     if (selectedProducts.length === 0) {
-      showError('Seleccione al menos un producto para exportar')
+      // DEFAULT: Export everything in the current bucket
+      ordersToExport = rawFilteredOrders.value
+    } else {
+      // CUSTOM: Export only orders containing the selected products, 
+      // but still only within the active bucket
+      ordersToExport = rawFilteredOrders.value.filter((order: any) => {
+        return order.products.some((p: any) => selectedProducts.includes(p.name))
+      }).map((order: any) => {
+        return {
+          ...order,
+          products: order.products.filter((p: any) => selectedProducts.includes(p.name))
+        }
+      })
+    }
+
+    if (ordersToExport.length === 0) {
+      showError('No hay órdenes para exportar en este periodo')
       return
     }
 
-    // 2. Filter rawOrders to find orders that contain these products
-    const filteredOrders = rawOrders.value.filter((order: any) => {
-      return order.products.some((p: any) => selectedProducts.includes(p.name))
-    }).map((order: any) => {
-      // Create a shallow copy of the order with ONLY the selected products? 
-      // User said "según lo seleccionado", usually this means if I select product A, 
-      // I want a report of all orders showing their demand for product A.
-      return {
-        ...order,
-        products: order.products.filter((p: any) => selectedProducts.includes(p.name))
-      }
-    })
-
-    if (filteredOrders.length === 0) {
-      showError('No se encontraron órdenes para los productos seleccionados')
-      return
-    }
-
-    // 3. Export using the dispatch report style (which we updated with sorting)
-    // We pass it to exportDispatchOrder but it will act as our "Production Order" listing deliveries.
-    await exportDispatchOrder(filteredOrders)
+    // 3. Export using the dispatch report style
+    await exportDispatchOrder(ordersToExport)
 
     success('Orden de Producción exportada exitosamente')
     showExportModal.value = false
@@ -285,19 +286,12 @@ onMounted(async () => {
 
             <div class="raw-export-actions" v-if="rawOrders.length > 0">
                <button 
-                class="btn-select-all"
-                @click="toggleRawAllSelection"
-               >
-                 <i class="fas" :class="selectedRawProducts.size > 0 ? 'fa-check-double' : 'fa-list-check'"></i>
-                 Seleccionar Todos
-               </button>
-               <button 
                 class="btn-export-prod" 
-                :disabled="selectedRawProducts.size === 0 || isExporting"
+                :disabled="isExporting"
                 @click="showExportModal = true"
                >
                  <i class="fas" :class="isExporting ? 'fa-spinner fa-spin' : 'fa-file-export'"></i>
-                 Exportar Seleccionados ({{ selectedRawProducts.size }})
+                 {{ selectedRawProducts.size > 0 ? `Exportar Seleccionados (${selectedRawProducts.size})` : 'Exportar Vista Actual' }}
                </button>
             </div>
           </div>
@@ -783,30 +777,6 @@ $color-delayed: #e67e22;
     .raw-export-actions {
       display: flex;
       gap: 0.75rem;
-
-      .btn-select-all {
-        background: white;
-        color: #64748b;
-        border: 1px solid #e2e8f0;
-        padding: 0.75rem 1.25rem;
-        border-radius: 12px;
-        font-weight: 700;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        transition: all 0.2s;
-
-        &:hover {
-          border-color: #cbd5e1;
-          background: #f8fafc;
-          color: #1e293b;
-        }
-
-        i {
-          color: #8e44ad;
-        }
-      }
 
       .btn-export-prod {
         background: #8e44ad;

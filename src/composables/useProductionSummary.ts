@@ -67,9 +67,8 @@ export function useProductionSummary() {
   const tomorrowGroups = computed(() => groupByCategory(tomorrowItems.value, 'tomorrow'))
   const futureGroups = computed(() => groupByCategory(futureItems.value, 'future'))
 
-  const rawStatsByDestination = computed(() => {
-    const stats: Record<string, Record<string, number>> = {}
-    if (!rawOrders.value.length) return stats
+  const rawFilteredOrders = computed(() => {
+    if (!rawOrders.value.length) return []
 
     const today = getECTNow()
     today.setHours(0, 0, 0, 0)
@@ -78,7 +77,7 @@ export function useProductionSummary() {
     tomorrow.setDate(tomorrow.getDate() + 1)
 
     // Manual bucketing
-    const bucketedOrders = rawOrders.value.filter(order => {
+    return rawOrders.value.filter(order => {
       if (rawBucketFilter.value === 'all') {
         return order.productionStage !== 'VOID'
       }
@@ -93,10 +92,6 @@ export function useProductionSummary() {
         return isSameDayECT(dDate, tomorrow) && order.productionStage !== 'VOID'
       }
       if (rawBucketFilter.value === 'delayed') {
-        // For delayed, we now include everything from the past (finished or not) 
-        // to show historical "crudo" demand if needed, BUT usually "Atrasados" 
-        // in raw mode should probably match the "Today and before" demand?
-        // Let's stick to "Past dates that are NOT VOID" to be inclusive as requested.
         return dDate < today && order.productionStage !== 'VOID'
       }
       if (rawBucketFilter.value === 'future') {
@@ -107,8 +102,13 @@ export function useProductionSummary() {
       }
       return false
     })
+  })
 
-    bucketedOrders.forEach(order => {
+  const rawStatsByDestination = computed(() => {
+    const stats: Record<string, Record<string, number>> = {}
+    if (!rawFilteredOrders.value.length) return stats
+
+    rawFilteredOrders.value.forEach(order => {
       let dest = 'Otros / Sin Local'
       if (order.deliveryType === 'delivery') {
         dest = 'Delivery'
@@ -324,21 +324,6 @@ export function useProductionSummary() {
     }
   }
 
-  const toggleRawAllSelection = () => {
-    // Get all product names currently visible in rawStatsByDestination
-    const allProductNames = new Set<string>()
-    Object.values(rawStatsByDestination.value).forEach(destGroup => {
-      Object.keys(destGroup).forEach(prodName => allProductNames.add(prodName))
-    })
-
-    const allAreSelected = Array.from(allProductNames).every(name => selectedRawProducts.value.has(name))
-
-    if (allAreSelected) {
-      allProductNames.forEach(name => selectedRawProducts.value.delete(name))
-    } else {
-      allProductNames.forEach(name => selectedRawProducts.value.add(name))
-    }
-  }
 
   const clearRawSelection = () => {
     selectedRawProducts.value.clear()
@@ -368,10 +353,10 @@ export function useProductionSummary() {
     // Raw Mode
     isRawMode,
     rawBucketFilter,
+    rawFilteredOrders,
     rawStatsByDestination,
     selectedRawProducts,
     toggleRawProductSelection,
-    toggleRawAllSelection,
     clearRawSelection,
     rawOrders
   }
