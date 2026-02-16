@@ -197,9 +197,16 @@ const handleConfirmDelete = () => {
         </div>
 
         <div class="cost-summary" v-if="calculatedUnitCost > 0">
-          <div class="summary-item">
-            <span class="label">Costo por {{ form.unit }}:</span>
-            <span class="value main">${{ calculatedUnitCost.toFixed(6) }}</span>
+          <!-- Kg / L Cost (Main Focus) -->
+          <div class="summary-item" v-if="form.unit !== 'u'">
+            <span class="label">Costo por {{ form.unit === 'g' ? 'Kg' : (form.unit === 'ml' ? 'Litro' : '') }}:</span>
+            <span class="value main">${{ (calculatedUnitCost * 1000).toFixed(4) }}</span>
+          </div>
+
+          <!-- Base Unit Cost (g / ml / u) -->
+          <div class="summary-item" :class="{ sub: form.unit !== 'u' }">
+            <span class="label">Costo {{ form.unit === 'u' ? 'por Unidad' : `por ${form.unit}` }}:</span>
+             <span class="value" :class="{ main: form.unit === 'u' }">${{ calculatedUnitCost.toFixed(6) }}</span>
           </div>
         </div>
       </div>
