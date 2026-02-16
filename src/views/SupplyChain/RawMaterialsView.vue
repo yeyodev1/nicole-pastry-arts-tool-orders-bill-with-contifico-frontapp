@@ -1,89 +1,28 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import RawMaterialService from '@/services/raw-material.service'
 import ProviderService from '@/services/provider.service'
-import ProviderCategoryService from '@/services/provider-category.service'
 import { useToast } from '@/composables/useToast'
-import CategoryManagementModal from './components/CategoryManagementModal.vue'
-import HoldConfirmButton from '@/components/ui/HoldConfirmButton.vue'
+import RawMaterialModal from '@/components/SupplyChain/RawMaterialModal.vue'
 
 const { success, error: showError } = useToast()
 
 const materials = ref<any[]>([])
 const providers = ref<any[]>([])
-const categories = ref<any[]>([])
 const isLoading = ref(false)
 const isSaving = ref(false)
 const showModal = ref(false)
 const materialToEdit = ref<any>(null)
 
-// Category Management
-const showCategoryModal = ref(false)
-
-const form = ref({
-  name: '',
-  item: '',
-  code: '',
-  unit: 'u',
-  quantity: 0,
-  minStock: 0,
-  provider: '',
-  category: '',
-  presentationName: '',
-  presentationPrice: 0,
-  presentationQuantity: 1,
-  incomingQuantity: 0, // This is "Cuanto llegaría"
-  lastInvoice: '',
-  lastEntryNumber: '',
-  wastePercentage: 0
-})
-
-// Auto-calculate unit cost
-const calculatedUnitCost = computed(() => {
-  if (form.value.presentationPrice > 0 && form.value.presentationQuantity > 0) {
-    return form.value.presentationPrice / form.value.presentationQuantity
-  }
-  return 0
-})
-
-const units = [
-  { value: 'g', label: 'Gramos (g/kg)' },
-  { value: 'ml', label: 'Mililitros (ml/L)' },
-  { value: 'u', label: 'Unidades (u)' }
-]
-
-const resetForm = () => {
-  form.value = {
-    name: '',
-    item: '',
-    code: '',
-    unit: 'u',
-    quantity: 0,
-    minStock: 0,
-    provider: '',
-    category: '',
-    presentationName: '',
-    presentationPrice: 0,
-    presentationQuantity: 1,
-    incomingQuantity: 0,
-    lastInvoice: '',
-    lastEntryNumber: '',
-    wastePercentage: 0
-  }
-  materialToEdit.value = null
-}
-
 const fetchData = async () => {
   isLoading.value = true
   try {
-    const [materialsData, providersData, categoriesData] = await Promise.all([
+    const [materialsData, providersData] = await Promise.all([
       RawMaterialService.getRawMaterials(),
-      ProviderService.getProviders(),
-      ProviderCategoryService.getCategories()
+      ProviderService.getProviders()
     ])
     materials.value = materialsData
     providers.value = providersData
-    categories.value = categoriesData
   } catch (err) {
     showError('Error al cargar datos')
   } finally {
@@ -91,20 +30,13 @@ const fetchData = async () => {
   }
 }
 
-const generateCode = (category: string, item: string) => {
-  const catChar = category && category.length > 0 ? category.charAt(0).toUpperCase() : 'X'
-  const itemChar = item && item.length > 1 ? item.charAt(1).toLowerCase() : (item && item.length > 0 ? item.charAt(0).toLowerCase() : 'x')
-  const randomNum = Math.floor(Math.random() * 900) + 100
-  return `${catChar}${itemChar}${randomNum}`
-}
-
-const itemsCountByCategory = computed(() => {
-  const counts: Record<string, number> = {}
+// Derived categories from materials
+const categories = computed(() => {
+  const uniqueCats = new Set<string>()
   materials.value.forEach(m => {
-    const cat = m.category || 'Sin Categoría'
-    counts[cat] = (counts[cat] || 0) + 1
+    if (m.category) uniqueCats.add(m.category)
   })
-  return counts
+  return Array.from(uniqueCats).map(name => ({ _id: name, name }))
 })
 
 const groupedMaterials = computed(() => {
@@ -128,66 +60,14 @@ const getDisplayQuantity = (quantity: number, unit: string) => {
   return quantity
 }
 
-const toBackendQuantity = (inputQty: number, unit: string) => {
-  if (unit === 'g' || unit === 'ml') return inputQty * 1000
-  return inputQty
-}
-
 const openModal = (material: any = null) => {
-  if (material) {
-    materialToEdit.value = material
-    form.value = {
-      name: material.name,
-      item: material.item || '',
-      code: material.code || '',
-      unit: material.unit || 'u',
-      quantity: getDisplayQuantity(material.quantity || 0, material.unit),
-      minStock: getDisplayQuantity(material.minStock || 0, material.unit),
-      provider: material.provider?._id || '',
-      category: material.category || '',
-      presentationName: material.presentationName || '',
-      presentationPrice: material.presentationPrice || 0,
-      presentationQuantity: material.presentationQuantity || 1,
-      incomingQuantity: 0,
-      lastInvoice: material.lastInvoice || '',
-      lastEntryNumber: material.lastEntryNumber || '',
-      wastePercentage: material.wastePercentage || 0
-    }
-  } else {
-    resetForm()
-  }
+  materialToEdit.value = material
   showModal.value = true
 }
 
-const handleSubmit = async () => {
+const handleSave = async (payload: any) => {
   isSaving.value = true
   try {
-    const payload: any = { ...form.value }
-
-    // Add incoming stock if any
-    if (payload.incomingQuantity > 0) {
-      const incomingInBaseUnits = payload.incomingQuantity * payload.presentationQuantity
-      payload.quantity = (payload.quantity * (payload.unit === 'u' ? 1 : 1000)) + (payload.unit === 'u' ? incomingInBaseUnits : (incomingInBaseUnits))
-      // wait, the payload.quantity in form is already in display units (kg/L)
-      // let's re-calculate correctly
-      const currentInBase = toBackendQuantity(form.value.quantity, form.value.unit)
-      const incomingInBase = payload.incomingQuantity * payload.presentationQuantity
-      payload.quantity = currentInBase + incomingInBase
-      payload.lastMovementDate = new Date()
-    } else {
-      payload.quantity = toBackendQuantity(payload.quantity, payload.unit)
-    }
-
-    payload.minStock = toBackendQuantity(payload.minStock || 0, payload.unit)
-    payload.cost = calculatedUnitCost.value
-
-    if (!payload.code) {
-      payload.code = generateCode(payload.category, payload.item || payload.name)
-    }
-
-    if (!payload.provider) delete payload.provider
-    delete payload.incomingQuantity // Frontend only
-
     if (materialToEdit.value) {
       await RawMaterialService.updateRawMaterial(materialToEdit.value._id, payload)
       success('Registro actualizado')
@@ -204,46 +84,14 @@ const handleSubmit = async () => {
   }
 }
 
-const handleDeleteItem = async () => {
-  if (!materialToEdit.value) return
+const handleDeleteItem = async (id: string) => {
   try {
-    await RawMaterialService.deleteRawMaterial(materialToEdit.value._id)
+    await RawMaterialService.deleteRawMaterial(id)
     success('Eliminado correctamente')
     showModal.value = false
     fetchData()
   } catch (err) {
     showError('Error al eliminar')
-  }
-}
-
-const handleDeleteCategory = async ({ categoryId, reassignId }: { categoryId: string, reassignId: string | null }) => {
-  try {
-    const category = categories.value.find(c => c._id === categoryId)
-    if (!category) return
-
-    // Reassign items logic
-    const materialsToUpdate = materials.value.filter(m => (m.category || 'Sin Categoría') === category.name)
-    if (materialsToUpdate.length > 0) {
-      await Promise.all(materialsToUpdate.map(m =>
-        RawMaterialService.updateRawMaterial(m._id, { category: reassignId || '' })
-      ))
-    }
-
-    await ProviderCategoryService.deleteCategory(categoryId)
-    success('Categoría eliminada')
-    fetchData()
-  } catch (err) {
-    showError('Error al eliminar categoría')
-  }
-}
-
-const handleCreateCategory = async (name: string) => {
-  try {
-    await ProviderCategoryService.createCategory({ name })
-    success('Categoría creada')
-    fetchData()
-  } catch (err) {
-    showError('Error al crear categoría')
   }
 }
 
@@ -265,9 +113,6 @@ onMounted(() => {
         <p>Gestión profesional de materia prima y adquisiciones</p>
       </div>
       <div class="header-actions">
-        <button class="btn-secondary" @click="showCategoryModal = true">
-          <i class="fas fa-tags"></i> Categorías
-        </button>
         <button class="btn-primary" @click="openModal()">
           <i class="fas fa-plus"></i> Ingreso / Nuevo
         </button>
@@ -369,137 +214,15 @@ onMounted(() => {
     </div>
 
     <!-- Professional Entry Modal -->
-    <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
-      <div class="modal-content pro-modal">
-        <div class="modal-header">
-          <div class="header-info">
-            <h2>{{ materialToEdit ? 'Detalle y Gestión de Stock' : 'Nuevo Ingreso de Material' }}</h2>
-            <p v-if="materialToEdit" class="sku-subtitle">SKU: {{ form.code }} | {{ form.item }}</p>
-          </div>
-          <button class="btn-close" @click="showModal = false">&times;</button>
-        </div>
-
-        <div class="modal-body">
-          <!-- Information Section -->
-          <div class="section-title">Información del Producto</div>
-          <div class="form-row">
-            <div class="form-group flex-2">
-              <label>Nombre Específico / Marca</label>
-              <input v-model="form.name" placeholder="Ej. Chocolate Callebaut 70%" />
-            </div>
-            <div class="form-group flex-1">
-              <label>Descripción / Ítem</label>
-              <input v-model="form.item" placeholder="Ej. Chocolate" />
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>Categoría</label>
-              <select v-model="form.category">
-                <option value="">Sin Categoría</option>
-                <option v-for="cat in categories" :key="cat._id" :value="cat.name">{{ cat.name }}</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Unidad Base</label>
-              <select v-model="form.unit" :disabled="materialToEdit">
-                <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Procurement Section -->
-          <div class="section-divider"></div>
-          <div class="section-title">Datos del Proveedor y Compra</div>
-          
-          <div class="form-group">
-            <label>Proveedor Asociado</label>
-            <select v-model="form.provider">
-              <option value="">-- Seleccionar Proveedor --</option>
-              <option v-for="p in providers" :key="p._id" :value="p._id">{{ p.name }}</option>
-            </select>
-          </div>
-
-          <div class="form-row highlight">
-            <div class="form-group flex-2">
-              <label>Presentación del Proveedor</label>
-              <input v-model="form.presentationName" placeholder="Ej. Saco 25kg, Galón 4L" />
-            </div>
-            <div class="form-group flex-1">
-              <label>Cant. en {{ form.unit }}</label>
-              <input type="number" v-model.number="form.presentationQuantity" />
-            </div>
-            <div class="form-group flex-1">
-              <label>Precio Compra ($)</label>
-              <input type="number" v-model.number="form.presentationPrice" step="0.01" />
-            </div>
-          </div>
-
-          <div class="cost-summary" v-if="calculatedUnitCost > 0">
-            <span class="label">Costo por {{ getDisplayUnit(form.unit) }}:</span>
-            <span class="value">${{ (calculatedUnitCost * (form.unit === 'u' ? 1 : 1000)).toFixed(4) }}</span>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label>No. Factura</label>
-              <input v-model="form.lastInvoice" placeholder="001-001..." />
-            </div>
-            <div class="form-group">
-              <label>No. de Ingreso</label>
-              <input v-model="form.lastEntryNumber" placeholder="Ej. ENT-123" />
-            </div>
-          </div>
-
-          <!-- Action Section: Incoming Stock -->
-          <div class="section-divider"></div>
-          <div class="section-title highlight-title">Gestión de Stock</div>
-          <div class="stock-action-box">
-             <div class="stock-current">
-                <label>Inventario Actual</label>
-                <div class="value">{{ form.quantity }} {{ getDisplayUnit(form.unit) }}</div>
-             </div>
-             <div class="stock-incoming">
-                <label>CUANTO LLEGARÍA (Presentaciones)</label>
-                <input type="number" v-model.number="form.incomingQuantity" class="entry-field" />
-             </div>
-             <div class="stock-total">
-                <label>Existencia Final</label>
-                <div class="value total">{{ (form.quantity + (form.incomingQuantity * (form.unit === 'u' ? form.presentationQuantity : form.presentationQuantity / 1000))).toFixed(2) }} {{ getDisplayUnit(form.unit) }}</div>
-             </div>
-          </div>
-        </div>
-
-        <div class="modal-footer pro-footer">
-          <HoldConfirmButton 
-            v-if="materialToEdit"
-            label="ELIMINAR REGISTRO"
-            color="#ef4444"
-            class="btn-delete"
-            @confirmed="handleDeleteItem"
-          />
-          <div class="main-actions">
-            <button class="btn-cancel" @click="showModal = false">Cerrar</button>
-            <HoldConfirmButton 
-              :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CONFIRMAR INGRESO'"
-              :disabled="isSaving || !form.name || !form.item"
-              :hold-time="1200"
-              @confirmed="handleSubmit"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Category Modal -->
-    <CategoryManagementModal
-      :is-open="showCategoryModal"
+    <RawMaterialModal
+      :is-open="showModal"
+      :material-to-edit="materialToEdit"
+      :providers="providers"
       :categories="categories"
-      :items-count-by-category="itemsCountByCategory"
-      @close="showCategoryModal = false"
-      @create="handleCreateCategory"
-      @delete="handleDeleteCategory"
+      :is-saving="isSaving"
+      @close="showModal = false"
+      @save="handleSave"
+      @delete="handleDeleteItem"
     />
   </div>
 </template>
@@ -547,7 +270,7 @@ onMounted(() => {
   display: flex;
   gap: 1rem;
 
-  button {
+  .btn-primary {
     height: 52px;
     border-radius: 16px;
     font-weight: 800;
@@ -557,9 +280,6 @@ onMounted(() => {
     gap: 0.75rem;
     cursor: pointer;
     transition: all 0.2s;
-  }
-
-  .btn-primary {
     background: $NICOLE-PURPLE;
     color: white;
     border: none;
@@ -568,17 +288,6 @@ onMounted(() => {
     &:hover {
       transform: translateY(-2px);
       box-shadow: 0 8px 20px rgba($NICOLE-PURPLE, 0.3);
-    }
-  }
-
-  .btn-secondary {
-    background: white;
-    border: 2px solid #f1f5f9;
-    color: #475569;
-
-    &:hover {
-      background: #f8fafc;
-      border-color: #e2e8f0;
     }
   }
 }
@@ -840,267 +549,6 @@ onMounted(() => {
       span {
         font-weight: 600;
       }
-    }
-  }
-}
-
-/* Professional Modal Styles */
-.pro-modal {
-  width: 95%;
-  max-width: 700px;
-  max-height: 90vh;
-  border-radius: 36px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.modal-header {
-  padding: 2rem 2.5rem;
-  background: white;
-  border-bottom: 1px solid #f1f5f9;
-
-  h2 {
-    font-size: 1.75rem;
-    font-weight: 900;
-    color: #1e293b;
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .sku-subtitle {
-    font-size: 0.9rem;
-    font-weight: 800;
-    color: $NICOLE-PURPLE;
-    margin: 0.5rem 0 0;
-    text-transform: uppercase;
-  }
-
-  .btn-close {
-    background: #f1f5f9;
-    border: none;
-    width: 44px;
-    height: 44px;
-    border-radius: 14px;
-    color: #64748b;
-    cursor: pointer;
-    font-size: 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-
-    &:hover {
-      background: #fee2e2;
-      color: #ef4444;
-    }
-  }
-}
-
-.modal-body {
-  padding: 2rem 2.5rem;
-  overflow-y: auto;
-  flex: 1;
-  background: white;
-}
-
-.section-title {
-  font-size: 0.8rem;
-  font-weight: 900;
-  color: #94a3b8;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 1.25rem;
-}
-
-.section-divider {
-  height: 2px;
-  background: #f8fafc;
-  margin: 2rem -2.5rem;
-}
-
-.highlight-title {
-  color: $NICOLE-PURPLE;
-}
-
-.form-row {
-  display: flex;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-
-  &.highlight {
-    background: #f8fafc;
-    padding: 1.5rem;
-    border-radius: 20px;
-    border: 2px dashed #e2e8f0;
-  }
-
-  .flex-2 {
-    flex: 2;
-  }
-
-  .flex-1 {
-    flex: 1;
-  }
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-
-  label {
-    font-size: 0.85rem;
-    font-weight: 800;
-    color: #64748b;
-  }
-
-  input,
-  select {
-    padding: 1rem;
-    border: 2px solid #f1f5f9;
-    border-radius: 14px;
-    font-size: 1rem;
-    font-weight: 600;
-    background: #f8fafc;
-    transition: all 0.2s;
-
-    &:focus {
-      outline: none;
-      border-color: $NICOLE-PURPLE;
-      background: white;
-      box-shadow: 0 0 0 5px rgba($NICOLE-PURPLE, 0.08);
-    }
-
-    &:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-  }
-}
-
-.cost-summary {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 1rem;
-  margin-top: -0.5rem;
-  margin-bottom: 2rem;
-
-  .label {
-    font-weight: 800;
-    color: #94a3b8;
-    font-size: 0.9rem;
-  }
-
-  .value {
-    font-weight: 900;
-    color: #0f172a;
-    font-size: 1.25rem;
-    font-family: 'JetBrains Mono';
-  }
-}
-
-/* Stock Management Box */
-.stock-action-box {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1.5rem;
-  padding: 2rem;
-  background: #fafafa;
-  border-radius: 24px;
-  border: 2px solid #f1f5f9;
-
-  .stock-current,
-  .stock-incoming,
-  .stock-total {
-    text-align: center;
-
-    label {
-      display: block;
-      font-size: 0.7rem;
-      font-weight: 900;
-      color: #94a3b8;
-      text-transform: uppercase;
-      margin-bottom: 0.75rem;
-    }
-
-    .value {
-      font-size: 1.5rem;
-      font-weight: 900;
-      color: #475569;
-    }
-
-    .total {
-      color: $NICOLE-PURPLE;
-      font-size: 1.75rem;
-    }
-
-    .entry-field {
-      width: 100%;
-      text-align: center;
-      font-size: 1.5rem;
-      font-weight: 900;
-      color: #0f172a;
-      background: white;
-      border: 3px solid $NICOLE-PURPLE;
-      padding: 0.75rem;
-      border-radius: 16px;
-
-      &:focus {
-        box-shadow: 0 0 0 5px rgba($NICOLE-PURPLE, 0.15);
-      }
-    }
-  }
-}
-
-.pro-footer {
-  padding: 2rem 2.5rem;
-  background: #fcfcfd;
-  border-top: 1px solid #f1f5f9;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-
-  .btn-delete {
-    width: 100%;
-    border-radius: 16px;
-    height: 52px;
-    font-weight: 900;
-    opacity: 0.8;
-
-    &:hover {
-      opacity: 1;
-    }
-  }
-
-  .main-actions {
-    display: flex;
-    gap: 1rem;
-    width: 100%;
-
-    .btn-cancel {
-      flex: 0 0 120px;
-      background: white;
-      border: 2px solid #f1f5f9;
-      border-radius: 16px;
-      font-weight: 800;
-      color: #64748b;
-      cursor: pointer;
-
-      &:hover {
-        background: #f8fafc;
-      }
-    }
-
-    .hold-confirm-btn {
-      flex: 1;
-      height: 56px;
-      border-radius: 18px;
-      font-size: 1.1rem;
-      font-weight: 900;
-      letter-spacing: 0.02em;
     }
   }
 }

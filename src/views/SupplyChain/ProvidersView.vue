@@ -1,45 +1,28 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import ProviderService from '@/services/provider.service'
-import ProviderCategoryService from '@/services/provider-category.service'
 import { useToast } from '@/composables/useToast'
 import ProviderModal from '@/components/SupplyChain/ProviderModal.vue'
-import CategoryManagementModal from './components/CategoryManagementModal.vue'
 
 const { success, error: showError } = useToast()
 
 const providers = ref<any[]>([])
-const categories = ref<any[]>([])
 const isLoading = ref(false)
 const isSaving = ref(false)
 const showModal = ref(false)
-const showCatModal = ref(false)
 const providerToEdit = ref<any>(null)
 
 const fetchData = async () => {
   isLoading.value = true
   try {
-    const [providersData, categoriesData] = await Promise.all([
-      ProviderService.getProviders(),
-      ProviderCategoryService.getCategories()
-    ])
-    providers.value = providersData
-    categories.value = categoriesData
+    const data = await ProviderService.getProviders()
+    providers.value = data
   } catch (err: any) {
     showError('Error al cargar datos')
   } finally {
     isLoading.value = false
   }
 }
-
-const itemsCountByCategory = computed(() => {
-  const counts: Record<string, number> = {}
-  providers.value.forEach(p => {
-    const cat = p.category?.name || 'Sin Categoría'
-    counts[cat] = (counts[cat] || 0) + 1
-  })
-  return counts
-})
 
 const openNewProviderModal = () => {
   providerToEdit.value = null
@@ -74,42 +57,10 @@ const handleDelete = async (id: string) => {
   try {
     await ProviderService.deleteProvider(id)
     success('Proveedor eliminado')
-    showModal.value = false // Close modal after delete
+    showModal.value = false
     fetchData()
   } catch (err: any) {
     showError('Error al eliminar proveedor')
-  }
-}
-
-const handleCreateCategory = async (name: string) => {
-  try {
-    await ProviderCategoryService.createCategory({ name })
-    success('Categoría creada')
-    fetchData()
-  } catch (err: any) {
-    showError('Error al crear categoría')
-  }
-}
-
-const handleDeleteCategory = async ({ categoryId, reassignId }: { categoryId: string, reassignId: string | null }) => {
-  try {
-    const category = categories.value.find(c => c._id === categoryId)
-    if (!category) return
-
-    // Reassign providers logic
-    const providersToUpdate = providers.value.filter(p => p.category?._id === categoryId)
-    if (providersToUpdate.length > 0) {
-      const targetCat = categories.value.find(c => c.name === reassignId)
-      await Promise.all(providersToUpdate.map(p =>
-        ProviderService.updateProvider(p._id, { category: targetCat?._id || null })
-      ))
-    }
-
-    await ProviderCategoryService.deleteCategory(categoryId)
-    success('Categoría eliminada')
-    fetchData()
-  } catch (err) {
-    showError('Error al eliminar categoría')
   }
 }
 
@@ -126,9 +77,6 @@ onMounted(() => {
         <p>Catálogo de aliados y suministros</p>
       </div>
       <div class="header-actions">
-        <button class="btn-secondary" @click="showCatModal = true">
-          <i class="fas fa-tags"></i> Categorías
-        </button>
         <button class="btn-primary" @click="openNewProviderModal">
           <i class="fas fa-plus"></i> Nuevo Proveedor
         </button>
@@ -152,8 +100,8 @@ onMounted(() => {
         <div v-for="p in providers" :key="p._id" class="provider-card" @click="openEditModal(p)">
           <div class="card-top">
             <div class="card-title">
-              <span class="cat-tag" v-if="p.category">{{ p.category.name }}</span>
               <h3>{{ p.name }}</h3>
+              <span class="item-count-badge" v-if="p.itemCount > 0">{{ p.itemCount }} ítems</span>
             </div>
           </div>
           <div class="card-details">
@@ -175,8 +123,11 @@ onMounted(() => {
         <div v-for="p in providers" :key="p._id" class="provider-card-desktop" @click="openEditModal(p)">
           <div class="card-header">
             <div class="header-info">
-              <span class="category" v-if="p.category">{{ p.category.name }}</span>
               <h3>{{ p.name }}</h3>
+              <div class="meta-pills">
+                <span class="pill items" v-if="p.itemCount > 0">{{ p.itemCount }} productos</span>
+                <span class="pill agents" v-if="p.commercialAgents?.length">{{ p.commercialAgents.length }} agentes</span>
+              </div>
             </div>
             <div class="actions">
                <div class="btn-view"><i class="fas fa-edit"></i></div>
@@ -200,7 +151,7 @@ onMounted(() => {
                </div>
                <div v-if="p.commercialAgents.length > 3" class="avatar more">+{{ p.commercialAgents.length - 3 }}</div>
              </div>
-             <span class="agents-label">{{ p.commercialAgents.length }} agentes</span>
+             <span class="agents-label">Gestión de agentes</span>
           </div>
         </div>
       </div>
@@ -210,21 +161,10 @@ onMounted(() => {
     <ProviderModal
       :is-open="showModal"
       :provider-to-edit="providerToEdit"
-      :categories="categories"
       :is-loading="isSaving"
       @close="showModal = false"
       @save="handleSave"
       @delete="handleDelete"
-      @create-category="handleCreateCategory"
-    />
-
-    <CategoryManagementModal
-      :is-open="showCatModal"
-      :categories="categories"
-      :items-count-by-category="itemsCountByCategory"
-      @close="showCatModal = false"
-      @create="handleCreateCategory"
-      @delete="handleDeleteCategory"
     />
   </div>
 </template>
@@ -296,21 +236,28 @@ onMounted(() => {
     border: 1px solid #f1f5f9;
     cursor: pointer;
 
-    .cat-tag {
-      font-size: 0.65rem;
-      font-weight: 800;
-      color: $NICOLE-PURPLE;
-      text-transform: uppercase;
-      background: rgba($NICOLE-PURPLE, 0.1);
-      padding: 0.25rem 0.6rem;
-      border-radius: 8px;
-    }
+    .card-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
 
-    h3 {
-      margin: 0.75rem 0;
-      font-size: 1.2rem;
-      color: #1e293b;
-      font-weight: 900;
+      h3 {
+        margin: 0;
+        font-size: 1.2rem;
+        color: #1e293b;
+        font-weight: 900;
+      }
+
+      .item-count-badge {
+        font-size: 0.7rem;
+        font-weight: 800;
+        background: #f1f5f9;
+        color: #64748b;
+        padding: 0.25rem 0.6rem;
+        border-radius: 8px;
+        text-transform: uppercase;
+      }
     }
 
     .card-details {
@@ -381,18 +328,32 @@ onMounted(() => {
       justify-content: space-between;
       margin-bottom: 1.5rem;
 
-      .category {
-        font-size: 0.65rem;
-        font-weight: 900;
-        color: $NICOLE-PURPLE;
-        text-transform: uppercase;
-        background: rgba($NICOLE-PURPLE, 0.1);
-        padding: 0.25rem 0.6rem;
-        border-radius: 8px;
+      .meta-pills {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+
+        .pill {
+          font-size: 0.65rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          padding: 0.25rem 0.6rem;
+          border-radius: 8px;
+
+          &.items {
+            background: rgba($NICOLE-PURPLE, 0.1);
+            color: $NICOLE-PURPLE;
+          }
+
+          &.agents {
+            background: #f1f5f9;
+            color: #64748b;
+          }
+        }
       }
 
       h3 {
-        margin: 0.75rem 0 0;
+        margin: 0;
         font-size: 1.35rem;
         color: #0f172a;
         font-weight: 900;
@@ -494,25 +455,6 @@ onMounted(() => {
     background: darken($NICOLE-PURPLE, 5%);
     transform: translateY(-1px);
     box-shadow: 0 10px 15px rgba($NICOLE-PURPLE, 0.2);
-  }
-}
-
-.btn-secondary {
-  background: white;
-  color: #475569;
-  border: 2px solid #f1f5f9;
-  padding: 1rem 1.75rem;
-  border-radius: 16px;
-  font-weight: 800;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-
-  &:hover {
-    background: #f8fafc;
-    border-color: #cbd5e1;
   }
 }
 
