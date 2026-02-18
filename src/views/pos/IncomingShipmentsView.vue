@@ -28,7 +28,7 @@ const selectedOrder = ref<POSOrder | null>(null)
 // Toast
 const toast = ref<{ show: boolean; message: string; type: 'success' | 'error' | 'info' }>({ show: false, message: '', type: 'success' })
 
-const fetchOrders = async () => {
+const fetchData = async () => {
   isLoading.value = true
   try {
     const filters = {
@@ -37,32 +37,49 @@ const fetchOrders = async () => {
       date: customDate.value
     }
 
-    // Now focusing only on pickup/delivery ready orders
-    const data = await POSService.getPickupOrders(selectedBranch.value, filters)
-    orders.value = data
+    // Fetch both endpoints in parallel
+    const [pickupData, incomingData] = await Promise.all([
+      POSService.getPickupOrders(selectedBranch.value, filters),
+      POSService.getIncomingDispatches(selectedBranch.value, filters)
+    ])
+
+    // 1. Process Pickups (Orders ready for delivery or delivered)
+    const pickups = pickupData || []
+
+    // 2. Process Incoming Dispatches (In Transit -> Pending Reception)
+    // Flatten dispatches to treat each dispatch as an actionable item if needed, 
+    // or just show the order. The user likely wants to see the order.
+    // The previous logic mapped to { ...o, dispatch: d }. We'll keep that for consistency.
+    const incoming = incomingData
+      .filter(o => o.posStatus === 'IN_TRANSIT')
+      .flatMap(o =>
+        (o.dispatches || [])
+          .filter(d => d.receptionStatus === 'PENDING')
+          .map(d => ({ ...o, orderId: o._id, dispatch: d }))
+      )
+
+    // Update the ref for the Bulk Modal
+    pendingDispatchesForBulk.value = incoming
+
+    // 3. Merge and Deduplicate for the Main Grid
+    // We prioritize 'incoming' version if it exists because it has the 'dispatch' info attached
+    const mergedMap = new Map()
+
+    pickups.forEach(o => mergedMap.set(o._id, o))
+    incoming.forEach(o => mergedMap.set(o._id, o))
+
+    const allOrders = Array.from(mergedMap.values())
+
+    // 4. Sort by Delivery Date (Oldest first to prioritize immediate attention)
+    allOrders.sort((a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime())
+
+    orders.value = allOrders
   } catch (error) {
-    console.error('Error fetching orders:', error)
+    console.error('Error fetching data:', error)
     toast.value = { show: true, message: 'Error cargando información', type: 'error' }
   } finally {
     isLoading.value = false
   }
-}
-
-const fetchPendingForBulk = async () => {
-  try {
-    // Fetch dispatches with "all" filter to get everything pending regardless of main view date
-    const data = await POSService.getIncomingDispatches(selectedBranch.value, { filterMode: 'all' })
-    pendingDispatchesForBulk.value = data.filter(o => o.posStatus === 'IN_TRANSIT').flatMap(o =>
-      o.dispatches.filter(d => d.receptionStatus === 'PENDING').map(d => ({ ...o, orderId: o._id, dispatch: d }))
-    )
-  } catch (e) {
-    console.error('Error fetching bulk dispatches:', e)
-  }
-}
-
-const fetchData = () => {
-  fetchOrders()
-  fetchPendingForBulk()
 }
 
 // Search debounce
@@ -96,7 +113,7 @@ const handleMarkAsDelivered = async (orderId: string) => {
     await POSService.markAsDelivered(orderId)
     toast.value = { show: true, message: 'Orden marcada como entregada', type: 'success' }
     showDeliveryModal.value = false
-    fetchOrders()
+    fetchData()
   } catch (error) {
     console.error('Error marking as delivered:', error)
     toast.value = { show: true, message: 'Error al actualizar estado', type: 'error' }
@@ -123,6 +140,27 @@ const handleExportDispatch = async () => {
   } catch (err) {
     toast.value = { show: true, message: 'Error al exportar reporte', type: 'error' }
   }
+}
+
+const getEffectivePaymentMethod = (order: POSOrder) => {
+  if (order.paymentMethod && order.paymentMethod !== 'Por confirmar' && order.paymentMethod !== 'Por Cobrar') {
+    return order.paymentMethod
+  }
+
+  if (order.payments && order.payments.length > 0) {
+    // Map common codes to readable names if needed, or join unique methods
+    const methods = [...new Set(order.payments.map(p => {
+      const m = p.forma_cobro
+      if (m === 'TRA') return 'Transferencia'
+      if (m === 'EFE') return 'Efectivo'
+      if (m === 'TC') return 'Tarjeta Crédito'
+      if (m === 'TD') return 'Tarjeta Débito'
+      return m
+    }))]
+    return methods.join(', ')
+  }
+
+  return order.paymentMethod || 'Por confirmar'
 }
 
 // Helpers for Status Styling
@@ -305,7 +343,7 @@ onMounted(() => {
                        <div class="p-row">
                            <div class="payment-method">
                                <i class="fa-solid fa-credit-card"></i>
-                               <span>{{ order.paymentMethod }}</span>
+                               <span>{{ getEffectivePaymentMethod(order) }}</span>
                            </div>
                            <div class="payment-status">
                                <div v-if="order.settledInIsland" class="settled-badge">
