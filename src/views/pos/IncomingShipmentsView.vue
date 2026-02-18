@@ -135,7 +135,8 @@ const handleExportDispatch = async () => {
     return
   }
   try {
-    await exportDispatchOrder(orders.value)
+    const branchName = selectedBranch.value === 'Todas las sucursales' ? 'General (Todas)' : selectedBranch.value
+    await exportDispatchOrder(orders.value, branchName)
     toast.value = { show: true, message: 'Reporte de Entregas exportado', type: 'success' }
   } catch (err) {
     toast.value = { show: true, message: 'Error al exportar reporte', type: 'error' }

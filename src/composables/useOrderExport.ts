@@ -188,7 +188,7 @@ export function useOrderExport() {
   }
 
   // --- Dispatch Export ---
-  const exportDispatchOrder = async (orders: any[]) => {
+  const exportDispatchOrder = async (orders: any[], branchName: string) => {
     isExporting.value = true
     try {
       const wsData: any[][] = []
@@ -200,13 +200,23 @@ export function useOrderExport() {
         wsStyle[cellRef] = style
       }
 
-      // Header row
+      // 1. Branch Header Row (Row 0)
+      wsData.push([`REPORTE DE ENTREGAS - ${branchName.toUpperCase()}`])
+
+      // Style for Branch Header
+      setStyle(0, 0, {
+        font: { bold: true, sz: 14, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "6A1B9A" } }, // Purple
+        alignment: { horizontal: 'left', vertical: 'center' }
+      })
+
+      // 2. Column Headers (Row 1)
       const headers = ['FECHA DE ENTREGA', 'CLIENTE', 'PEDIDO', 'HORA DE ENTREGA', 'DIRECCION DE ENTREGA', 'ESTADO DE PAGO', 'COMENTARIOS']
       wsData.push(headers)
 
       // Header Style
       for (let c = 0; c < headers.length; c++) {
-        setStyle(0, c, {
+        setStyle(1, c, {
           font: { bold: true, color: { rgb: "FFFFFF" } },
           fill: { fgColor: { rgb: "2C3E50" } }, // Dark Blue Header
           alignment: { horizontal: 'center', vertical: 'center' },
@@ -283,7 +293,7 @@ export function useOrderExport() {
 
         const paymentColumn = `${paymentStatusStr} - ${paymentMethodStr}`
 
-        const rowIdx = index + 1
+        const rowIdx = index + 2
         wsData.push([
           dateStr,
           order.customerName,
