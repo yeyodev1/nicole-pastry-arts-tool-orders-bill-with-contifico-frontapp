@@ -1,8 +1,28 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed } from 'vue'
 import POSService, { type POSOrder } from '@/services/pos.service'
-import BulkReceptionModal from './components/BulkReceptionModal.vue'
+import RestockDailyModal from './components/RestockDailyModal.vue'
+
+// ... existing imports
+
+// Modal States
+const showBulkModal = ref(false)
+const showDeliveryModal = ref(false)
+const showRestockModal = ref(false)
+const selectedOrder = ref<POSOrder | null>(null)
+
+// ... existing code
+
+const openRestockModal = () => {
+  showRestockModal.value = true;
+}
+
+const handleRestockSuccess = () => {
+  toast.value = { show: true, message: 'Cierre de Producción enviado exitosamente', type: 'success' };
+  showRestockModal.value = false;
+}
 import DeliveryModal from './components/DeliveryModal.vue'
+import BulkReceptionModal from './components/BulkReceptionModal.vue'
 import ToastNotification from '@/components/ToastNotification.vue'
 import POSFilterBar, { type POSFilterMode } from './components/POSFilterBar.vue'
 import { formatECT } from '@/utils/dateUtils'
@@ -19,11 +39,6 @@ const filterMode = ref<POSFilterMode>('today')
 const customDate = ref('')
 const searchQuery = ref('')
 const showDatePicker = computed(() => filterMode.value === 'custom')
-
-// Modal States
-const showBulkModal = ref(false)
-const showDeliveryModal = ref(false)
-const selectedOrder = ref<POSOrder | null>(null)
 
 // Toast
 const toast = ref<{ show: boolean; message: string; type: 'success' | 'error' | 'info' }>({ show: false, message: '', type: 'success' })
@@ -126,6 +141,10 @@ const handleBulkSuccess = () => {
   fetchData();
 }
 
+const handleNotification = (notification: { message: string, type: 'success' | 'error' | 'info' }) => {
+  toast.value = { show: true, message: notification.message, type: notification.type };
+};
+
 // --- EXPORT LOGIC ---
 const { isExporting, exportDispatchOrder } = useOrderExport()
 
@@ -225,8 +244,18 @@ onMounted(() => {
         
         <div class="controls">
             <button class="btn-export-dispatch" @click="handleExportDispatch" :disabled="isExporting || orders.length === 0">
-                <i class="fas fa-file-excel"></i> Exportar Reporte de Entrega
+                <i class="fas fa-file-excel"></i> Exportar Reporte
             </button>
+
+            <div class="separator"></div>
+
+            <div class="separator"></div>
+
+             <button @click="openRestockModal" class="btn-restock">
+                <i class="fa-solid fa-clipboard-check"></i> Cierre Caja
+            </button>
+
+            <div class="separator"></div>
 
             <div class="separator"></div>
 
@@ -393,6 +422,14 @@ onMounted(() => {
         :order="selectedOrder || ({} as POSOrder)"
         @close="showDeliveryModal = false"
         @confirm="handleMarkAsDelivered"
+    />
+
+    <RestockDailyModal
+        :is-open="showRestockModal"
+        :branch="selectedBranch === 'Todas las sucursales' ? 'San Marino' : selectedBranch"
+        @close="showRestockModal = false"
+        @success="handleRestockSuccess"
+        @notify="handleNotification"
     />
 
     <ToastNotification 
@@ -667,6 +704,38 @@ $desktop: 1024px;
     &:disabled {
       opacity: 0.6;
       cursor: not-allowed;
+    }
+
+    i {
+      font-size: 1rem;
+    }
+  }
+
+  .btn-restock {
+    background: #475569;
+    color: white;
+    text-decoration: none;
+    padding: 0.8rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+    width: 100%;
+    font-size: 0.95rem;
+    border: 1px solid transparent;
+
+    @include from-tablet {
+      width: auto;
+      padding: 0.6rem 1.2rem;
+      font-size: 0.85rem;
+    }
+
+    &:hover {
+      background: #334155;
+      transform: translateY(-1px);
     }
 
     i {

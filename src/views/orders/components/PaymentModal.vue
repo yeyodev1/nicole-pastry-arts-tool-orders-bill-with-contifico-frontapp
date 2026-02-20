@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, computed, watch } from 'vue' // Removed reactive, added watch here if not already imported
 import PaymentFields from './PaymentFields.vue'
 
 const props = defineProps({
@@ -25,7 +25,7 @@ const emit = defineEmits(['close', 'submit'])
 
 const isSubmitting = ref(false)
 
-const formData = reactive({
+const formData = ref({
   forma_cobro: 'TRA',
   monto: props.defaultAmount,
   fecha: new Date().toISOString().split('T')[0],
@@ -36,11 +36,10 @@ const formData = reactive({
 })
 
 // Reactivity: update form when Modal opens or existingPayment changes
-import { watch } from 'vue'
 watch(() => props.isOpen, (val) => {
   if (val) {
     if (props.existingPayment) {
-      Object.assign(formData, {
+      formData.value = {
         forma_cobro: props.existingPayment.forma_cobro || 'TRA',
         monto: props.existingPayment.monto || props.defaultAmount,
         fecha: props.existingPayment.fecha || new Date().toISOString().split('T')[0],
@@ -48,10 +47,10 @@ watch(() => props.isOpen, (val) => {
         cuenta_bancaria_id: props.existingPayment.cuenta_bancaria_id || '',
         numero_tarjeta: props.existingPayment.numero_tarjeta || '',
         tipo_ping: props.existingPayment.tipo_ping || 'D'
-      })
+      }
     } else {
       // Reset defaults if no existing payment
-      Object.assign(formData, {
+      formData.value = {
         forma_cobro: 'TRA',
         monto: props.defaultAmount,
         fecha: new Date().toISOString().split('T')[0],
@@ -59,56 +58,56 @@ watch(() => props.isOpen, (val) => {
         cuenta_bancaria_id: '',
         numero_tarjeta: '',
         tipo_ping: 'D'
-      })
+      }
     }
   }
 }, { immediate: true })
 
 const submitPayment = async () => {
-  if (props.defaultAmount > 0 && formData.monto <= 0) {
+  if (props.defaultAmount > 0 && formData.value.monto <= 0) {
     alert("El monto debe ser mayor a 0")
     return
   }
 
-  if (!formData.fecha) {
+  if (!formData.value.fecha) {
     alert("Fecha es obligatoria");
     return;
   }
 
   // Format date to DD/MM/YYYY for Contífico
-  const [year, month, day] = formData.fecha.split('-')
+  const [year, month, day] = formData.value.fecha.split('-')
   const formattedDate = `${day}/${month}/${year}`
 
-  if (formData.forma_cobro === 'CR') {
+  if (formData.value.forma_cobro === 'CR') {
     const confirmed = confirm("¿Estás seguro que quieres hacer esta transacción a crédito? Tendrás que registrar los cobros en el futuro.")
     if (!confirmed) return
   }
 
   const payload: any = {
-    forma_cobro: formData.forma_cobro,
-    monto: formData.monto.toFixed(2),
+    forma_cobro: formData.value.forma_cobro,
+    monto: formData.value.monto.toFixed(2),
     fecha: formattedDate
   }
 
-  if (formData.forma_cobro === 'TC') {
-    payload.tipo_ping = formData.tipo_ping
-    payload.lote = formData.numero_comprobante // Map comprobante to lote/reference for TC
-    if (formData.numero_tarjeta) {
-      payload.numero_tarjeta = formData.numero_tarjeta
+  if (formData.value.forma_cobro === 'TC') {
+    payload.tipo_ping = formData.value.tipo_ping
+    payload.lote = formData.value.numero_comprobante // Map comprobante to lote/reference for TC
+    if (formData.value.numero_tarjeta) {
+      payload.numero_tarjeta = formData.value.numero_tarjeta
     }
   }
 
-  if (formData.forma_cobro === 'CQ') {
-    payload.numero_cheque = formData.numero_comprobante
+  if (formData.value.forma_cobro === 'CQ') {
+    payload.numero_cheque = formData.value.numero_comprobante
   }
 
-  if (formData.forma_cobro === 'TRA') {
-    if (!formData.cuenta_bancaria_id) {
+  if (formData.value.forma_cobro === 'TRA') {
+    if (!formData.value.cuenta_bancaria_id) {
       alert("Debe seleccionar una cuenta bancaria para la transferencia.")
       return
     }
-    payload.numero_comprobante = formData.numero_comprobante
-    payload.cuenta_bancaria_id = formData.cuenta_bancaria_id
+    payload.numero_comprobante = formData.value.numero_comprobante
+    payload.cuenta_bancaria_id = formData.value.cuenta_bancaria_id
   }
 
   emit('submit', payload)

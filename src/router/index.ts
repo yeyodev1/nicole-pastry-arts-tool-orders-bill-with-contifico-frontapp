@@ -129,6 +129,18 @@ const router = createRouter({
       name: 'pos-shipments',
       component: () => import('../views/pos/IncomingShipmentsView.vue'),
       meta: { requiresAuth: true, role: 'RetailManager', title: 'Recepción de Pedidos' }
+    },
+    {
+      path: '/pos/restock-form',
+      name: 'pos-restock-form',
+      component: () => import('../views/pos/RestockDailyForm.vue'),
+      meta: { requiresAuth: true, role: 'RetailManager', title: 'Cierre de Producción' }
+    },
+    {
+      path: '/pos/restock-management',
+      name: 'pos-restock-management',
+      component: () => import('../views/pos/RestockManagementView.vue'),
+      meta: { requiresAuth: true, role: 'RetailManager', title: 'Configuración Stock' }
     }
   ],
 })

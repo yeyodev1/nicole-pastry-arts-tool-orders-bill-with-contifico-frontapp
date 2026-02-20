@@ -1,6 +1,7 @@
 import axios from 'axios'
 import type { AxiosResponse, AxiosRequestConfig } from 'axios'
 import { ref } from 'vue'
+import { useSessionExpired } from '@/composables/useSessionExpired';
 
 // Extender la interfaz de AxiosRequestConfig para incluir metadata
 declare module 'axios' {
@@ -103,12 +104,10 @@ class APIBase {
           showSlowConnectionWarning()
         }
 
-        // Manejar código 401 (No autorizado) - NO forzar logout automático
+        // Manejar código 401 (No autorizado) - Trigger global expiry
         if (error.response?.status === 401) {
-          // Solo log de advertencia para desarrolladores
-          console.warn('⚠️ Authentication error (401): Token may be invalid or expired')
-          // NO emitir evento de logout automático - dejar que cada vista maneje el error
-          // window.dispatchEvent(new CustomEvent('auth:token-expired'))
+          const { triggerExpiry } = useSessionExpired();
+          triggerExpiry();
         }
 
         return Promise.reject(error)
@@ -263,11 +262,12 @@ class APIBase {
     }
   }
 
-  protected async delete<T>(endpoint: string): Promise<AxiosResponse<T>> {
+  protected async delete<T>(endpoint: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
     const url = this.buildUrl(endpoint)
     try {
       return await this.axiosInstance.delete<T>(url, {
         headers: this.getHeaders(),
+        ...config
       })
     } catch (error: unknown) {
       if (axios.isAxiosError(error) && error.response) {

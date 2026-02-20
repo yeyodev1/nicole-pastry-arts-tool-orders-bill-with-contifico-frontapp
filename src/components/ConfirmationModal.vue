@@ -1,17 +1,66 @@
 <script setup lang="ts">
-defineProps<{
+import { ref, onUnmounted } from 'vue';
+
+const props = defineProps<{
   isOpen: boolean
   title: string
   message: string
   confirmText?: string
   cancelText?: string
   isDangerous?: boolean
+  isHoldToConfirm?: boolean // New option
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'confirm'): void
 }>()
+
+// --- Hold Button Logic ---
+const progress = ref(0)
+const isHolding = ref(false)
+let animationFrameId: number | null = null
+let startTime: number | null = null
+const DURATION = 1200 // 1.2s as requested
+
+const startHold = () => {
+  if (isHolding.value) return
+  isHolding.value = true
+  startTime = performance.now()
+
+  const animate = (currentTime: number) => {
+    if (!startTime) return
+    const elapsed = currentTime - startTime
+    progress.value = Math.min((elapsed / DURATION) * 100, 100)
+
+    if (progress.value >= 100) {
+      completeHold()
+    } else {
+      animationFrameId = requestAnimationFrame(animate)
+    }
+  }
+
+  animationFrameId = requestAnimationFrame(animate)
+}
+
+const cancelHold = () => {
+  isHolding.value = false
+  startTime = null
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
+  progress.value = 0
+}
+
+const completeHold = () => {
+  cancelHold()
+  emit('confirm')
+}
+
+onUnmounted(() => {
+  cancelHold()
+})
 </script>
 
 <template>
@@ -26,11 +75,34 @@ const emit = defineEmits<{
           <p>{{ message }}</p>
         </div>
 
-        <div class="modal-actions">
+        <div class="modal-actions" :class="{ 'hold-layout': isHoldToConfirm }">
           <button class="btn-cancel" @click="emit('close')">
             {{ cancelText || 'Cancelar' }}
           </button>
+          
+          <template v-if="isHoldToConfirm">
+            <div class="hold-button-wrapper">
+              <button 
+                class="btn-confirm btn-hold"
+                :class="{ dangerous: isDangerous }"
+                @mousedown="startHold"
+                @mouseleave="cancelHold"
+                @mouseup="cancelHold"
+                @touchstart.prevent="startHold"
+                @touchend.prevent="cancelHold"
+                @contextmenu.prevent
+              >
+                <div class="progress-bar" :style="{ width: progress + '%' }"></div>
+                <span class="label">
+                  <i class="fas" :class="progress >= 100 ? 'fa-check' : 'fa-fingerprint'"></i>
+                  {{ isHolding ? 'Soltar para cancelar' : (confirmText || 'Mantén para Confirmar') }}
+                </span>
+              </button>
+            </div>
+          </template>
+
           <button 
+            v-else
             class="btn-confirm" 
             :class="{ dangerous: isDangerous }"
             @click="emit('confirm')"
@@ -38,6 +110,8 @@ const emit = defineEmits<{
             {{ confirmText || 'Confirmar' }}
           </button>
         </div>
+        
+        <p v-if="isHoldToConfirm" class="safety-hint">Mantén presionado para confirmar.</p>
       </div>
     </div>
   </Transition>
@@ -95,6 +169,87 @@ const emit = defineEmits<{
   display: flex;
   justify-content: flex-end;
   gap: 1rem;
+
+  &.hold-layout {
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+
+    .btn-cancel {
+      order: 2;
+      width: 100%;
+    }
+  }
+}
+
+.hold-button-wrapper {
+  order: 1;
+  position: relative;
+  width: 100%;
+  height: 48px;
+  background: $gray-100;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid $gray-200;
+  cursor: pointer;
+  user-select: none;
+
+  .btn-hold {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: $text-light;
+    font-weight: 700;
+    font-size: 0.95rem;
+    z-index: 2;
+    overflow: hidden;
+    outline: none;
+    box-shadow: none;
+
+    .progress-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      background: $success;
+      width: 0%;
+      z-index: -1;
+      transition: width 0.1s linear;
+    }
+
+    &.dangerous .progress-bar {
+      background: $error;
+    }
+
+    .label {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: color 0.1s;
+    }
+
+    &:active {
+      color: white;
+    }
+  }
+}
+
+.safety-hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 1rem;
+  text-align: center;
+  font-family: italics;
 }
 
 button {

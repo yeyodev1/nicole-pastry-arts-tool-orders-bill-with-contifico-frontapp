@@ -4,24 +4,10 @@ import NavBar from './components/NavBar.vue'
 import ProductionNavBar from './components/ProductionNavBar.vue'
 import SupplyChainNavBar from './components/SupplyChain/SupplyChainNavBar.vue'
 import ToastContainer from './components/ToastContainer.vue'
-import { onMounted, onUnmounted } from 'vue'
+import SessionExpiredModal from './components/SessionExpiredModal.vue'
 
 const route = useRoute()
 const router = useRouter()
-
-const handleTokenExpired = () => {
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('user_info')
-  router.push('/login')
-}
-
-onMounted(() => {
-  window.addEventListener('auth:token-expired', handleTokenExpired)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('auth:token-expired', handleTokenExpired)
-})
 </script>
 
 <template>
@@ -31,6 +17,7 @@ onUnmounted(() => {
     <NavBar v-else-if="route.name !== 'login'" />
     <RouterView />
     <ToastContainer />
+    <SessionExpiredModal />
   </div>
 </template>
 
