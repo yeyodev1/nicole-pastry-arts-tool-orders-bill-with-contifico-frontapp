@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { posRestockService, type WeeklyObjectives } from '@/services/pos-restock.service';
 import RestockProductSearchModal from './components/RestockProductSearchModal.vue';
 import RestockDeleteModal from './components/RestockDeleteModal.vue';
 import ToastNotification from '@/components/ToastNotification.vue';
+import SearchableSelect from '@/components/ui/SearchableSelect.vue';
 
 // --- Interfaces ---
 interface ProductConfig {
@@ -19,6 +20,7 @@ interface ProductConfig {
 const router = useRouter();
 const branch = ref('San Marino');
 const branches = ['San Marino', 'Mall del Sol', 'Centro de Producción'];
+const branchOptions = computed(() => branches.map(b => ({ value: b, label: b })));
 const products = ref<ProductConfig[]>([]);
 const isLoading = ref(false);
 const showModal = ref(false);
@@ -129,14 +131,25 @@ watch(branch, () => {
                 <button class="btn-add" @click="openAddModal">
                     <i class="fa-solid fa-plus"></i> Agregar Producto
                 </button>
-                <div class="branch-selector">
-                     <i class="fa-solid fa-store"></i>
-                     <select v-model="branch" @change="fetchConfiguration">
-                         <option v-for="b in branches" :key="b" :value="b">{{ b }}</option>
-                     </select>
+                <div class="branch-selector-wrap">
+                  <SearchableSelect
+                    v-model="branch"
+                    :options="branchOptions"
+                    placeholder="Seleccionar sucursal..."
+                  />
                 </div>
            </div>
        </header>
+
+       <!-- Active branch context banner -->
+       <div class="context-banner" :class="branch.toLowerCase().replace(/\s+/g, '-')">
+         <div class="context-icon"><i class="fa-solid fa-store"></i></div>
+         <div class="context-text">
+           <span class="context-label">Estás configurando</span>
+           <span class="context-branch">{{ branch }}</span>
+         </div>
+         <div class="context-tag">ACTIVO</div>
+       </div>
 
        <RestockProductSearchModal 
             v-if="showModal"
@@ -277,28 +290,10 @@ $danger-color: #ef4444;
   .header-controls {
     display: flex;
     gap: 1rem;
+    align-items: center;
 
-    .branch-selector {
-      position: relative;
-      background: white;
-      border: 1px solid $border-color;
-      border-radius: 8px;
-      padding: 0 1rem;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      color: #64748b;
-
-      select {
-        border: none;
-        padding: 10px 0;
-        font-size: 0.95rem;
-        color: $text-color;
-        background: transparent;
-        outline: none;
-        cursor: pointer;
-        font-weight: 600;
-      }
+    .branch-selector-wrap {
+      width: 220px;
     }
 
     .btn-add {
@@ -314,11 +309,112 @@ $danger-color: #ef4444;
       align-items: center;
       gap: 0.5rem;
       transition: all 0.2s;
+      white-space: nowrap;
 
       &:hover {
         background: darken($primary-color, 5%);
       }
     }
+  }
+}
+
+.context-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: white;
+  border: 1.5px solid #e2e8f0;
+  border-left: 6px solid $primary-color;
+  border-radius: 12px;
+  padding: 0.9rem 1.25rem;
+  margin-bottom: 1.5rem;
+  animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+
+  &.san-marino {
+    border-left-color: #A855F7;
+
+    .context-icon {
+      background: rgba(#A855F7, 0.1);
+      color: #A855F7;
+    }
+  }
+
+  &.mall-del-sol {
+    border-left-color: #3B82F6;
+
+    .context-icon {
+      background: rgba(#3B82F6, 0.1);
+      color: #3B82F6;
+    }
+  }
+
+  &.centro-de-producción {
+    border-left-color: #F59E0B;
+
+    .context-icon {
+      background: rgba(#F59E0B, 0.1);
+      color: #F59E0B;
+    }
+  }
+}
+
+.context-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba($primary-color, 0.08);
+  color: $primary-color;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.context-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.context-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  line-height: 1;
+  margin-bottom: 3px;
+}
+
+.context-branch {
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.context-tag {
+  font-size: 0.65rem;
+  font-weight: 900;
+  color: #16a34a;
+  background: #dcfce7;
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid #bbf7d0;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 
@@ -472,14 +568,9 @@ $danger-color: #ef4444;
       width: 100%;
 
       .btn-add,
-      .branch-selector {
+      .branch-selector-wrap {
         width: 100%;
-        justify-content: center;
         box-sizing: border-box;
-      }
-
-      .branch-selector select {
-        width: 100%;
       }
     }
   }

@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { posRestockService, type DailyFormData, type DetailedLoss } from '@/services/pos-restock.service';
 import RestockLossDetailModal from './RestockLossDetailModal.vue';
 import ConfirmationModal from '@/components/ConfirmationModal.vue';
+import SearchableSelect from '@/components/ui/SearchableSelect.vue';
 
 const props = defineProps({
   isOpen: { type: Boolean, required: true },
@@ -10,6 +12,18 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'success', 'notify']);
+
+const router = useRouter();
+
+// --- Branch switching ---
+const BRANCHES = ['San Marino', 'Mall del Sol', 'Centro de Producción'];
+const localBranch = ref(props.branch);
+const branchOptions = computed(() => BRANCHES.map(b => ({ value: b, label: b })));
+
+const goToManagement = () => {
+  closeModal();
+  router.push({ name: 'pos-restock-management', query: { branch: localBranch.value } });
+};
 
 // --- Interfaces ---
 interface RestockItemData {
@@ -20,6 +34,7 @@ interface RestockItemData {
   bajas: number;
   excedente: number;
   detailedLosses: DetailedLoss[];
+  pedidoOverride: number | null;
 }
 
 // --- State ---
@@ -40,8 +55,11 @@ const hasExistingEntry = ref(false);
 // --- Fetch Logic ---
 const fetchDailyForm = async () => {
   isLoading.value = true;
+  formData.value = null;
+  formItems.value = [];
+  hasExistingEntry.value = false;
   try {
-    const data = await posRestockService.getDailyForm(props.branch);
+    const data = await posRestockService.getDailyForm(localBranch.value);
     console.log('Daily Form Data (Modal):', data);
     formData.value = data;
 
@@ -59,7 +77,8 @@ const fetchDailyForm = async () => {
           stockObjectiveToday: item.stockObjectiveToday,
           bajas: (isToday && item.lastEntry) ? item.lastEntry.bajas : 0,
           excedente: (isToday && item.lastEntry) ? item.lastEntry.stockFinal : 0,
-          detailedLosses: (isToday && item.lastEntry) ? (item.lastEntry.detailedLosses || []) : []
+          detailedLosses: (isToday && item.lastEntry) ? (item.lastEntry.detailedLosses || []) : [],
+          pedidoOverride: null,
         };
       });
     } else {
@@ -77,6 +96,57 @@ const calculatePedido = (item: RestockItemData): number => {
   const pedido = item.stockObjectiveTomorrow - item.excedente;
   return Math.max(0, pedido);
 };
+
+const getFinalPedido = (item: RestockItemData): number => {
+  return item.pedidoOverride !== null && item.pedidoOverride >= 0
+    ? item.pedidoOverride
+    : calculatePedido(item);
+};
+
+// Items whose manual override exceeds the stock objective
+const overriddenItems = computed(() =>
+  formItems.value.filter(
+    item => item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow
+  )
+);
+const hasExcessiveOverride = computed(() => overriddenItems.value.length > 0);
+
+const confirmMessage = computed(() => {
+  if (!hasExcessiveOverride.value) {
+    return '¿Confirmas el envío del reporte? Se generarán los pedidos para mañana según las cantidades indicadas.';
+  }
+  return '';
+});
+
+const confirmMessageHtml = computed(() => {
+  if (!hasExcessiveOverride.value) return undefined;
+
+  const items = overriddenItems.value.map(i => `
+    <li style="display:flex;justify-content:space-between;align-items:center;padding:0.45rem 0.75rem;background:white;border:1px solid #fecdd3;border-radius:8px;margin-bottom:6px;">
+      <span style="font-weight:700;color:#1e293b;font-size:0.88rem;">${i.productName}</span>
+      <span style="display:flex;align-items:center;gap:5px;">
+        <span style="color:#94a3b8;font-size:0.78rem;">mín: ${i.stockObjectiveTomorrow}</span>
+        <span style="color:#cbd5e1;">→</span>
+        <span style="font-weight:900;color:#be123c;font-size:1rem;">${i.pedidoOverride}</span>
+        <span style="background:#be123c;color:white;font-size:0.68rem;font-weight:800;padding:1px 7px;border-radius:10px;">+${i.pedidoOverride! - i.stockObjectiveTomorrow}</span>
+      </span>
+    </li>
+  `).join('');
+
+  return `
+    <div style="margin:-0.1rem 0 0.25rem;">
+      <div style="display:flex;align-items:center;gap:0.5rem;background:#fff1f2;border:1px solid #fda4af;border-left:4px solid #be123c;border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.85rem;color:#be123c;font-weight:700;font-size:0.88rem;">
+        <i class="fa-solid fa-circle-exclamation" style="font-size:1rem;"></i>
+        Pedidos fuera del stock mínimo diario
+      </div>
+      <ul style="list-style:none;padding:0;margin:0 0 0.85rem 0;">${items}</ul>
+      <p style="font-size:0.78rem;color:#94a3b8;margin:0;line-height:1.5;border-top:1px solid #f1f5f9;padding-top:0.65rem;">
+        <i class="fa-solid fa-hand" style="color:#be123c;margin-right:4px;"></i>
+        Mantén presionado el botón de confirmación para aceptar estos pedidos.
+      </p>
+    </div>
+  `;
+});
 
 // --- Detailed Losses Logic ---
 const openLossModal = (item: RestockItemData) => {
@@ -107,13 +177,14 @@ const executeSubmission = async () => {
   isSubmitting.value = true;
   try {
     const payload = {
-      branch: props.branch,
+      branch: localBranch.value,
       date: formData.value.formDate,
-      submittedBy: 'POS User', // TODO: Get from auth store
+      submittedBy: 'POS User',
       items: formItems.value.map(item => ({
         productName: item.productName,
         bajas: item.bajas,
         stockFinal: item.excedente,
+        pedidoFinal: getFinalPedido(item),
         detailedLosses: item.detailedLosses
       }))
     };
@@ -138,8 +209,14 @@ const closeModal = () => {
 // Refresh when opening
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
+    localBranch.value = props.branch;
     fetchDailyForm();
   }
+});
+
+// Re-fetch on branch change
+watch(localBranch, () => {
+  if (props.isOpen) fetchDailyForm();
 });
 </script>
 
@@ -147,10 +224,25 @@ watch(() => props.isOpen, (newVal) => {
   <div v-if="isOpen" class="modal-overlay" @click.self="closeModal">
     <div class="modal-content">
       <header class="modal-header">
-        <h2 class="title">
-            <i class="fa-solid fa-clipboard-check"></i> Cierre de Producción: {{ branch }}
-        </h2>
-        <button class="close-btn" @click="closeModal">&times;</button>
+        <div class="title-wrap">
+          <span class="title-text">
+            <i class="fa-solid fa-clipboard-check"></i> Cierre de Producción
+          </span>
+          <div class="branch-select-wrap">
+            <SearchableSelect
+              v-model="localBranch"
+              :options="branchOptions"
+              placeholder="Sucursal..."
+            />
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="btn-manage" @click="goToManagement" title="Gestionar stocks mínimos diarios">
+            <i class="fa-solid fa-sliders"></i>
+            <span>Gestionar Stocks</span>
+          </button>
+          <button class="close-btn" @click="closeModal">&times;</button>
+        </div>
       </header>
 
       <div class="modal-body">
@@ -162,7 +254,7 @@ watch(() => props.isOpen, (newVal) => {
         <div v-else-if="!formData || formItems.length === 0" class="empty-state">
             <i class="fa-solid fa-clipboard-question"></i>
             <h3>No hay productos configurados</h3>
-            <p>No se encontraron objetivos de stock para <strong>{{ branch }}</strong>.</p>
+            <p>No se encontraron objetivos de stock para <strong>{{ localBranch }}</strong>.</p>
             <p class="sub-text">Contacta a Administración para configurar los "Objetivos de Stock".</p>
             <router-link :to="{ name: 'pos-restock-management' }" class="btn-config" @click="closeModal">
                 <i class="fa-solid fa-gear"></i> Configurar Objetivos
@@ -225,11 +317,44 @@ watch(() => props.isOpen, (newVal) => {
                             <span class="label">Meta Mañana</span>
                             <span class="value">{{ item.stockObjectiveTomorrow }}</span>
                         </div>
-                         <div class="arrow">➔</div>
+                         <div class="arrow">➤</div>
                         <div class="result-col" :class="{ 'has-order': calculatePedido(item) > 0 }">
-                            <span class="label">Pedir</span>
+                            <span class="label">Sugerido</span>
                             <span class="value">{{ calculatePedido(item) }}</span>
                         </div>
+                        <div class="override-col">
+                          <label class="label">Pedido Final</label>
+                          <div class="override-wrap">
+                            <input
+                              type="number"
+                              class="input-mini override"
+                              :class="{ 'is-overridden': item.pedidoOverride !== null }"
+                              :placeholder="String(calculatePedido(item))"
+                              :value="item.pedidoOverride !== null ? item.pedidoOverride : ''"
+                              min="0"
+                              @input="item.pedidoOverride = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"
+                            />
+                            <button
+                              v-if="item.pedidoOverride !== null"
+                              type="button"
+                              class="btn-reset"
+                              @click="item.pedidoOverride = null"
+                              title="Restablecer"
+                            ><i class="fa-solid fa-rotate-left"></i></button>
+                          </div>
+                        </div>
+                    </div>
+
+                    <!-- Inline excess alert -->
+                    <div
+                      v-if="item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow"
+                      class="excess-inline-alert"
+                    >
+                      <i class="fa-solid fa-triangle-exclamation"></i>
+                      <span>
+                        Pedido <strong>supera el mínimo</strong> en
+                        <strong class="delta">+{{ item.pedidoOverride - item.stockObjectiveTomorrow }}</strong> unidades
+                      </span>
                     </div>
 
                     <!-- Summary of losses if any -->
@@ -239,6 +364,29 @@ watch(() => props.isOpen, (newVal) => {
                       </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Excess orders summary banner -->
+            <div v-if="hasExcessiveOverride" class="excess-summary-banner">
+              <div class="banner-head">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <strong>Pedidos que superan el stock mínimo diario</strong>
+              </div>
+              <ul class="banner-list">
+                <li v-for="item in overriddenItems" :key="item.productName">
+                  <span class="pname">{{ item.productName }}</span>
+                  <span class="pdetail">
+                    Mínimo: <strong>{{ item.stockObjectiveTomorrow }}</strong>
+                    &nbsp;→&nbsp;
+                    Pedido: <strong class="qty-over">{{ item.pedidoOverride }}</strong>
+                    <span class="delta-badge">+{{ item.pedidoOverride! - item.stockObjectiveTomorrow }}</span>
+                  </span>
+                </li>
+              </ul>
+              <p class="banner-note">
+                <i class="fa-solid fa-hand"></i>
+                Deberás mantener presionado el botón de confirmación para aceptar estos pedidos.
+              </p>
             </div>
 
             <div class="modal-actions">
@@ -263,16 +411,18 @@ watch(() => props.isOpen, (newVal) => {
       @save="handleSaveLosses"
     />
 
-    <!-- Confirmation Modal -->,
     <ConfirmationModal
       :is-open="showConfirmModal"
       title="Confirmar Reporte"
-      message="¿Estás seguro de enviar el reporte? Esto generará los pedidos sugeridos para mañana."
+      :message="confirmMessage"
+      :message-html="confirmMessageHtml"
       confirm-text="Enviar Reporte"
       :is-hold-to-confirm="true"
       @close="showConfirmModal = false"
       @confirm="executeSubmission"
     />
+
+
   </div>
 </template>
 
@@ -314,14 +464,63 @@ $bg-overlay: rgba(0, 0, 0, 0.5);
   align-items: center;
   background: #f8fafc;
   border-radius: 12px 12px 0 0;
+  gap: 1rem;
 
-  .title {
-    margin: 0;
-    font-size: 1.2rem;
-    color: #1e293b;
+  .title-wrap {
     display: flex;
-    gap: 0.5rem;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .title-text {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
     align-items: center;
+    gap: 0.4rem;
+  }
+
+  .branch-select-wrap {
+    width: 200px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+  }
+
+  .btn-manage {
+    background: white;
+    border: 1.5px solid #e2e8f0;
+    color: #475569;
+    font-size: 0.8rem;
+    font-weight: 700;
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+
+    i {
+      font-size: 0.8rem;
+    }
+
+    &:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+      color: #1e293b;
+      transform: translateY(-1px);
+    }
   }
 
   .close-btn {
@@ -337,6 +536,7 @@ $bg-overlay: rgba(0, 0, 0, 0.5);
     }
   }
 }
+
 
 .modal-body {
   padding: 1.2rem;
@@ -530,7 +730,7 @@ $bg-overlay: rgba(0, 0, 0, 0.5);
 
 .inputs-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr auto auto auto;
+  grid-template-columns: 1fr 1fr auto auto auto auto;
   gap: 0.8rem;
   align-items: end;
 }
@@ -629,6 +829,183 @@ $bg-overlay: rgba(0, 0, 0, 0.5);
     .value {
       color: #16a34a;
     }
+  }
+}
+
+.override-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .label {
+    font-size: 0.65rem;
+    color: #0369a1;
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  .override-wrap {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .input-mini.override {
+    width: 70px;
+    border: 2px dashed #cbd5e1;
+    color: #475569;
+    background: white;
+    transition: all 0.2s;
+
+    &:focus {
+      outline: none;
+      border-color: #0369a1;
+      border-style: solid;
+      color: #0369a1;
+    }
+
+    &.is-overridden {
+      border-style: solid;
+      border-color: #0369a1;
+      color: #0369a1;
+      background: #e0f2fe;
+      font-weight: 800;
+    }
+  }
+
+  .btn-reset {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    transition: color 0.15s;
+
+    &:hover {
+      color: #475569;
+    }
+  }
+}
+
+.excess-inline-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f97316;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  color: #9a3412;
+  margin-top: 0.6rem;
+
+  i {
+    color: #f97316;
+    flex-shrink: 0;
+  }
+
+  .delta {
+    color: #ea580c;
+    font-size: 1rem;
+  }
+}
+
+.excess-summary-banner {
+  background: #fff1f2;
+  border: 2px solid #fda4af;
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+  animation: fadeIn 0.3s ease;
+
+  .banner-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: #be123c;
+    margin-bottom: 0.75rem;
+
+    i {
+      font-size: 1rem;
+    }
+  }
+
+  .banner-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0.75rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      background: white;
+      border: 1px solid #fecdd3;
+      border-radius: 6px;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.83rem;
+    }
+
+    .pname {
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .pdetail {
+      color: #64748b;
+      font-size: 0.8rem;
+    }
+
+    .qty-over {
+      color: #be123c;
+    }
+
+    .delta-badge {
+      display: inline-block;
+      background: #be123c;
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 10px;
+      margin-left: 4px;
+    }
+  }
+
+  .banner-note {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: #9f1239;
+    font-weight: 600;
+    margin: 0;
+
+    i {
+      color: #e11d48;
+    }
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

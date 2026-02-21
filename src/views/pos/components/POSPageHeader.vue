@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import POSLocationBanner from './POSLocationBanner.vue'
+import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 
 const props = defineProps({
   selectedBranch: {
@@ -31,6 +33,10 @@ const emit = defineEmits<{
   (e: 'export'): void
   (e: 'refresh'): void
 }>()
+
+const branchOptions = computed(() =>
+  props.branches.map(b => ({ value: b, label: b }))
+)
 </script>
 
 <template>
@@ -54,15 +60,13 @@ const emit = defineEmits<{
 
       <div class="branch-selector-group">
         <span class="selector-label">Estás en:</span>
-        <div class="branch-selector">
-          <i class="fa-solid fa-store"></i>
-          <select
-            :value="selectedBranch"
-            @change="emit('update:selectedBranch', ($event.target as HTMLSelectElement).value)"
-          >
-            <option v-for="branch in branches" :key="branch" :value="branch">{{ branch }}</option>
-          </select>
-          <i class="fa-solid fa-chevron-down select-arrow"></i>
+        <div class="branch-selector-wrap">
+          <SearchableSelect
+            :modelValue="selectedBranch"
+            :options="branchOptions"
+            placeholder="Seleccionar sucursal..."
+            @update:modelValue="emit('update:selectedBranch', $event)"
+          />
         </div>
       </div>
 
@@ -72,8 +76,9 @@ const emit = defineEmits<{
 
       <div class="separator"></div>
 
-      <button class="btn-export-dispatch" :disabled="isExporting" @click="emit('export')">
-        <i class="fas fa-file-excel"></i> Exportar Reporte
+      <button class="btn-export-dispatch" :class="{ 'is-loading': isExporting }" @click="emit('export')">
+        <i :class="isExporting ? 'fas fa-spinner fa-spin' : 'fas fa-file-excel'"></i>
+        {{ isExporting ? 'Exportando...' : 'Exportar Reporte' }}
       </button>
     </div>
   </div>
@@ -166,15 +171,15 @@ $tablet: 768px;
     margin-left: auto;
   }
 
-  &:hover:not(:disabled) {
+  &:hover {
     background: #DCFCE7;
     border-color: #BBF7D0;
     transform: translateY(-1px);
   }
 
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  &.is-loading {
+    cursor: wait;
+    opacity: 0.85;
   }
 }
 
@@ -267,59 +272,12 @@ $tablet: 768px;
   }
 }
 
-.branch-selector {
-  position: relative;
-  display: flex;
-  align-items: center;
-  background: #F8FAFC;
-  border-radius: 12px;
-  padding: 0 1rem;
-  border: 1px solid #E2E8F0;
-  transition: all 0.2s;
-  width: 100%;
-  overflow: hidden;
+.branch-selector-wrap {
+  flex: 1;
 
   @include from-tablet {
-    width: auto;
-    min-width: 200px;
-  }
-
-  &:hover {
-    border-color: $NICOLE-PURPLE;
-    background: white;
-    box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.08);
-  }
-
-  i:not(.select-arrow) {
-    color: $NICOLE-PURPLE;
-    margin-right: 0.5rem;
-    font-size: 0.9rem;
-  }
-
-  .select-arrow {
-    position: absolute;
-    right: 1rem;
-    font-size: 0.7rem;
-    color: #94A3B8;
-    pointer-events: none;
-  }
-
-  select {
-    border: none;
-    padding: 0.8rem 1.5rem;
-    font-family: $font-principal;
-    font-size: 0.95rem;
-    font-weight: 700;
-    color: #1E293B;
-    background: transparent;
-    cursor: pointer;
-    outline: none;
-    width: 100%;
-    appearance: none;
-
-    @include from-tablet {
-      padding: 0.65rem 1.5rem;
-    }
+    width: 220px;
+    flex: none;
   }
 }
 

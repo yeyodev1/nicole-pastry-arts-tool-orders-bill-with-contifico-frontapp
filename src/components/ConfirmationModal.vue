@@ -5,10 +5,11 @@ const props = defineProps<{
   isOpen: boolean
   title: string
   message: string
+  messageHtml?: string
   confirmText?: string
   cancelText?: string
   isDangerous?: boolean
-  isHoldToConfirm?: boolean // New option
+  isHoldToConfirm?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -72,7 +73,8 @@ onUnmounted(() => {
         </div>
         
         <div class="modal-body">
-          <p>{{ message }}</p>
+          <div v-if="messageHtml" v-html="messageHtml"></div>
+          <p v-else>{{ message }}</p>
         </div>
 
         <div class="modal-actions" :class="{ 'hold-layout': isHoldToConfirm }">
@@ -137,7 +139,7 @@ onUnmounted(() => {
   padding: 1.5rem;
   border-radius: 12px;
   width: 90%;
-  max-width: 400px;
+  max-width: 460px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   transform: translateY(0);
   transition: all 0.3s ease;
@@ -160,8 +162,10 @@ onUnmounted(() => {
   p {
     margin: 0;
     color: $text-light;
-    line-height: 1.5;
-    font-size: 0.95rem;
+    line-height: 1.65;
+    font-size: 0.93rem;
+    white-space: pre-line;
+    font-family: $font-secondary;
   }
 }
 

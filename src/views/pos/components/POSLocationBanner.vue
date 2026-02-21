@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const props = defineProps({
   selectedBranch: {
     type: String,
@@ -10,9 +12,9 @@ const emit = defineEmits<{
   (e: 'open-restock'): void
 }>()
 
-const isGlobal = props.selectedBranch === 'Todas las sucursales'
-const bannerClass = props.selectedBranch.toLowerCase().replace(/\s+/g, '-')
-const displayName = isGlobal ? 'Global (Todas)' : props.selectedBranch
+const isGlobal = computed(() => props.selectedBranch === 'Todas las sucursales')
+const bannerClass = computed(() => props.selectedBranch.toLowerCase().replace(/\s+/g, '-'))
+const displayName = computed(() => (isGlobal.value ? 'Global (Todas)' : props.selectedBranch))
 </script>
 
 <template>
