@@ -2,12 +2,25 @@
 import { ref, computed } from 'vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import ConfirmationModal from '@/components/ConfirmationModal.vue'
+import type { RawMaterial, Option, WarehouseLossFormState } from '@/types/warehouse'
 
 const props = defineProps({
-  form: { type: Object, required: true },
-  materials: { type: Array, required: true },
-  materialOptions: { type: Array, required: true },
-  isSubmitting: { type: Boolean, required: true }
+  form: {
+    type: Object as () => WarehouseLossFormState,
+    required: true
+  },
+  materials: {
+    type: Array as () => RawMaterial[],
+    required: true
+  },
+  materialOptions: {
+    type: Array as () => Option[],
+    required: true
+  },
+  isSubmitting: {
+    type: Boolean,
+    required: true
+  }
 })
 
 const emit = defineEmits(['submit', 'update:form'])
@@ -31,7 +44,7 @@ const toBackendQuantity = (inputQty: number, unit: string) => {
 }
 
 const selectedMaterial = computed(() => {
-  return props.materials.find((m: any) => m._id === props.form.rawMaterial)
+  return props.materials.find((m: RawMaterial) => m._id === props.form.rawMaterial)
 })
 
 const handleSubmit = () => {
@@ -141,6 +154,7 @@ const confirmLoss = () => {
     <ConfirmationModal
       :isOpen="showLossModal"
       title="Confirmar Baja"
+      message="Confirme el registro de la baja de inventario."
       @close="showLossModal = false"
       @confirm="confirmLoss"
     >

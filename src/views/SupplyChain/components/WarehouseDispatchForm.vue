@@ -1,15 +1,37 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import type { RawMaterial, Option, WarehouseOutForm } from '@/types/warehouse'
 
 const props = defineProps({
-  form: { type: Object, required: true },
-  materials: { type: Array, required: true },
-  entityOptions: { type: Array, required: true },
-  materialOptions: { type: Array, required: true },
-  isSubmitting: { type: Boolean, required: true },
-  holdProgress: { type: Number, required: true },
-  isHolding: { type: Boolean, required: true }
+  form: {
+    type: Object as () => WarehouseOutForm,
+    required: true
+  },
+  materials: {
+    type: Array as () => RawMaterial[],
+    required: true
+  },
+  entityOptions: {
+    type: Array as () => Option[],
+    required: true
+  },
+  materialOptions: {
+    type: Array as () => Option[],
+    required: true
+  },
+  isSubmitting: {
+    type: Boolean,
+    required: true
+  },
+  holdProgress: {
+    type: Number,
+    required: true
+  },
+  isHolding: {
+    type: Boolean,
+    required: true
+  }
 })
 
 const emit = defineEmits(['submit', 'update:form', 'start-hold', 'cancel-hold'])
@@ -34,7 +56,7 @@ const toBackendQuantity = (inputQty: number, unit: string) => {
 }
 
 const selectedMaterial = computed(() => {
-  return props.materials.find((m: any) => m._id === props.form.rawMaterial)
+  return props.materials.find((m: RawMaterial) => m._id === props.form.rawMaterial)
 })
 
 const totalValue = computed(() => {

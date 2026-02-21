@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import WarehouseFilters from '@/components/SupplyChain/WarehouseFilters.vue'
+import type { RawMaterial, Movement } from '@/types/warehouse'
 
 const props = defineProps({
   materials: {
-    type: Array,
+    type: Array as () => RawMaterial[],
     required: true
   },
   movements: {
-    type: Array,
+    type: Array as () => Movement[],
     required: true
   },
   isLoading: {
@@ -28,7 +29,7 @@ const props = defineProps({
     required: true
   },
   activeFilters: {
-    type: Object,
+    type: Object as () => any,
     required: true
   }
 })
@@ -52,7 +53,7 @@ const getMovementValue = (m: any) => {
   return m.quantity * unitCost
 }
 
-const formatDate = (date: string) => {
+const formatDate = (date: string | undefined) => {
   if (!date) return '-'
   return new Intl.DateTimeFormat('es-EC', {
     timeZone: 'America/Guayaquil',
