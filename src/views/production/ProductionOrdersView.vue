@@ -6,7 +6,7 @@ import { parseECTDate, getECTNow, isSameDayECT } from '@/utils/dateUtils'
 import DispatchReportModal from './components/DispatchReportModal.vue'
 import DispatchByDestinationModal from './components/DispatchByDestinationModal.vue'
 import HoldToConfirmModal from './components/HoldToConfirmModal.vue'
-import ToastNotification from '@/components/ToastNotification.vue'
+import { useToast } from '@/composables/useToast'
 
 interface Order {
   _id: string
@@ -58,10 +58,7 @@ const showBatchConfirmModal = ref(false)
 const selectedOrder = ref<Order | null>(null)
 const dispatchDestination = ref('')
 
-// Toast State
-const showToast = ref(false)
-const toastMessage = ref('')
-const toastType = ref<'success' | 'error'>('success')
+const { success, error: showError } = useToast()
 
 // Batch Selection
 const selectedIds = ref<string[]>([])
@@ -118,15 +115,10 @@ const executeBatchDispatch = async () => {
     selectedIds.value = [] // clear selection
     await fetchOrders()
     // Using Toast instead of alert
-    toastMessage.value = 'Envíos masivos registrados correctamente.'
-    toastType.value = 'success'
-    showToast.value = true
+    success('Envíos masivos registrados correctamente.')
   } catch (err) {
     console.error(err)
-    // Alert used here as fallback or update to toast? Let's keep consistent
-    toastMessage.value = 'Hubo un error al procesar los envíos masivos.'
-    toastType.value = 'error'
-    showToast.value = true
+    showError('Hubo un error al procesar los envíos masivos.')
   } finally {
     isLoading.value = false
   }
@@ -134,9 +126,7 @@ const executeBatchDispatch = async () => {
 
 const handleGlobalBatchSuccess = async () => {
   await fetchOrders()
-  toastMessage.value = '¡Envío masivo registrado con éxito!'
-  toastType.value = 'success'
-  showToast.value = true
+  success('¡Envío masivo registrado con éxito!')
 }
 
 const openDispatchModal = (order: Order) => {
@@ -163,13 +153,9 @@ const handleDispatchConfirm = async (payload: any) => {
     })
     showDispatchModal.value = false
     await fetchOrders() // Refresh to show new status
-    toastMessage.value = 'Envío registrado.'
-    toastType.value = 'success'
-    showToast.value = true
+    success('Envío registrado.')
   } catch (err: any) {
-    toastMessage.value = 'Error registrando envío: ' + (err.response?.data?.message || err.message)
-    toastType.value = 'error'
-    showToast.value = true
+    showError('Error registrando envío: ' + (err.response?.data?.message || err.message))
   } finally {
     isLoading.value = false
   }
@@ -722,12 +708,7 @@ const getDispatchBadge = (status?: string) => {
       @confirm="executeBatchDispatch"
     />
 
-    <ToastNotification 
-       :show="showToast"
-       :message="toastMessage"
-       :type="toastType"
-       @close="showToast = false"
-    />
+
   </div>
 </template>
 

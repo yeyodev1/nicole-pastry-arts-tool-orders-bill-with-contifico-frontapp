@@ -4,8 +4,8 @@ import { useRouter } from 'vue-router';
 import { posRestockService, type WeeklyObjectives } from '@/services/pos-restock.service';
 import RestockProductSearchModal from './components/RestockProductSearchModal.vue';
 import RestockDeleteModal from './components/RestockDeleteModal.vue';
-import ToastNotification from '@/components/ToastNotification.vue';
 import SearchableSelect from '@/components/ui/SearchableSelect.vue';
+import { useToast } from '@/composables/useToast';
 
 // --- Interfaces ---
 interface ProductConfig {
@@ -27,7 +27,7 @@ const showModal = ref(false);
 const showDeleteModal = ref(false);
 const editingProduct = ref<ProductConfig | null>(null);
 const productToDelete = ref<ProductConfig | null>(null);
-const toast = ref({ show: false, message: '', type: 'success' as 'success' | 'error' | 'info' });
+const { success, error: showError, info } = useToast();
 
 const weekDays = [
   { key: 'monday', label: 'Lun' },
@@ -55,12 +55,11 @@ const fetchConfiguration = async () => {
     }));
 
     if (products.value.length === 0) {
-      toast.value = { show: true, message: 'No hay configuraciones encontradas. Crea la primera.', type: 'info' };
+      info('No hay configuraciones encontradas. Crea la primera.');
     }
-
   } catch (error) {
     console.error('Error fetching config:', error);
-    toast.value = { show: true, message: 'Error cargando configuración', type: 'error' };
+    showError('Error cargando configuración');
   } finally {
     isLoading.value = false;
   }
@@ -86,18 +85,20 @@ const confirmDelete = async () => {
 
   try {
     await posRestockService.deleteObjective(branch.value, productToDelete.value.productName);
-    toast.value = { show: true, message: 'Configuración de restock eliminada exitosamente', type: 'success' };
+    success('Configuración de restock eliminada exitosamente');
     showDeleteModal.value = false;
     productToDelete.value = null;
     fetchConfiguration();
   } catch (error) {
     console.error('Error deleting:', error);
-    toast.value = { show: true, message: 'Error al eliminar configuración', type: 'error' };
+    showError('Error al eliminar configuración');
   }
 };
 
-const handleNotification = (notification: { message: string, type: 'success' | 'error' | 'info' }) => {
-  toast.value = { show: true, message: notification.message, type: notification.type };
+const handleNotification = (n: { message: string, type: 'success' | 'error' | 'info' }) => {
+  if (n.type === 'success') success(n.message);
+  else if (n.type === 'error') showError(n.message);
+  else info(n.message);
 };
 
 const goBack = () => {
@@ -215,12 +216,7 @@ watch(branch, () => {
       </div>
     </div>
     
-    <ToastNotification 
-      :show="toast.show" 
-      :message="toast.message" 
-      :type="toast.type"
-      @close="toast.show = false"
-    />
+
   </div>
 </template>
 
