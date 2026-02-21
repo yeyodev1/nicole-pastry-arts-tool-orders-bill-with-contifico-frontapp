@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { posRestockService, type DailyFormData, type DetailedLoss } from '@/services/pos-restock.service';
 import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -15,6 +15,7 @@ interface RestockItemData {
   bajas: number;
   excedente: number;
   detailedLosses: DetailedLoss[];
+  pedidoOverride: number | null;
 }
 
 // --- State ---
@@ -62,7 +63,8 @@ const fetchDailyForm = async () => {
           stockObjectiveToday: item.stockObjectiveToday,
           bajas: (isToday && item.lastEntry) ? item.lastEntry.bajas : 0,
           excedente: (isToday && item.lastEntry) ? item.lastEntry.stockFinal : 0,
-          detailedLosses: (isToday && item.lastEntry) ? (item.lastEntry.detailedLosses || []) : []
+          detailedLosses: (isToday && item.lastEntry) ? (item.lastEntry.detailedLosses || []) : [],
+          pedidoOverride: null,
         };
       });
     } else {
@@ -81,6 +83,58 @@ const calculatePedido = (item: RestockItemData): number => {
   const pedido = item.stockObjectiveTomorrow - item.excedente;
   return Math.max(0, pedido);
 };
+
+// Final pedido: override if user set one, otherwise use suggestion
+const getFinalPedido = (item: RestockItemData): number => {
+  return item.pedidoOverride !== null && item.pedidoOverride >= 0
+    ? item.pedidoOverride
+    : calculatePedido(item);
+};
+
+// Items whose manual override exceeds the stock objective
+const overriddenItems = computed(() =>
+  formItems.value.filter(
+    item => item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow
+  )
+);
+const hasExcessiveOverride = computed(() => overriddenItems.value.length > 0);
+
+const confirmMessage = computed(() => {
+  if (!hasExcessiveOverride.value) {
+    return '¿Confirmas el envío del reporte? Se generarán los pedidos para mañana según las cantidades indicadas.';
+  }
+  return '';
+});
+
+const confirmMessageHtml = computed(() => {
+  if (!hasExcessiveOverride.value) return undefined;
+
+  const items = overriddenItems.value.map(i => `
+    <li style="display:flex;justify-content:space-between;align-items:center;padding:0.45rem 0.75rem;background:white;border:1px solid #fecdd3;border-radius:8px;margin-bottom:6px;">
+      <span style="font-weight:700;color:#1e293b;font-size:0.88rem;">${i.productName}</span>
+      <span style="display:flex;align-items:center;gap:5px;">
+        <span style="color:#94a3b8;font-size:0.78rem;">mín: ${i.stockObjectiveTomorrow}</span>
+        <span style="color:#cbd5e1;">→</span>
+        <span style="font-weight:900;color:#be123c;font-size:1rem;">${i.pedidoOverride}</span>
+        <span style="background:#be123c;color:white;font-size:0.68rem;font-weight:800;padding:1px 7px;border-radius:10px;">+${i.pedidoOverride! - i.stockObjectiveTomorrow}</span>
+      </span>
+    </li>
+  `).join('');
+
+  return `
+    <div style="margin:-0.1rem 0 0.25rem;">
+      <div style="display:flex;align-items:center;gap:0.5rem;background:#fff1f2;border:1px solid #fda4af;border-left:4px solid #be123c;border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:0.85rem;color:#be123c;font-weight:700;font-size:0.88rem;">
+        <i class="fa-solid fa-circle-exclamation" style="font-size:1rem;"></i>
+        Pedidos fuera del stock mínimo diario
+      </div>
+      <ul style="list-style:none;padding:0;margin:0 0 0.85rem 0;">${items}</ul>
+      <p style="font-size:0.78rem;color:#94a3b8;margin:0;line-height:1.5;border-top:1px solid #f1f5f9;padding-top:0.65rem;">
+        <i class="fa-solid fa-hand" style="color:#be123c;margin-right:4px;"></i>
+        Mantén presionado el botón de confirmación para aceptar estos pedidos.
+      </p>
+    </div>
+  `;
+});
 
 // --- Detailed Losses Logic ---
 const openLossModal = (item: RestockItemData) => {
@@ -113,11 +167,12 @@ const executeSubmission = async () => {
     const payload = {
       branch: branch.value,
       date: formData.value.formDate,
-      submittedBy: 'POS User', // TODO: Get from auth store or context
+      submittedBy: 'POS User',
       items: formItems.value.map(item => ({
         productName: item.productName,
         bajas: item.bajas,
-        stockFinal: item.excedente, // Backend logic considers this as 'stockFinal' (surplus)
+        stockFinal: item.excedente,
+        pedidoFinal: getFinalPedido(item),
         detailedLosses: item.detailedLosses
       }))
     };
@@ -142,9 +197,19 @@ onMounted(() => {
   <div class="restock-page">
     <div class="container">
       <header class="header">
-        <button class="btn-back" @click="goBack">
-            <i class="fa-solid fa-arrow-left"></i> Volver al POS
-        </button>
+        <div class="header-top">
+          <button class="btn-back" @click="goBack">
+              <i class="fa-solid fa-arrow-left"></i> Volver al POS
+          </button>
+          <button
+            class="btn-config"
+            @click="router.push({ name: 'pos-restock-management', query: { branch } })"
+            title="Configurar objetivos de stock mínimos"
+          >
+            <i class="fa-solid fa-sliders"></i>
+            <span>Configurar Objetivos</span>
+          </button>
+        </div>
         <div class="title-group">
             <h1>Cierre de Producción</h1>
             <p v-if="formData">
@@ -244,11 +309,68 @@ onMounted(() => {
             </div>
             <span class="operator">=</span>
             
-            <div class="result-box" :class="{ 'has-order': calculatePedido(item) > 0 }">
-                <span class="label">Pedido Sugerido</span>
-                <strong class="value">{{ calculatePedido(item) }}</strong>
+            <div class="suggested-box">
+                <span class="label">Sugerido</span>
+                <span class="value">{{ calculatePedido(item) }}</span>
+            </div>
+
+            <div class="override-group">
+              <label class="label">Pedido Final</label>
+              <input
+                type="number"
+                class="override-input"
+                :class="{ 'is-overridden': item.pedidoOverride !== null }"
+                :placeholder="String(calculatePedido(item))"
+                :value="item.pedidoOverride !== null ? item.pedidoOverride : ''"
+                min="0"
+                @input="item.pedidoOverride = ($event.target as HTMLInputElement).value === '' ? null : Number(($event.target as HTMLInputElement).value)"
+              />
+              <button
+                v-if="item.pedidoOverride !== null"
+                type="button"
+                class="btn-reset-override"
+                @click="item.pedidoOverride = null"
+                title="Restablecer a sugerido"
+              >
+                <i class="fa-solid fa-rotate-left"></i>
+              </button>
+            </div>
+
+            <!-- Inline excess alert -->
+            <div
+              v-if="item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow"
+              class="excess-inline-alert"
+            >
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span>
+                Pedido <strong>supera el mínimo</strong> en
+                <strong class="delta">+{{ item.pedidoOverride - item.stockObjectiveTomorrow }}</strong> unidades
+              </span>
             </div>
           </div>
+        </div>
+
+        <!-- Excess orders summary banner -->
+        <div v-if="hasExcessiveOverride" class="excess-summary-banner">
+          <div class="banner-head">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            <strong>Pedidos que superan el stock mínimo diario</strong>
+          </div>
+          <ul class="banner-list">
+            <li v-for="item in overriddenItems" :key="item.productName">
+              <span class="pname">{{ item.productName }}</span>
+              <span class="pdetail">
+                Mínimo: <strong>{{ item.stockObjectiveTomorrow }}</strong>
+                &nbsp;→&nbsp;
+                Pedido: <strong class="qty-over">{{ item.pedidoOverride }}</strong>
+                <span class="delta-badge">+{{ item.pedidoOverride! - item.stockObjectiveTomorrow }}</span>
+              </span>
+            </li>
+          </ul>
+          <p class="banner-note">
+            <i class="fa-solid fa-hand"></i>
+            Deberás mantener presionado el botón de confirmación para aceptar estos pedidos.
+          </p>
         </div>
 
         <div class="actions">
@@ -274,12 +396,15 @@ onMounted(() => {
       <ConfirmationModal
         :is-open="showConfirmModal"
         title="Confirmar Reporte"
-        message="¿Estás seguro de enviar el reporte? Esto generará los pedidos sugeridos para mañana."
+        :message="confirmMessage"
+        :message-html="confirmMessageHtml"
         confirm-text="Enviar Reporte"
         :is-hold-to-confirm="true"
         @close="showConfirmModal = false"
         @confirm="executeSubmission"
       />
+
+
     </div>
   </div>
 </template>
@@ -306,45 +431,78 @@ $border-color: #e2e8f0;
 
 .header {
   margin-bottom: 1.5rem;
+}
 
-  .btn-back {
-    background: none;
-    border: none;
-    color: #64748b;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0;
-    margin-bottom: 1rem;
-    font-size: 0.9rem;
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
 
-    &:hover {
-      color: #333;
-    }
+.btn-back {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0;
+  font-size: 0.9rem;
+
+  &:hover {
+    color: #333;
+  }
+}
+
+.btn-config {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  color: #475569;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  transition: all 0.2s;
+
+  i {
+    font-size: 0.85rem;
   }
 
-  .title-group {
-    h1 {
-      font-size: 1.5rem;
-      margin: 0 0 0.5rem 0;
-      color: #1e293b;
+  &:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+    color: #1e293b;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  }
+}
+
+.title-group {
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 0.5rem 0;
+    color: #1e293b;
+  }
+
+  p {
+    margin: 0;
+    color: #64748b;
+    font-size: 0.95rem;
+
+    strong {
+      color: #333;
     }
 
-    p {
-      margin: 0;
-      color: #64748b;
-      font-size: 0.95rem;
-
-      strong {
-        color: #333;
-      }
-
-      .divider {
-        margin: 0 0.5rem;
-        color: #ccc;
-      }
+    .divider {
+      margin: 0 0.5rem;
+      color: #ccc;
     }
   }
 }
@@ -570,12 +728,14 @@ $border-color: #e2e8f0;
 
 .result-row {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: 0.5rem;
   background: #f8fafc;
   padding: 0.75rem 1rem;
   border-radius: 8px;
   border: 1px dashed #cbd5e1;
+  flex-wrap: wrap;
 
   .calc-step {
     display: flex;
@@ -599,19 +759,20 @@ $border-color: #e2e8f0;
   .operator {
     color: #cbd5e1;
     font-weight: bold;
+    padding-bottom: 4px;
   }
 
-  .result-box {
-    background: #e2e8f0;
-    padding: 6px 12px;
-    border-radius: 6px;
+  .suggested-box {
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-width: 80px;
+    background: #e2e8f0;
+    padding: 6px 12px;
+    border-radius: 6px;
+    min-width: 60px;
 
     .label {
-      font-size: 0.65rem;
+      font-size: 0.6rem;
       color: #64748b;
       text-transform: uppercase;
       font-weight: 700;
@@ -619,22 +780,187 @@ $border-color: #e2e8f0;
     }
 
     .value {
-      font-size: 1.2rem;
-      font-weight: 800;
+      font-size: 1.1rem;
+      font-weight: 700;
       color: #475569;
     }
+  }
+}
 
-    &.has-order {
-      background: #dcfce7;
+.override-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
 
-      .label {
-        color: #15803d;
-      }
+  .label {
+    font-size: 0.65rem;
+    color: #0369a1;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+  }
 
-      .value {
-        color: #16a34a;
-      }
+  .override-input {
+    width: 80px;
+    padding: 6px 10px;
+    border: 2px dashed #cbd5e1;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    text-align: center;
+    color: #475569;
+    background: white;
+    transition: all 0.2s;
+    outline: none;
+
+    &:focus {
+      border-color: #0369a1;
+      border-style: solid;
+      color: #0369a1;
     }
+
+    &.is-overridden {
+      border-color: #0369a1;
+      border-style: solid;
+      color: #0369a1;
+      background: #e0f2fe;
+    }
+  }
+
+  .btn-reset-override {
+    position: absolute;
+    right: -24px;
+    bottom: 6px;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0;
+    transition: color 0.15s;
+
+    &:hover {
+      color: #475569;
+    }
+  }
+}
+
+.excess-inline-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f97316;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  color: #9a3412;
+  margin-top: 0.6rem;
+
+  i {
+    color: #f97316;
+    flex-shrink: 0;
+  }
+
+  .delta {
+    color: #ea580c;
+    font-size: 1rem;
+  }
+}
+
+.excess-summary-banner {
+  background: #fff1f2;
+  border: 2px solid #fda4af;
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  animation: fadeIn 0.3s ease;
+
+  .banner-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: #be123c;
+    margin-bottom: 0.75rem;
+
+    i {
+      font-size: 1rem;
+    }
+  }
+
+  .banner-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0.75rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      background: white;
+      border: 1px solid #fecdd3;
+      border-radius: 6px;
+      padding: 0.4rem 0.7rem;
+      font-size: 0.83rem;
+    }
+
+    .pname {
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .pdetail {
+      color: #64748b;
+      font-size: 0.8rem;
+    }
+
+    .qty-over {
+      color: #be123c;
+    }
+
+    .delta-badge {
+      display: inline-block;
+      background: #be123c;
+      color: white;
+      font-size: 0.7rem;
+      font-weight: 800;
+      padding: 1px 6px;
+      border-radius: 10px;
+      margin-left: 4px;
+    }
+  }
+
+  .banner-note {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    color: #9f1239;
+    font-weight: 600;
+    margin: 0;
+
+    i {
+      color: #e11d48;
+    }
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

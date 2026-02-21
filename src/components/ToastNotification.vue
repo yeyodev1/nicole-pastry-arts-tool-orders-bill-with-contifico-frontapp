@@ -1,55 +1,29 @@
 <script setup lang="ts">
-import { watch } from 'vue'
-
 const props = defineProps<{
-  show: boolean
   message: string
   type?: 'success' | 'error' | 'info'
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   (e: 'close'): void
 }>()
-
-// Auto-close logic
-watch(() => props.show, (newVal) => {
-  if (newVal) {
-    setTimeout(() => {
-      emit('close')
-    }, 3000)
-  }
-})
 </script>
 
 <template>
-  <Teleport to="body">
-      <transition name="toast-slide">
-        <div v-if="show" class="toast-wrapper">
-            <div class="toast-notification" :class="type || 'success'">
-            <div class="icon-box">
-                <i v-if="type === 'error'" class="fa-solid fa-xmark"></i>
-                <i v-else-if="type === 'info'" class="fa-solid fa-info"></i>
-                <i v-else class="fa-solid fa-check"></i>
-            </div>
-            <div class="content">
-                <span class="message" v-html="message"></span>
-            </div>
-            <button class="close-btn" @click="$emit('close')">&times;</button>
-            </div>
-        </div>
-      </transition>
-  </Teleport>
+  <div class="toast-notification" :class="type || 'success'">
+    <div class="icon-box">
+      <i v-if="type === 'error'" class="fa-solid fa-xmark"></i>
+      <i v-else-if="type === 'info'" class="fa-solid fa-info"></i>
+      <i v-else class="fa-solid fa-check"></i>
+    </div>
+    <div class="content">
+      <span class="message" v-html="message"></span>
+    </div>
+    <button class="close-btn" @click="$emit('close')">&times;</button>
+  </div>
 </template>
 
 <style lang="scss" scoped>
-.toast-wrapper {
-  position: fixed;
-  top: 2rem;
-  right: 2rem;
-  z-index: 9999;
-  pointer-events: none; // Allow clicks through wrapper area
-}
-
 .toast-notification {
   pointer-events: auto;
   background: white;
@@ -59,14 +33,14 @@ watch(() => props.show, (newVal) => {
     0 10px 15px -3px rgba(0, 0, 0, 0.1),
     0 4px 6px -2px rgba(0, 0, 0, 0.05);
   display: flex;
-  align-items: center; // Vertically center content
+  align-items: center;
   gap: 1rem;
   min-width: 300px;
   max-width: 400px;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.8);
+  position: relative;
 
-  // Minimalist Icon Box
   .icon-box {
     width: 28px;
     height: 28px;
@@ -86,7 +60,7 @@ watch(() => props.show, (newVal) => {
     font-size: 0.95rem;
     font-weight: 500;
     line-height: 1.4;
-    flex: 1; // Make content take up available space
+    flex: 1;
   }
 
   .close-btn {
@@ -97,7 +71,7 @@ watch(() => props.show, (newVal) => {
     line-height: 1;
     cursor: pointer;
     padding: 0;
-    margin-left: -0.5rem; // Adjust slightly
+    margin-left: -0.5rem;
     transition: color 0.2s;
     display: flex;
     align-items: center;
@@ -108,7 +82,6 @@ watch(() => props.show, (newVal) => {
     }
   }
 
-  // Variants
   &.success {
     .icon-box {
       background: #dcfce7;
@@ -135,21 +108,5 @@ watch(() => props.show, (newVal) => {
 
     border-left: 4px solid #0284c7;
   }
-}
-
-// Elegant Slide Transition
-.toast-slide-enter-active,
-.toast-slide-leave-active {
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.toast-slide-enter-from {
-  opacity: 0;
-  transform: translateX(20px) scale(0.95);
-}
-
-.toast-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-20px) scale(0.95);
 }
 </style>

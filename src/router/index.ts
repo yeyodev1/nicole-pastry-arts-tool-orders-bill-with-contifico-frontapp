@@ -123,6 +123,12 @@ const router = createRouter({
       component: () => import('../views/SupplyChain/WarehouseView.vue'),
       meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Bodega' }
     },
+    {
+      path: '/supply-chain/orders',
+      name: 'supplier-orders-history',
+      component: () => import('../views/SupplyChain/SupplierOrderHistoryView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Historial de Pedidos' }
+    },
     // POS / RetailManager Routes
     {
       path: '/pos/shipments',

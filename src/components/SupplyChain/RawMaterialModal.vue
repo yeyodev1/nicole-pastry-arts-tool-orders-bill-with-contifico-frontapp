@@ -16,7 +16,6 @@ const emit = defineEmits(['close', 'save', 'delete'])
 
 const form = ref({
   name: '',
-  item: '',
   code: '',
   unit: 'u',
   quantity: 0,
@@ -50,7 +49,6 @@ const toBackendQuantity = (inputQty: number, unit: string) => inputQty
 const resetForm = () => {
   form.value = {
     name: '',
-    item: '',
     code: '',
     unit: 'u',
     quantity: 0,
@@ -70,10 +68,9 @@ watch(() => props.isOpen, (newVal) => {
       const m = props.materialToEdit
       form.value = {
         name: m.name,
-        item: m.item || '',
         code: m.code || '',
         unit: m.unit || 'u',
-        quantity: m.quantity || 0, // Keep raw quantity for preservation
+        quantity: m.quantity || 0,
         minStock: getDisplayQuantity(m.minStock || 0, m.unit),
         maxStock: getDisplayQuantity(m.maxStock || 0, m.unit),
         provider: m.provider?._id || m.provider || '',
@@ -108,26 +105,23 @@ const stockStatus = computed(() => {
   return { label: '---', class: '' }
 })
 
-const generateCode = (category: string, item: string) => {
+const generateCode = (category: string, name: string) => {
   const catChar = category && category.length > 0 ? category.charAt(0).toUpperCase() : 'X'
-  const itemChar = item && item.length > 1 ? item.charAt(1).toLowerCase() : (item && item.length > 0 ? item.charAt(0).toLowerCase() : 'x')
+  const nameChar = name && name.length > 1 ? name.charAt(1).toLowerCase() : (name && name.length > 0 ? name.charAt(0).toLowerCase() : 'x')
   const randomNum = Math.floor(Math.random() * 900) + 100
-  return `${catChar}${itemChar}${randomNum}`
+  return `${catChar}${nameChar}${randomNum}`
 }
 
 const handleSubmit = () => {
   const payload: any = { ...form.value }
 
-  // We preserve the quantity as is (already in backend unit if editing, 0 if new)
-  // But min/max need conversion back to base unit if logic changes (currently identity)
   payload.minStock = toBackendQuantity(payload.minStock || 0, payload.unit)
   payload.maxStock = toBackendQuantity(payload.maxStock || 0, payload.unit)
 
-  // Cost is correctly calculated per base unit
   payload.cost = calculatedUnitCost.value
 
   if (!payload.code) {
-    payload.code = generateCode(payload.category, payload.item || payload.name)
+    payload.code = generateCode(payload.category, payload.name)
   }
 
   if (!payload.provider) delete payload.provider
@@ -166,147 +160,158 @@ const categoryOptions = computed(() => {
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal-content pro-modal">
-      <div class="modal-header">
-        <div class="header-info">
-          <h2>{{ materialToEdit ? 'Editar Material' : 'Nuevo Material' }}</h2>
-          <p v-if="materialToEdit" class="sku-subtitle">SKU: {{ form.code }} | {{ form.item }}</p>
+  <Teleport to="body">
+    <transition name="modal-bounce">
+      <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
+        <div class="modal-content pro-modal">
+          <div class="modal-header">
+            <div class="header-info">
+              <h2>{{ materialToEdit ? 'Editar Material' : 'Nuevo Material' }}</h2>
+              <p v-if="materialToEdit" class="sku-subtitle">SKU: {{ form.code }}</p>
+            </div>
+            <button class="btn-close" @click="$emit('close')">&times;</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="section-title">Información Básica</div>
+            <div class="form-group" style="margin-bottom: 1.25rem">
+              <label>Nombre Comercial / Marca</label>
+              <input v-model="form.name" placeholder="Ej. Chocolate Callebaut 70%" />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Categoría</label>
+                <SearchableSelect
+                  v-model="form.category"
+                  :options="categoryOptions"
+                  placeholder="Buscar o seleccionar categoría..."
+                />
+                <!-- Suggested category chips -->
+                <div class="category-chips" v-if="categories.length > 0">
+                  <button
+                    v-for="cat in categories"
+                    :key="cat._id || cat.name"
+                    type="button"
+                    class="chip"
+                    :class="{ 'chip--active': form.category === cat.name }"
+                    @click="form.category = cat.name"
+                  >
+                    {{ cat.name }}
+                  </button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Unidad de Medida</label>
+                <select v-model="form.unit">
+                  <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="section-divider"></div>
+            <div class="section-title">Control de Inventario</div>
+            
+            <div class="stock-status-bar" v-if="materialToEdit">
+              <div class="status-indicator">
+                <span class="label">Estado Actual:</span>
+                <span class="badge" :class="stockStatus.class">{{ stockStatus.label }}</span>
+              </div>
+              <div class="stock-level">
+                <span class="current">{{ form.quantity }} {{ form.unit }}</span>
+                <span class="label">en stock <span v-if="calculatedUnitCost > 0">(${{ (form.quantity * calculatedUnitCost).toFixed(2) }})</span></span>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Stock Mínimo (Alerta)</label>
+                <input type="number" v-model.number="form.minStock" placeholder="0" />
+                <span class="input-hint">Punto de re-orden</span>
+              </div>
+              <div class="form-group">
+                <label>Stock Máximo (Límite)</label>
+                <input type="number" v-model.number="form.maxStock" placeholder="0" />
+                <span class="input-hint">Capacidad o límite deseado</span>
+              </div>
+            </div>
+
+            <div class="section-divider"></div>
+            <div class="section-title">Definición de Costo</div>
+            
+            <div class="form-group">
+              <label>Proveedor Principal</label>
+              <SearchableSelect
+                v-model="form.provider"
+                :options="providerOptions"
+                placeholder="Buscar proveedor..."
+              />
+            </div>
+
+            <div class="form-row highlight">
+              <div class="form-group flex-2">
+                <label>Unidad de Compra</label>
+                <select :value="form.unit" disabled class="disabled-select">
+                  <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
+                </select>
+              </div>
+              <div class="form-group flex-1">
+                <label>Cantidad</label>
+                <input type="number" v-model.number="form.presentationQuantity" placeholder="0" min="0" step="any" />
+                <span class="input-hint" v-if="form.unit !== 'u'">
+                  Ingrese la cantidad en {{ form.unit }}
+                </span>
+              </div>
+              <div class="form-group flex-1">
+                <label>Costo Total ($)</label>
+                <input type="number" v-model.number="form.presentationPrice" step="0.01" placeholder="0.00" />
+              </div>
+            </div>
+
+            <div class="cost-summary" v-if="calculatedUnitCost > 0">
+              <!-- Kg / L Cost (Main Focus) -->
+              <div class="summary-item" v-if="form.unit !== 'u'">
+                <span class="label">Costo por {{ form.unit === 'g' ? 'Kg' : (form.unit === 'ml' ? 'Litro' : '') }}:</span>
+                <span class="value main">${{ (calculatedUnitCost * 1000).toFixed(4) }}</span>
+              </div>
+
+              <!-- Base Unit Cost (g / ml / u) -->
+              <div class="summary-item" :class="{ sub: form.unit !== 'u' }">
+                <span class="label">Costo {{ form.unit === 'u' ? 'por Unidad' : `por ${form.unit}` }}:</span>
+                <span class="value" :class="{ main: form.unit === 'u' }">${{ calculatedUnitCost.toFixed(6) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer pro-footer">
+            <div v-if="materialToEdit" class="delete-section">
+              <button class="btn-delete" @click="openDeleteModal">
+                <i class="fas fa-trash-alt"></i> ELIMINAR REGISTRO
+              </button>
+            </div>
+            
+            <div class="main-actions">
+              <button class="btn-cancel" @click="$emit('close')">Cerrar</button>
+              <HoldConfirmButton 
+                :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CREAR MATERIAL'"
+                :disabled="isSaving || !form.name"
+                :hold-time="1200"
+                @confirmed="handleSubmit"
+              />
+            </div>
+          </div>
         </div>
-        <button class="btn-close" @click="$emit('close')">&times;</button>
+
+        <!-- Delete Confirmation Modal -->
+        <DeleteMaterialModal
+          :is-open="isDeleteModalOpen"
+          :material-name="materialToEdit?.name || ''"
+          @close="isDeleteModalOpen = false"
+          @confirm="handleConfirmDelete"
+        />
       </div>
-
-      <div class="modal-body">
-        <div class="section-title">Información Básica</div>
-        <div class="form-row">
-          <div class="form-group flex-2">
-            <label>Nombre Comercial / Marca</label>
-            <input v-model="form.name" placeholder="Ej. Chocolate Callebaut 70%" />
-          </div>
-          <div class="form-group flex-1">
-            <label>Descripción / Ítem</label>
-            <input v-model="form.item" placeholder="Ej. Chocolate" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Categoría</label>
-            <SearchableSelect
-              v-model="form.category"
-              :options="categoryOptions"
-              placeholder="Buscar categoría..."
-            />
-          </div>
-          <div class="form-group">
-            <label>Unidad de Medida</label>
-            <select v-model="form.unit">
-              <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="section-divider"></div>
-        <div class="section-title">Control de Inventario</div>
-        
-        <div class="stock-status-bar" v-if="materialToEdit">
-          <div class="status-indicator">
-            <span class="label">Estado Actual:</span>
-            <span class="badge" :class="stockStatus.class">{{ stockStatus.label }}</span>
-          </div>
-          <div class="stock-level">
-            <span class="current">{{ form.quantity }} {{ form.unit }}</span>
-            <span class="label">en stock <span v-if="calculatedUnitCost > 0">(${{ (form.quantity * calculatedUnitCost).toFixed(2) }})</span></span>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Stock Mínimo (Alerta)</label>
-            <input type="number" v-model.number="form.minStock" placeholder="0" />
-            <span class="input-hint">Punto de re-orden</span>
-          </div>
-          <div class="form-group">
-            <label>Stock Máximo (Límite)</label>
-            <input type="number" v-model.number="form.maxStock" placeholder="0" />
-            <span class="input-hint">Capacidad o límite deseado</span>
-          </div>
-        </div>
-
-        <div class="section-divider"></div>
-        <div class="section-title">Definición de Costo</div>
-        
-        <div class="form-group">
-          <label>Proveedor Principal</label>
-          <SearchableSelect
-            v-model="form.provider"
-            :options="providerOptions"
-            placeholder="Buscar proveedor..."
-          />
-        </div>
-
-        <div class="form-row highlight">
-          <div class="form-group flex-2">
-            <label>Unidad de Compra</label>
-            <select :value="form.unit" disabled class="disabled-select">
-              <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
-            </select>
-          </div>
-          <div class="form-group flex-1">
-            <label>Cantidad</label>
-            <input type="number" v-model.number="form.presentationQuantity" placeholder="0" min="0" step="any" />
-            <span class="input-hint" v-if="form.unit !== 'u'">
-              Ingrese la cantidad en {{ form.unit }}
-            </span>
-          </div>
-          <div class="form-group flex-1">
-            <label>Costo Total ($)</label>
-            <input type="number" v-model.number="form.presentationPrice" step="0.01" placeholder="0.00" />
-          </div>
-        </div>
-
-        <div class="cost-summary" v-if="calculatedUnitCost > 0">
-          <!-- Kg / L Cost (Main Focus) -->
-          <div class="summary-item" v-if="form.unit !== 'u'">
-            <span class="label">Costo por {{ form.unit === 'g' ? 'Kg' : (form.unit === 'ml' ? 'Litro' : '') }}:</span>
-            <span class="value main">${{ (calculatedUnitCost * 1000).toFixed(4) }}</span>
-          </div>
-
-          <!-- Base Unit Cost (g / ml / u) -->
-          <div class="summary-item" :class="{ sub: form.unit !== 'u' }">
-            <span class="label">Costo {{ form.unit === 'u' ? 'por Unidad' : `por ${form.unit}` }}:</span>
-             <span class="value" :class="{ main: form.unit === 'u' }">${{ calculatedUnitCost.toFixed(6) }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="modal-footer pro-footer">
-        <div v-if="materialToEdit" class="delete-section">
-          <button class="btn-delete" @click="openDeleteModal">
-            <i class="fas fa-trash-alt"></i> ELIMINAR REGISTRO
-          </button>
-        </div>
-        
-        <div class="main-actions">
-          <button class="btn-cancel" @click="$emit('close')">Cerrar</button>
-          <HoldConfirmButton 
-            :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CREAR MATERIAL'"
-            :disabled="isSaving || !form.name || !form.item"
-            :hold-time="1200"
-            @confirmed="handleSubmit"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Delete Confirmation Modal -->
-    <DeleteMaterialModal
-      :is-open="isDeleteModalOpen"
-      :material-name="materialToEdit?.name || ''"
-      @close="isDeleteModalOpen = false"
-      @confirm="handleConfirmDelete"
-    />
-  </div>
+    </transition>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
@@ -338,34 +343,54 @@ const categoryOptions = computed(() => {
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 -25px 50px -12px rgba(0, 0, 0, 0.15);
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   @media (min-width: 640px) {
     border-radius: 36px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
-    animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
 
-@keyframes slideUp {
-  from {
+// Premium Modal Transition
+.modal-bounce-enter-active {
+  transition: opacity 0.4s ease-out;
+
+  .pro-modal {
+    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+.modal-bounce-leave-active {
+  transition: opacity 0.3s ease-in;
+
+  .pro-modal {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+.modal-bounce-enter-from {
+  opacity: 0;
+
+  .pro-modal {
     transform: translateY(100%);
-  }
 
-  to {
-    transform: translateY(0);
+    @media (min-width: 640px) {
+      transform: translateY(30px) scale(0.9);
+      opacity: 0;
+    }
   }
 }
 
-@keyframes modalIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px) scale(0.95);
-  }
+.modal-bounce-leave-to {
+  opacity: 0;
 
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+  .pro-modal {
+    transform: translateY(100%);
+
+    @media (min-width: 640px) {
+      transform: translateY(20px) scale(0.95);
+      opacity: 0;
+    }
   }
 }
 
@@ -550,6 +575,44 @@ const categoryOptions = computed(() => {
     .label {
       font-size: 0.75rem;
       color: #64748b;
+    }
+  }
+}
+
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+
+  .chip {
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    border: 2px solid #e2e8f0;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+
+    &:active {
+      transform: scale(0.96);
+    }
+
+    @media(hover: hover) {
+      &:hover {
+        border-color: $NICOLE-PURPLE;
+        color: $NICOLE-PURPLE;
+        background: rgba($NICOLE-PURPLE, 0.06);
+      }
+    }
+
+    &--active {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.1);
+      color: $NICOLE-PURPLE;
     }
   }
 }

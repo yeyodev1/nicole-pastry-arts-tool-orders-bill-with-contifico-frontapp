@@ -38,68 +38,69 @@ const handleSend = () => {
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="emit('close')">
-    <div class="modal whatsapp-theme">
-      
-      <!-- WA Header -->
-      <div class="wa-header">
-         <div class="wa-profile">
-            <div class="wa-avatar">
-              <i class="fa-brands fa-whatsapp"></i>
-            </div>
-            <div class="wa-info">
-               <h3>Pedido Creado con Éxito</h3>
-               <span>Listo para enviar</span>
-            </div>
-         </div>
-         <button @click="emit('close')" class="close-btn" title="Cerrar">
-           <i class="fa-solid fa-xmark"></i>
-         </button>
-      </div>
-
-      <!-- WA Body -->
-      <div class="wa-body">
-         <div class="success-banner">
-            <i class="fa-solid fa-circle-check"></i>
-            <p>¡El pedido #{{ orderId?.slice(-6) || 'Nuevo' }} se ha guardado correctamente!</p>
-         </div>
-
-         <div class="date-divider">
-            <span>Mensaje Generado</span>
-         </div>
-         
-         <div class="message-bubble sent">
-            <pre>{{ message }}</pre>
-            <div class="msg-meta">
-               <span>{{ new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
-               <i class="fa-solid fa-check-double"></i>
-            </div>
-         </div>
-
-
-      </div>
-
-      <!-- WA Footer Actions -->
-      <div class="wa-footer">
-          <button @click="handleSend" class="btn-send-wa">
-             Enviar por WhatsApp <i class="fa-brands fa-whatsapp"></i>
-          </button>
+  <Teleport to="body">
+    <transition name="modal-bounce">
+      <div v-if="isOpen" class="modal-overlay" @click.self="emit('close')">
+        <div class="modal whatsapp-theme">
           
-          <button v-if="orderId" class="btn-view-order" @click="goToOrderDetails">
-             <i class="fa-solid fa-eye"></i> Ver Pedido
-          </button>
+          <!-- WA Header -->
+          <div class="wa-header">
+            <div class="wa-profile">
+                <div class="wa-avatar">
+                  <i class="fa-brands fa-whatsapp"></i>
+                </div>
+                <div class="wa-info">
+                  <h3>Pedido Creado con Éxito</h3>
+                  <span>Listo para enviar</span>
+                </div>
+            </div>
+            <button @click="emit('close')" class="close-btn" title="Cerrar">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
 
-          <button class="btn-copy-order" @click="handleCopy">
-             <i class="fa-regular fa-copy"></i> Copiar Texto
-          </button>
-          
-          <button @click="emit('close')" class="btn-secondary">
-             Cerrar y Crear Otro
-          </button>
+          <!-- WA Body -->
+          <div class="wa-body">
+            <div class="success-banner">
+                <i class="fa-solid fa-circle-check"></i>
+                <p>¡El pedido #{{ orderId?.slice(-6) || 'Nuevo' }} se ha guardado correctamente!</p>
+            </div>
+
+            <div class="date-divider">
+                <span>Mensaje Generado</span>
+            </div>
+            
+            <div class="message-bubble sent">
+                <pre>{{ message }}</pre>
+                <div class="msg-meta">
+                  <span>{{ new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+                  <i class="fa-solid fa-check-double"></i>
+                </div>
+            </div>
+          </div>
+
+          <!-- WA Footer Actions -->
+          <div class="wa-footer">
+              <button @click="handleSend" class="btn-send-wa">
+                Enviar por WhatsApp <i class="fa-brands fa-whatsapp"></i>
+              </button>
+              
+              <button v-if="orderId" class="btn-view-order" @click="goToOrderDetails">
+                <i class="fa-solid fa-eye"></i> Ver Pedido
+              </button>
+
+              <button class="btn-copy-order" @click="handleCopy">
+                <i class="fa-regular fa-copy"></i> Copiar Texto
+              </button>
+              
+              <button @click="emit('close')" class="btn-secondary">
+                Cerrar y Crear Otro
+              </button>
+          </div>
+        </div>
       </div>
-    
-    </div>
-  </div>
+    </transition>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
@@ -119,16 +120,16 @@ const handleSend = () => {
 
 .modal.whatsapp-theme {
   background: #E5DDD5;
-  width: 90%;
+  width: 95%;
   max-width: 480px;
   border-radius: 20px;
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.3s ease-out;
   height: auto;
   max-height: 85vh;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Header */
@@ -445,15 +446,40 @@ const handleSend = () => {
   }
 }
 
-@keyframes slideUp {
-  from {
-    transform: translateY(50px);
+// Premium Modal Transition
+.modal-bounce-enter-active {
+  transition: all 0.4s ease-out;
+
+  .modal.whatsapp-theme {
+    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+.modal-bounce-leave-active {
+  transition: all 0.3s ease-in;
+
+  .modal.whatsapp-theme {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+.modal-bounce-enter-from {
+  opacity: 0;
+  backdrop-filter: blur(0);
+
+  .modal.whatsapp-theme {
+    transform: translateY(30px) scale(0.9);
     opacity: 0;
   }
+}
 
-  to {
-    transform: translateY(0);
-    opacity: 1;
+.modal-bounce-leave-to {
+  opacity: 0;
+  backdrop-filter: blur(0);
+
+  .modal.whatsapp-theme {
+    transform: translateY(20px) scale(0.95);
+    opacity: 0;
   }
 }
 </style>

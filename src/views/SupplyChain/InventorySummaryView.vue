@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import RawMaterialService from '@/services/raw-material.service'
 import { useToast } from '@/composables/useToast'
+import SupplierOrderModal from '@/components/SupplyChain/SupplierOrderModal.vue'
 
 // @ts-ignore
 import XLSX from 'xlsx-js-style'
@@ -16,6 +17,21 @@ const expandedSections = ref({
   warning: true,
   optimal: true // Default open all for better visibility
 })
+
+// Supplier Order Modal State
+const isOrderModalOpen = ref(false)
+const selectedOrderProvider = ref<any>(null)
+const selectedMaterialId = ref('')
+
+const openOrderModal = (m: any) => {
+  if (!m.provider) {
+    showError('Este insumo no tiene un proveedor asignado.')
+    return
+  }
+  selectedOrderProvider.value = m.provider
+  selectedMaterialId.value = m._id
+  isOrderModalOpen.value = true
+}
 
 const fetchData = async () => {
   isLoading.value = true
@@ -189,7 +205,12 @@ onMounted(fetchData)
           </button>
         </div>
 
-        <button class="btn-refresh" @click="exportToExcel">
+        <router-link to="/supply-chain/orders" class="btn-history">
+          <i class="fas fa-clipboard-list"></i>
+          <span>Ver Historial</span>
+        </router-link>
+
+        <button class="btn-export" @click="exportToExcel">
           <i class="fas fa-file-excel"></i>
           <span>Exportar</span>
         </button>
@@ -274,6 +295,13 @@ onMounted(fetchData)
                    </div>
                    <div class="min-line">Mínimo sugerido: {{ getDisplayQuantity(m.minStock, m.unit) }}{{ getDisplayUnit(m.unit) }}</div>
                 </div>
+
+                <!-- NEW: Order Button -->
+                <div class="card-footer" v-if="m.provider">
+                  <button class="btn-order-action" @click="openOrderModal(m)">
+                    <i class="fas fa-truck"></i> Realizar Pedido
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -313,6 +341,13 @@ onMounted(fetchData)
                       <span class="qty">{{ getDisplayQuantity(m.minStock * 1.5, m.unit) }}</span>
                    </div>
                 </div>
+
+                <!-- NEW: Order Button -->
+                <div class="card-footer" v-if="m.provider">
+                  <button class="btn-order-action" @click="openOrderModal(m)">
+                    <i class="fas fa-truck"></i> Realizar Pedido
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -341,6 +376,15 @@ onMounted(fetchData)
 
       </div>
     </div>
+
+    <!-- Supplier Order Modal -->
+    <SupplierOrderModal
+      :is-open="isOrderModalOpen"
+      :provider="selectedOrderProvider"
+      :all-materials="materials"
+      :initial-material-id="selectedMaterialId"
+      @close="isOrderModalOpen = false"
+    />
   </div>
 </template>
 
@@ -435,6 +479,34 @@ onMounted(fetchData)
     &:hover {
       color: #ef4444;
     }
+  }
+}
+
+.btn-history {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.75rem;
+  background: white;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  color: $NICOLE-PURPLE;
+  font-weight: 700;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  i {
+    font-size: 1rem;
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    background: $NICOLE-PURPLE;
+    color: white;
+    border-color: $NICOLE-PURPLE;
   }
 }
 
@@ -754,6 +826,12 @@ onMounted(fetchData)
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  transition: all 0.2s;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+  }
 
   .header-card {
     display: flex;
@@ -797,6 +875,36 @@ onMounted(fetchData)
 
     .status-dot {
       background: #f59e0b;
+    }
+  }
+
+  .card-footer {
+    padding-top: 1rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    margin-top: auto;
+  }
+
+  .btn-order-action {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 12px;
+    border: none;
+    background: white;
+    color: $NICOLE-PURPLE;
+    font-weight: 800;
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid rgba($NICOLE-PURPLE, 0.3);
+    transition: all 0.2s;
+
+    &:hover {
+      background: $NICOLE-PURPLE;
+      color: white;
+      transform: scale(1.02);
     }
   }
 }

@@ -3,7 +3,8 @@ import { ref, watch } from 'vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 
 const props = defineProps<{
-  materials: any[]
+  materials: any[],
+  initialFilters?: any
 }>()
 
 const emit = defineEmits<{
@@ -11,11 +12,18 @@ const emit = defineEmits<{
 }>()
 
 const filters = ref({
-  type: '',
-  materialId: '',
-  startDate: '',
-  endDate: ''
+  type: props.initialFilters?.type || '',
+  materialId: props.initialFilters?.materialId || '',
+  startDate: props.initialFilters?.startDate || '',
+  endDate: props.initialFilters?.endDate || ''
 })
+
+// Update local filters if prop changes (for initialization)
+watch(() => props.initialFilters, (newInit) => {
+  if (newInit) {
+    filters.value = { ...filters.value, ...newInit }
+  }
+}, { deep: true })
 
 // Deep watch filters to emit changes
 watch(filters, (newFilters) => {
@@ -40,6 +48,7 @@ const clearFilters = () => {
         <option value="">Todos</option>
         <option value="IN">Entradas</option>
         <option value="OUT">Salidas</option>
+        <option value="LOSS">Bajas / Mermas</option>
       </select>
     </div>
 

@@ -3,32 +3,13 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import WarehouseService from '@/services/warehouse.service'
 import RawMaterialService from '@/services/raw-material.service'
 import ProviderService from '@/services/provider.service'
+import SupplierOrderService from '@/services/supplier-order.service'
 import { useToast } from '@/composables/useToast'
 import ConfirmationModal from '@/components/ConfirmationModal.vue'
 import WarehouseFilters from '@/components/SupplyChain/WarehouseFilters.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 
 const { success, error: showError } = useToast()
-
-// Data State
-const materials = ref<any[]>([])
-const providers = ref<any[]>([])
-const movements = ref<any[]>([])
-const isLoading = ref(false)
-const isSubmitting = ref(false)
-const activeTab = ref<'movements' | 'in' | 'out'>('movements')
-
-// Filters State
-const activeFilters = ref({
-  type: '',
-  materialId: '',
-  startDate: '',
-  endDate: ''
-})
-
-// Pagination
-const currentPage = ref(1)
-const totalPages = ref(1)
 
 // Utils: Strictly America/Guayaquil (Ecuador)
 const getEcuadorTime = () => {
@@ -55,14 +36,52 @@ const getEcuadorDate = () => {
   return `${y}-${m}-${d}`
 }
 
+const getEcuadorMonthStart = () => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Guayaquil',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(new Date())
+
+  const y = parts.find(p => p.type === 'year')?.value
+  const m = parts.find(p => p.type === 'month')?.value
+
+  return `${y}-${m}-01`
+}
+
+// Data State
+const materials = ref<any[]>([])
+const providers = ref<any[]>([])
+const movements = ref<any[]>([])
+const suggestedOrders = ref<any[]>([])
+const isLoading = ref(false)
+const isLoadingSuggestions = ref(false)
+const isSubmitting = ref(false)
+const activeTab = ref<'movements' | 'in' | 'out' | 'loss'>('movements')
+
+// Filters State
+const activeFilters = ref({
+  type: '',
+  materialId: '',
+  startDate: getEcuadorMonthStart(),
+  endDate: getEcuadorDate()
+})
+
+// Pagination
+const currentPage = ref(1)
+const totalPages = ref(1)
+
 // Forms
 const inForm = ref({
   date: getEcuadorDate(),
   time: getEcuadorTime(),
   rawMaterial: '',
   quantity: 0,
+  unitCost: 0,   // cost in display units (USD/kg or USD/L), editable by user
   provider: '',
-  observation: ''
+  responsible: 'Danny', // Default suggested for Recepción
+  observation: '',
+  suggestedOrderId: '' // To track if this intake comes from a suggestion
 })
 
 const outForm = ref({
@@ -70,13 +89,26 @@ const outForm = ref({
   time: getEcuadorTime(),
   rawMaterial: '',
   quantity: 0,
+  responsible: '',
   entity: '',
-  observation: ''
+  observation: '',
+  expectedSaleValue: 0
+})
+
+const lossForm = ref({
+  date: getEcuadorDate(),
+  time: getEcuadorTime(),
+  rawMaterial: '',
+  quantity: 0,
+  responsible: 'Danny', // Suggested default
+  observation: '',
+  reason: 'CADUCIDAD' // Default reason
 })
 
 // Modals State
 const showInModal = ref(false)
 const showOutModal = ref(false)
+const showLossModal = ref(false)
 const isHolding = ref(false)
 const holdProgress = ref(0)
 let holdTimer: any = null
@@ -99,6 +131,26 @@ const entities = [
 // Computed
 const selectedInMaterial = computed(() => materials.value.find(m => m._id === inForm.value.rawMaterial))
 const selectedOutMaterial = computed(() => materials.value.find(m => m._id === outForm.value.rawMaterial))
+const selectedLossMaterial = computed(() => materials.value.find(m => m._id === lossForm.value.rawMaterial))
+
+// Real-time value calculator for IN form (uses editable unitCost in display units)
+const inTotalValue = computed(() => {
+  if (!selectedInMaterial.value || !inForm.value.quantity || inForm.value.quantity <= 0) return 0
+  return inForm.value.quantity * (inForm.value.unitCost || 0)
+})
+
+// Real-time value calculator for OUT form
+const outTotalValue = computed(() => {
+  if (!selectedOutMaterial.value || !outForm.value.quantity || outForm.value.quantity <= 0) return 0
+  const displayCost = getDisplayCost(selectedOutMaterial.value.cost || 0, selectedOutMaterial.value.unit)
+  return outForm.value.quantity * displayCost
+})
+
+// Rentability alert: cost >= expected sale revenue
+const showRentabilityAlert = computed(() => {
+  if (!outForm.value.expectedSaleValue || outForm.value.expectedSaleValue <= 0) return false
+  return outTotalValue.value >= outForm.value.expectedSaleValue
+})
 
 // Options for SearchableSelect components
 const materialOptions = computed(() => {
@@ -166,6 +218,12 @@ const getDisplayQuantity = (quantity: number, unit: string) => {
   return quantity.toFixed(2)
 }
 
+// Convert backend cost (per g/ml/unit) to display cost (per kg/L/unit)
+const getDisplayCost = (cost: number, unit: string): number => {
+  if (unit === 'g' || unit === 'ml') return cost * 1000
+  return cost
+}
+
 const getMovementValue = (m: any) => {
   if (!m.rawMaterial || !m.rawMaterial.quantity || !m.rawMaterial.cost) return 0
   // Value = movement amount * unit cost
@@ -218,6 +276,44 @@ const fetchMovements = async () => {
   }
 }
 
+const fetchTodaySuggestions = async () => {
+  if (isLoadingSuggestions.value) return
+  isLoadingSuggestions.value = true
+  try {
+    const today = getEcuadorDate()
+    const response = await SupplierOrderService.getOrders({
+      startDate: today,
+      endDate: today,
+      status: 'SENT', // Only suggested orders already sent to providers
+      limit: 10
+    })
+    suggestedOrders.value = response.orders
+  } catch (err: any) {
+    console.error('Error fetching suggestions:', err)
+  } finally {
+    isLoadingSuggestions.value = false
+  }
+}
+
+const applySuggestion = (order: any, item: any) => {
+  inForm.value = {
+    ...inForm.value,
+    rawMaterial: item.material._id || item.material,
+    quantity: item.quantity,
+    provider: order.provider?._id || order.provider,
+    observation: `[PEDIDO SUGERIDO] ${order.whatsappMessage ? 'Basado en orden #' + order._id.slice(-4) : ''}`,
+    suggestedOrderId: order._id
+  }
+
+  // Also try to find the material to set the cost if it has it in catalogue
+  const mat = materials.value.find((m: any) => (m._id === (item.material._id || item.material)))
+  if (mat) {
+    inForm.value.unitCost = getDisplayCost(mat.cost || 0, mat.unit)
+  }
+
+  success(`Formulario autocompletado con: ${item.name}`)
+}
+
 const handleFilterChange = (newFilters: any) => {
   activeFilters.value = newFilters
   currentPage.value = 1 // Reset to first page
@@ -235,6 +331,8 @@ const updateDateTime = () => {
     inForm.value.time = time
     outForm.value.date = date
     outForm.value.time = time
+    lossForm.value.date = date
+    lossForm.value.time = time
   }
 }
 
@@ -259,7 +357,6 @@ const confirmIn = async () => {
   }
 
   // Combine Date and Time as local Ecuador time
-  // We create a string "YYYY-MM-DDTHH:mm:00-05:00" to ensure backend parses as ECU
   const combinedDate = `${inForm.value.date}T${inForm.value.time}:00-05:00`
 
   // Convert quantity to backend units
@@ -267,17 +364,36 @@ const confirmIn = async () => {
     ? toBackendQuantity(inForm.value.quantity, selectedInMaterial.value.unit)
     : inForm.value.quantity
 
+  // Convert unitCost back to backend units (per g/ml/unit) for storage
+  const unit = selectedInMaterial.value?.unit ?? ''
+  const backendUnitCost = (unit === 'g' || unit === 'ml')
+    ? inForm.value.unitCost / 1000
+    : inForm.value.unitCost
+
   try {
     await WarehouseService.createMovement({
       type: 'IN',
       ...inForm.value,
-      quantity: backendQty, // Send converted quantity
+      quantity: backendQty,       // backend units (g / ml / u)
+      unitCost: backendUnitCost,  // backend units (USD/g or USD/ml) — for audit trail
+      totalValue: inTotalValue.value, // pre-computed total in USD
       date: combinedDate,
-      user: user._id // Send user ID explicitly
+      user: user._id
     })
 
-    const unit = selectedInMaterial.value ? getDisplayUnit(selectedInMaterial.value.unit) : ''
-    success(`<i class="fa-solid fa-clipboard-check"></i> Recepción registrada: <strong>${inForm.value.quantity} ${unit}</strong> de ${selectedInMaterial.value?.name}`)
+    const displayUnit = selectedInMaterial.value ? getDisplayUnit(selectedInMaterial.value.unit) : ''
+    success(`<i class="fa-solid fa-clipboard-check"></i> Recepción registrada: <strong>${inForm.value.quantity} ${displayUnit}</strong> de ${selectedInMaterial.value?.name}`)
+
+    // Optional: Mark suggested order as RECEIVED
+    if (inForm.value.suggestedOrderId) {
+      try {
+        await SupplierOrderService.updateOrder(inForm.value.suggestedOrderId, { status: 'RECEIVED' })
+        fetchTodaySuggestions() // Refresh suggestions
+      } catch (e) {
+        console.error('Error updating order status:', e)
+      }
+    }
+
     // Reset but keep date/time current
     resetForms()
     updateDateTime()
@@ -316,6 +432,66 @@ const handleOutSubmit = () => {
   showOutModal.value = true
 }
 
+const confirmOut = async () => {
+  isSubmitting.value = true
+  showOutModal.value = false
+
+  const userStr = localStorage.getItem('user_info')
+  const user = userStr ? JSON.parse(userStr) : null
+
+  if (!user || !user._id) {
+    showError('Error de sesión: No se encontró usuario.')
+    isSubmitting.value = false
+    isHolding.value = false
+    holdProgress.value = 0
+    return
+  }
+
+  const combinedDate = `${outForm.value.date}T${outForm.value.time}:00-05:00`
+
+  const backendQty = selectedOutMaterial.value
+    ? toBackendQuantity(outForm.value.quantity, selectedOutMaterial.value.unit)
+    : outForm.value.quantity
+
+  const outUnit = selectedOutMaterial.value?.unit ?? ''
+  const outBackendUnitCost = selectedOutMaterial.value
+    ? ((outUnit === 'g' || outUnit === 'ml')
+      ? getDisplayCost(selectedOutMaterial.value.cost || 0, outUnit) / 1000
+      : (selectedOutMaterial.value.cost || 0))
+    : 0
+
+  try {
+    await WarehouseService.createMovement({
+      type: 'OUT',
+      ...outForm.value,
+      quantity: backendQty,
+      unitCost: outBackendUnitCost,
+      totalValue: outTotalValue.value,
+      date: combinedDate,
+      user: user._id
+    })
+
+    const unit = selectedOutMaterial.value ? getDisplayUnit(selectedOutMaterial.value.unit) : ''
+    success(`<i class="fa-solid fa-truck-moving"></i> Despacho registrado: <strong>${outForm.value.quantity} ${unit}</strong> de ${selectedOutMaterial.value?.name}`)
+
+    if (selectedOutMaterial.value) {
+      selectedOutMaterial.value.quantity -= backendQty
+    }
+    resetForms()
+    updateDateTime()
+
+    setTimeout(() => {
+      activeTab.value = 'movements'
+    }, 500)
+  } catch (err: any) {
+    showError(err.response?.data?.message || err.message || 'Error al registrar despacho')
+  } finally {
+    isSubmitting.value = false
+    isHolding.value = false
+    holdProgress.value = 0
+  }
+}
+
 // --- Hold Button Logic ---
 const startHold = () => {
   if (isSubmitting.value) return
@@ -341,63 +517,80 @@ const cancelHold = () => {
   }
 }
 
-const confirmOut = async () => {
-  isSubmitting.value = true
-  showOutModal.value = false
+// --- LOSS Logic ---
+const handleLossSubmit = () => {
+  if (!lossForm.value.rawMaterial || lossForm.value.quantity <= 0) return
 
-  // Get User
+  if (selectedLossMaterial.value) {
+    const requestQtyBackend = toBackendQuantity(lossForm.value.quantity, selectedLossMaterial.value.unit)
+    if (selectedLossMaterial.value.quantity < requestQtyBackend) {
+      const stockDisplay = getDisplayQuantity(selectedLossMaterial.value.quantity, selectedLossMaterial.value.unit)
+      const unitDisplay = getDisplayUnit(selectedLossMaterial.value.unit)
+      showError(`Error: El stock actual (${stockDisplay} ${unitDisplay}) es insuficiente para registrar esta baja.`)
+      return
+    }
+  }
+
+  showLossModal.value = true
+}
+
+const confirmLoss = async () => {
+  isSubmitting.value = true
+  showLossModal.value = false
+
   const userStr = localStorage.getItem('user_info')
   const user = userStr ? JSON.parse(userStr) : null
 
   if (!user || !user._id) {
-    showError('Error de sesión: No se encontró usuario. Recargue la página.')
+    showError('Error de sesión: No se encontró usuario.')
     isSubmitting.value = false
-    isHolding.value = false
-    holdProgress.value = 0
     return
   }
 
-  // Combine Date and Time as local Ecuador time
-  const combinedDate = `${outForm.value.date}T${outForm.value.time}:00-05:00`
+  const combinedDate = `${lossForm.value.date}T${lossForm.value.time}:00-05:00`
 
-  // Convert quantity
-  const backendQty = selectedOutMaterial.value
-    ? toBackendQuantity(outForm.value.quantity, selectedOutMaterial.value.unit)
-    : outForm.value.quantity
+  const backendQty = selectedLossMaterial.value
+    ? toBackendQuantity(lossForm.value.quantity, selectedLossMaterial.value.unit)
+    : lossForm.value.quantity
+
+  // For LOSS, we use catalog cost as loss value
+  const outUnit = selectedLossMaterial.value?.unit ?? ''
+  const lossBackendUnitCost = selectedLossMaterial.value
+    ? ((outUnit === 'g' || outUnit === 'ml')
+      ? getDisplayCost(selectedLossMaterial.value.cost || 0, outUnit) / 1000
+      : (selectedLossMaterial.value.cost || 0))
+    : 0
+
+  const lossTotalValue = lossForm.value.quantity * getDisplayCost(selectedLossMaterial.value?.cost || 0, selectedLossMaterial.value?.unit || '')
 
   try {
     await WarehouseService.createMovement({
-      type: 'OUT',
-      ...outForm.value,
-      quantity: backendQty, // Send converted
+      type: 'LOSS',
+      ...lossForm.value,
+      quantity: backendQty,
+      unitCost: lossBackendUnitCost,
+      totalValue: lossTotalValue,
       date: combinedDate,
-      user: user._id // Send user ID explicitly
+      user: user._id,
+      observation: `[${lossForm.value.reason}] ${lossForm.value.observation}`
     })
 
-    const unit = selectedOutMaterial.value ? getDisplayUnit(selectedOutMaterial.value.unit) : ''
-    success(`<i class="fa-solid fa-truck-moving"></i> Despacho registrado: <strong>${outForm.value.quantity} ${unit}</strong> de ${selectedOutMaterial.value?.name}`)
-    // Update local material quantity immediately
-    if (selectedOutMaterial.value) {
-      selectedOutMaterial.value.quantity -= backendQty
+    const unit = selectedLossMaterial.value ? getDisplayUnit(selectedLossMaterial.value.unit) : ''
+    success(`<i class="fa-solid fa-trash-can"></i> Baja registrada: <strong>${lossForm.value.quantity} ${unit}</strong> de ${selectedLossMaterial.value?.name}`)
+
+    if (selectedLossMaterial.value) {
+      selectedLossMaterial.value.quantity -= backendQty
     }
     resetForms()
     updateDateTime()
 
-    // Delay tab change for celebration
     setTimeout(() => {
       activeTab.value = 'movements'
     }, 500)
   } catch (err: any) {
-    // Check if it's an authentication error
-    if (err.status === 401 || err.response?.status === 401) {
-      showError('⚠️ Sesión expirada o token inválido. Por favor, cierre sesión y vuelva a iniciar sesión para continuar.')
-    } else {
-      showError(err.response?.data?.message || err.message || 'Error al registrar despacho')
-    }
+    showError(err.response?.data?.message || err.message || 'Error al registrar baja')
   } finally {
     isSubmitting.value = false
-    isHolding.value = false
-    holdProgress.value = 0
   }
 }
 
@@ -407,16 +600,30 @@ const resetForms = () => {
     time: getEcuadorTime(),
     rawMaterial: '',
     quantity: 0,
+    unitCost: 0,
     provider: '',
-    observation: ''
+    responsible: 'Danny',
+    observation: '',
+    suggestedOrderId: ''
   }
   outForm.value = {
     date: getEcuadorDate(),
     time: getEcuadorTime(),
     rawMaterial: '',
     quantity: 0,
+    responsible: '',
     entity: '',
-    observation: ''
+    observation: '',
+    expectedSaleValue: 0
+  }
+  lossForm.value = {
+    date: getEcuadorDate(),
+    time: getEcuadorTime(),
+    rawMaterial: '',
+    quantity: 0,
+    responsible: 'Danny',
+    observation: '',
+    reason: 'CADUCIDAD'
   }
 }
 
@@ -432,32 +639,39 @@ const formatDate = (date: string) => {
   }).format(new Date(date))
 }
 
-// Auto-select provider when material changes
+// Auto-select provider and unit cost when material changes
 watch(() => inForm.value.rawMaterial, (newMaterialId) => {
   if (newMaterialId) {
     const material = materials.value.find(m => m._id === newMaterialId)
     if (material?.provider) {
-      // Auto-seleccionar el proveedor principal
+      // Auto-select primary provider
       const providerId = typeof material.provider === 'object'
         ? material.provider._id
         : material.provider
       inForm.value.provider = providerId
     }
+    // Pre-fill unit cost in display units (editable by user if provider charges differently)
+    if (material?.cost !== undefined) {
+      inForm.value.unitCost = getDisplayCost(material.cost, material.unit)
+    }
   } else {
-    // Si se deselecciona el material, limpiar el proveedor
     inForm.value.provider = ''
+    inForm.value.unitCost = 0
   }
 })
 
 watch(activeTab, (newTab) => {
   if (newTab === 'movements') {
     fetchMovements()
+  } else if (newTab === 'in') {
+    fetchTodaySuggestions()
   }
 })
 
 onMounted(() => {
   fetchDependencies()
   fetchMovements()
+  fetchTodaySuggestions()
   // Start timer
   updateDateTime()
   dateTimeInterval = setInterval(updateDateTime, 1000)
@@ -478,25 +692,35 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Tabs -->
+    <!-- Tabs (Mobile First) -->
     <div class="tabs">
       <button 
         :class="{ active: activeTab === 'movements' }" 
         @click="activeTab = 'movements'"
       >
-        <i class="fas fa-history"></i> Historial
+        <i class="fas fa-history"></i>
+        <span class="tab-label">Historial</span>
       </button>
       <button 
         :class="{ active: activeTab === 'in' }" 
         @click="activeTab = 'in'"
       >
-        <i class="fas fa-box-open"></i> Recepción (Entrada)
+        <i class="fas fa-box-open"></i>
+        <span class="tab-label">Recepción</span>
       </button>
       <button 
         :class="{ active: activeTab === 'out' }" 
         @click="activeTab = 'out'"
       >
-        <i class="fas fa-truck-loading"></i> Despacho (Salida)
+        <i class="fas fa-truck-loading"></i>
+        <span class="tab-label">Despacho</span>
+      </button>
+      <button 
+        :class="{ active: activeTab === 'loss' }" 
+        @click="activeTab = 'loss'"
+      >
+        <i class="fas fa-trash-alt"></i>
+        <span class="tab-label">Bajas</span>
       </button>
     </div>
 
@@ -505,6 +729,7 @@ onUnmounted(() => {
       <div v-if="activeTab === 'movements'" class="movements-tab">
         <WarehouseFilters 
           :materials="materials"
+          :initialFilters="activeFilters"
           @filter="handleFilterChange"
         />
 
@@ -522,6 +747,7 @@ onUnmounted(() => {
                 <th class="text-right">Cantidad</th>
                 <th class="text-right">Valor ($)</th>
                 <th>Origen / Destino</th>
+                <th>Responsable</th>
                 <th>Usuario</th>
               </tr>
             </thead>
@@ -532,21 +758,32 @@ onUnmounted(() => {
               <tr v-for="m in movements" :key="m._id">
                 <td>{{ formatDate(m.date || m.createdAt) }}</td>
                 <td>
-                  <span class="badge" :class="m.type === 'IN' ? 'badge-in' : 'badge-out'">
-                    {{ m.type === 'IN' ? 'ENTRADA' : 'SALIDA' }}
+                  <span class="badge" :class="{
+                    'badge-in': m.type === 'IN',
+                    'badge-out': m.type === 'OUT',
+                    'badge-loss': m.type === 'LOSS'
+                  }">
+                    {{ m.type === 'IN' ? 'ENTRADA' : m.type === 'OUT' ? 'SALIDA' : 'BAJA' }}
                   </span>
                 </td>
                 <td>{{ m.rawMaterial?.name || 'Desconocido' }}</td>
                 <td class="text-right fw-600">
                   {{ getDisplayQuantity(m.quantity, m.rawMaterial?.unit) }} <span class="unit-text">{{ getDisplayUnit(m.rawMaterial?.unit) }}</span>
                 </td>
-                <td class="text-right money-cell" :class="{ 'in-value': m.type === 'IN' }">
+                <td class="text-right money-cell" :class="{ 'in-value': m.type === 'IN', 'loss-value': m.type === 'LOSS' }">
                   <span v-if="m.type === 'IN'">+ ${{ getMovementValue(m).toFixed(2) }}</span>
+                  <span v-else-if="m.type === 'LOSS'">- ${{ getMovementValue(m).toFixed(2) }}</span>
                   <span v-else class="text-muted">- ${{ getMovementValue(m).toFixed(2) }}</span>
                 </td>
                 <td>
                   <span v-if="m.type === 'IN'">{{ m.provider?.name || '-' }}</span>
+                  <span v-else-if="m.type === 'LOSS'">Pérdida Directa</span>
                   <span v-else>{{ m.entity || '-' }}</span>
+                </td>
+                <td>
+                  <span class="responsible-tag">
+                    <i class="fas fa-user-tag"></i> {{ m.responsible || '-' }}
+                  </span>
                 </td>
                 <td>{{ m.user?.name || 'Sistema' }}</td>
               </tr>
@@ -571,6 +808,36 @@ onUnmounted(() => {
 
       <!-- RECEPCION (IN) -->
       <div v-if="activeTab === 'in'" class="form-tab in-tab">
+        <!-- SUGGESTIONS SECTION -->
+        <div v-if="suggestedOrders.length > 0" class="suggestions-section">
+          <div class="suggestions-header">
+             <div class="suggestions-title">
+               <i class="fas fa-magic"></i>
+               <h3>Sugerencias de Hoy</h3>
+             </div>
+             <p>Haz clic en un ítem para autocompletar el formulario de recepción.</p>
+          </div>
+          <div class="suggestions-grid">
+            <template v-for="order in suggestedOrders" :key="order._id">
+              <div 
+                v-for="(item, idx) in order.items" 
+                :key="order._id + '-' + idx"
+                class="suggestion-card"
+                @click="applySuggestion(order, item)"
+              >
+                <div class="suggestion-card__main">
+                  <span class="suggestion-card__material">{{ item.name }}</span>
+                  <span class="suggestion-card__qty">{{ item.quantity }} {{ getDisplayUnit(item.unit) }}</span>
+                </div>
+                <div class="suggestion-card__footer">
+                  <i class="fas fa-truck"></i>
+                  <span>{{ order.provider?.name || 'Proveedor' }}</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
         <div class="form-card">
           <h2>Registrar Recepción</h2>
           <div class="form-row">
@@ -601,6 +868,41 @@ onUnmounted(() => {
             <label>Cantidad ({{ selectedInMaterial ? getDisplayUnit(selectedInMaterial.unit) : 'Unidad' }})</label>
             <input type="number" v-model.number="inForm.quantity" min="0" step="0.01" />
           </div>
+
+          <!-- IN: Editable unit cost field -->
+          <div v-if="selectedInMaterial" class="form-group">
+            <label>
+              Costo por {{ getDisplayUnit(selectedInMaterial.unit) }}
+              <span class="label-optional">(USD / {{ getDisplayUnit(selectedInMaterial.unit) }} — editable si el proveedor cobra diferente)</span>
+            </label>
+            <div class="input-prefix-wrapper">
+              <span class="input-prefix">USD</span>
+              <input
+                type="number"
+                v-model.number="inForm.unitCost"
+                min="0"
+                step="0.0001"
+                placeholder="0.0000"
+              />
+            </div>
+          </div>
+
+          <!-- IN: Real-time value calculator -->
+          <div v-if="selectedInMaterial && inForm.quantity > 0 && inForm.unitCost > 0" class="value-calculator value-calculator--in">
+            <div class="value-calculator__header">
+              <i class="fas fa-calculator"></i>
+              <span>Valor total de esta recepción</span>
+            </div>
+            <div class="value-calculator__amount">
+              USD ${{ inTotalValue.toFixed(2) }}
+            </div>
+            <p class="value-calculator__hint">
+              {{ inForm.quantity }} {{ getDisplayUnit(selectedInMaterial.unit) }}
+              × USD ${{ inForm.unitCost.toFixed(4) }} / {{ getDisplayUnit(selectedInMaterial.unit) }}
+              &nbsp;— Verifica que coincida con la factura del proveedor.
+            </p>
+          </div>
+
           <div class="form-group">
             <label>Proveedor (Opcional)</label>
             <SearchableSelect
@@ -608,6 +910,10 @@ onUnmounted(() => {
               :options="filteredProviderOptions"
               placeholder="Buscar proveedor..."
             />
+          </div>
+          <div class="form-group">
+            <label>Responsable de Recepción (Bodeguero)</label>
+            <input type="text" v-model="inForm.responsible" placeholder="Nombre completo..." />
           </div>
           <div class="form-group">
             <label>Observación</label>
@@ -656,6 +962,46 @@ onUnmounted(() => {
                Excede el stock actual ({{ getDisplayQuantity(selectedOutMaterial.quantity, selectedOutMaterial.unit) }} {{ getDisplayUnit(selectedOutMaterial.unit) }})
             </span>
           </div>
+
+          <!-- OUT: Real-time value of dispatch -->
+          <div v-if="selectedOutMaterial && outForm.quantity > 0" class="value-calculator value-calculator--out">
+            <div class="value-calculator__header">
+              <i class="fas fa-boxes"></i>
+              <span>Valor del despacho</span>
+            </div>
+            <div class="value-calculator__amount">
+              USD ${{ outTotalValue.toFixed(2) }}
+            </div>
+            <p class="value-calculator__hint">
+              {{ outForm.quantity }} {{ getDisplayUnit(selectedOutMaterial.unit) }}
+              × USD ${{ getDisplayCost(selectedOutMaterial.cost || 0, selectedOutMaterial.unit).toFixed(4) }} / {{ getDisplayUnit(selectedOutMaterial.unit) }}
+            </p>
+          </div>
+
+          <!-- OUT: Rentability check -->
+          <div class="form-group">
+            <label>Venta esperada de producción <span class="label-optional">(Opcional — para control de rentabilidad)</span></label>
+            <div class="input-prefix-wrapper">
+              <span class="input-prefix">$</span>
+              <input type="number" v-model.number="outForm.expectedSaleValue" min="0" step="0.01" placeholder="Ej: 6000" />
+            </div>
+          </div>
+
+          <!-- Rentability Alert -->
+          <div v-if="showRentabilityAlert" class="rentability-alert">
+            <div class="rentability-alert__icon">⚠️</div>
+            <div class="rentability-alert__body">
+              <strong>ALERTA DE RENTABILIDAD</strong>
+              <p>
+                El valor de los insumos despachados
+                (<strong>${{ outTotalValue.toFixed(2) }}</strong>) no permite alcanzar el margen proyectado
+                para esta producción (<strong>${{ outForm.expectedSaleValue.toFixed(2) }}</strong>).
+              </p>
+              <p class="rentability-alert__sub">
+                🔍 Posible Error: Revisar cantidades en el reporte de entrega o error en la planificación inicial.
+              </p>
+            </div>
+          </div>
           <div class="form-group">
             <label>Destino (Entidad)</label>
             <SearchableSelect
@@ -665,12 +1011,85 @@ onUnmounted(() => {
             />
           </div>
           <div class="form-group">
+            <label>Recibido por (Responsable)</label>
+            <input type="text" v-model="outForm.responsible" placeholder="Ej: Bryan, Danny, Saraí..." />
+            <div class="suggested-tags">
+               <span v-for="name in ['Bryan', 'Danny', 'Saraí']" :key="name" class="tag" @click="outForm.responsible = name">
+                 {{ name }}
+               </span>
+            </div>
+          </div>
+          <div class="form-group">
             <label>Observación</label>
             <textarea v-model="outForm.observation" rows="2"></textarea>
           </div>
           <div class="actions">
              <button class="btn-primary" @click="handleOutSubmit" :disabled="isSubmitting || !outForm.rawMaterial || outForm.quantity <= 0 || !outForm.entity">
                {{ isSubmitting ? 'Guardando...' : 'Registrar Salida' }}
+             </button>
+          </div>
+        </div>
+      </div>
+      <!-- BAJAS (LOSS) -->
+      <div v-if="activeTab === 'loss'" class="form-tab loss-tab">
+        <div class="form-card">
+          <h2>Registrar Baja de Inventario</h2>
+          <div class="form-row">
+            <div class="form-group half">
+              <label>Fecha</label>
+              <div class="readonly-display">
+                <i class="fas fa-calendar-day"></i>
+                <span>{{ lossForm.date }}</span>
+              </div>
+            </div>
+            <div class="form-group half">
+              <label>Hora</label>
+              <div class="readonly-display">
+                <i class="fas fa-clock"></i>
+                <span>{{ lossForm.time }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Materia Prima</label>
+            <SearchableSelect
+              v-model="lossForm.rawMaterial"
+              :options="materialOptions"
+              placeholder="Buscar materia prima..."
+            />
+          </div>
+          <div class="form-group">
+            <label>Cantidad a dar de baja ({{ selectedLossMaterial ? getDisplayUnit(selectedLossMaterial.unit) : 'Unidad' }})</label>
+            <input type="number" v-model.number="lossForm.quantity" min="0" step="0.01" />
+            <span v-if="selectedLossMaterial && selectedLossMaterial.quantity < toBackendQuantity(lossForm.quantity, selectedLossMaterial.unit)" class="error-text">
+               Stock insuficiente ({{ getDisplayQuantity(selectedLossMaterial.quantity, selectedLossMaterial.unit) }} {{ getDisplayUnit(selectedLossMaterial.unit) }})
+            </span>
+          </div>
+
+          <div class="form-group">
+            <label>Motivo de la Baja</label>
+            <select v-model="lossForm.reason">
+              <option value="CADUCIDAD">CADUCIDAD</option>
+              <option value="MAL_ESTADO">MAL ESTADO / DAÑADO</option>
+              <option value="ROBO_EXTRAVIO">ROBO / EXTRAVÍO</option>
+              <option value="ERROR_PESAJE">ERROR DE PESAJE</option>
+              <option value="OTRO">OTRO</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Responsable</label>
+            <input type="text" v-model="lossForm.responsible" placeholder="Nombre de quien registra..." />
+          </div>
+
+          <div class="form-group">
+            <label>Observación Detallada</label>
+            <textarea v-model="lossForm.observation" rows="3" placeholder="Ej: Lote expirado el 20/02..."></textarea>
+          </div>
+
+          <div class="actions">
+             <button class="btn-primary btn-loss" @click="handleLossSubmit" :disabled="isSubmitting || !lossForm.rawMaterial || lossForm.quantity <= 0">
+               {{ isSubmitting ? 'Guardando...' : 'Registrar Baja' }}
              </button>
           </div>
         </div>
@@ -691,6 +1110,8 @@ onUnmounted(() => {
          <ul class="modal-list">
            <li><strong>Materia Prima:</strong> {{ selectedInMaterial?.name }}</li>
            <li><strong>Cantidad:</strong> {{ inForm.quantity }} {{ selectedInMaterial ? getDisplayUnit(selectedInMaterial.unit) : '' }}</li>
+           <li><strong>Costo unitario:</strong> <span class="modal-value">USD ${{ inForm.unitCost.toFixed(4) }} / {{ selectedInMaterial ? getDisplayUnit(selectedInMaterial.unit) : '' }}</span></li>
+           <li><strong>Total recepción:</strong> <span class="modal-value">USD ${{ inTotalValue.toFixed(2) }}</span></li>
            <li><strong>Proveedor:</strong> {{providers.find(p => p._id === inForm.provider)?.name || 'N/A'}}</li>
          </ul>
       </template>
@@ -704,8 +1125,13 @@ onUnmounted(() => {
          <ul class="modal-list">
            <li><strong>Materia Prima:</strong> {{ selectedOutMaterial?.name }}</li>
            <li><strong>Cantidad:</strong> {{ outForm.quantity }} {{ selectedOutMaterial ? getDisplayUnit(selectedOutMaterial.unit) : '' }}</li>
+           <li><strong>Valor del despacho:</strong> <span class="modal-value">${{ outTotalValue.toFixed(4) }}</span></li>
            <li><strong>Destino:</strong> {{ outForm.entity }}</li>
          </ul>
+         <!-- Inline alert inside modal -->
+         <div v-if="showRentabilityAlert" class="modal-rentability-alert">
+           ⚠️ <strong>ALERTA DE RENTABILIDAD:</strong> El costo (${{ outTotalValue.toFixed(2) }}) supera la venta esperada (${{ outForm.expectedSaleValue.toFixed(2) }}).
+         </div>
         
         <div class="hold-button-container">
           <button 
@@ -723,6 +1149,26 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <ConfirmationModal
+      :isOpen="showLossModal"
+      title="Confirmar Baja"
+      message=""
+      confirmText="Confirmar Pérdida"
+      @close="showLossModal = false"
+      @confirm="confirmLoss"
+    >
+      <template #default> 
+         <p>Se registrará una <strong>BAJA (Pérdida)</strong> de:</p>
+         <ul class="modal-list">
+           <li><strong>Materia Prima:</strong> {{ selectedLossMaterial?.name }}</li>
+           <li><strong>Cantidad:</strong> {{ lossForm.quantity }} {{ selectedLossMaterial ? getDisplayUnit(selectedLossMaterial.unit) : '' }}</li>
+           <li><strong>Motivo:</strong> {{ lossForm.reason }}</li>
+           <li><strong>Responsable:</strong> {{ lossForm.responsible }}</li>
+         </ul>
+         <p class="text-danger small">Esta acción restará el stock permanentemente.</p>
+      </template>
+    </ConfirmationModal>
 
   </div>
 </template>
@@ -748,28 +1194,72 @@ onUnmounted(() => {
   }
 }
 
-/* TABS */
+/* TABS (Mobile First) */
 .tabs {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
-  border-bottom: 1px solid $border-light;
-  padding-bottom: 1px;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #f1f5f9;
+  padding-bottom: 0;
+  overflow-x: auto;
+  scrollbar-width: none; // Firefox
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  // Chrome/Safari
+  -webkit-overflow-scrolling: touch;
+
+  // Center tabs if they don't overflow
+  @media (min-width: 640px) {
+    justify-content: flex-start;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    overflow-x: visible;
+  }
 }
 
 .tabs button {
   background: none;
   border: none;
-  padding: 0.8rem 1.5rem;
-  font-size: 1rem;
+  padding: 0.75rem 0.5rem;
+  font-size: 0.85rem;
   color: $text-light;
   cursor: pointer;
   border-bottom: 3px solid transparent;
   display: flex;
+  flex-direction: column; // Stack icon and text on very small devices
   align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
+  justify-content: center;
+  gap: 0.25rem;
+  font-weight: 700;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 80px;
+
+  @media (min-width: 480px) {
+    flex-direction: row; // Reset to horizontal for small mobiles
+    padding: 0.8rem 1.25rem;
+    font-size: 0.95rem;
+    gap: 0.5rem;
+  }
+
+  @media (min-width: 640px) {
+    flex: none;
+    padding: 1rem 2rem;
+    font-size: 1rem;
+    min-width: auto;
+  }
+
+  i {
+    font-size: 1.1rem;
+
+    @media (min-width: 640px) {
+      font-size: 1.25rem;
+    }
+  }
 
   &:hover {
     color: $NICOLE-PURPLE;
@@ -778,6 +1268,8 @@ onUnmounted(() => {
   &.active {
     color: $NICOLE-PURPLE;
     border-bottom-color: $NICOLE-PURPLE;
+    background: rgba($NICOLE-PURPLE, 0.05);
+    border-radius: 12px 12px 0 0;
   }
 }
 
@@ -860,29 +1352,18 @@ onUnmounted(() => {
   color: #c53030;
 }
 
-.text-center {
-  text-align: center;
+.badge-loss {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fee2e2;
 }
 
-.pagination {
-  padding: 1rem;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
+.text-danger {
+  color: #ef4444;
+}
 
-  button {
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    background: white;
-    border: 1px solid $border-light;
-    border-radius: 6px;
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
+.small {
+  font-size: 0.85rem;
 }
 
 /* FORMS */
@@ -979,15 +1460,29 @@ onUnmounted(() => {
   padding: 0.8rem 1.5rem;
   border-radius: 8px;
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 501;
+  transition: all 0.2s;
 
   &:hover {
     background: $purple-dark;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.2);
+  }
+
+  &.btn-loss {
+    background: #ef4444;
+
+    &:hover {
+      background: #dc2626;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);
+    }
   }
 
   &:disabled {
     opacity: 0.7;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
 }
 
@@ -1118,6 +1613,11 @@ onUnmounted(() => {
     color: #047857;
     font-weight: 700;
   }
+
+  &.loss-value {
+    color: #991b1b;
+    font-weight: 600;
+  }
 }
 
 .summary-row {
@@ -1134,6 +1634,331 @@ onUnmounted(() => {
     color: #047857;
     font-size: 1.15rem;
     border-top: 2px solid $NICOLE-PURPLE;
+  }
+}
+
+/* Value Calculator Panel */
+.value-calculator {
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.2rem;
+  border: 1px solid;
+
+  &--in {
+    background: #f0fdf4;
+    border-color: #86efac;
+
+    .value-calculator__amount {
+      color: #15803d;
+    }
+  }
+
+  &--out {
+    background: #eff6ff;
+    border-color: #93c5fd;
+
+    .value-calculator__amount {
+      color: #1d4ed8;
+    }
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $text-light;
+    margin-bottom: 0.5rem;
+  }
+
+  &__amount {
+    font-size: 1.8rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 0.4rem;
+  }
+
+  &__hint {
+    font-size: 0.78rem;
+    color: $text-light;
+    margin: 0;
+  }
+}
+
+/* Rentability Alert */
+.rentability-alert {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  background: #fff7ed;
+  border: 1.5px solid #fb923c;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.2rem;
+
+  &__icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    line-height: 1;
+    margin-top: 2px;
+  }
+
+  &__body {
+    flex: 1;
+
+    strong {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #c2410c;
+    }
+
+    p {
+      margin: 0.4rem 0 0;
+      font-size: 0.9rem;
+      color: #7c2d12;
+      line-height: 1.5;
+    }
+  }
+
+  &__sub {
+    font-size: 0.82rem !important;
+    color: #9a3412 !important;
+    margin-top: 0.5rem !important;
+  }
+}
+
+/* Rentability alert inside modal */
+.modal-rentability-alert {
+  background: #fff7ed;
+  border: 1px solid #fb923c;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.88rem;
+  color: #9a3412;
+  margin: 0.5rem 0 0;
+  text-align: left;
+}
+
+.modal-value {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+/* Optional label hint */
+.label-optional {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: $text-light;
+  margin-left: 0.25rem;
+}
+
+/* Input with $ prefix */
+.input-prefix-wrapper {
+  display: flex;
+  align-items: center;
+  border: 1px solid $border-light;
+  border-radius: 6px;
+  overflow: hidden;
+
+  &:focus-within {
+    border-color: $NICOLE-PURPLE;
+    box-shadow: 0 0 0 2px rgba($NICOLE-PURPLE, 0.1);
+  }
+
+  input {
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding-left: 0.5rem !important;
+
+    &:focus {
+      outline: none;
+      border: none;
+      box-shadow: none;
+    }
+  }
+}
+
+.input-prefix {
+  padding: 0.75rem 0.6rem 0.75rem 0.75rem;
+  background: $gray-50;
+  color: $text-light;
+  font-weight: 600;
+  font-size: 1rem;
+  border-right: 1px solid $border-light;
+  line-height: 1;
+}
+
+.responsible-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+
+  i {
+    font-size: 0.75rem;
+    color: $NICOLE-PURPLE;
+  }
+}
+
+.suggested-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+
+  .tag {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: $NICOLE-PURPLE;
+    background: rgba($NICOLE-PURPLE, 0.08);
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+
+    &:hover {
+      background: rgba($NICOLE-PURPLE, 0.15);
+      border-color: $NICOLE-PURPLE;
+    }
+  }
+}
+
+/* Suggestions Style */
+.suggestions-section {
+  background: white;
+  border: 1px solid $border-light;
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+}
+
+.suggestions-header {
+  margin-bottom: 1.25rem;
+
+  p {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: $text-light;
+  }
+}
+
+.suggestions-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: $NICOLE-PURPLE;
+
+  i {
+    font-size: 1rem;
+    filter: drop-shadow(0 0 5px rgba($NICOLE-PURPLE, 0.2));
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+}
+
+.suggestions-grid {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+
+  /* Modern scrollbar */
+  &::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+  }
+}
+
+.suggestion-card {
+  flex: 0 0 220px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  &:hover {
+    transform: translateY(-3px);
+    border-color: $NICOLE-PURPLE;
+    background: white;
+    box-shadow: 0 10px 20px rgba($NICOLE-PURPLE, 0.08);
+
+    .suggestion-card__material {
+      color: $NICOLE-PURPLE;
+    }
+  }
+
+  &__main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__material {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: $text-dark;
+    transition: color 0.2s;
+    /* Truncate text */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__qty {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: $NICOLE-PURPLE;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: $text-light;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 0.6rem;
+
+    i {
+      font-size: 0.7rem;
+    }
+
+    span {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   }
 }
 </style>

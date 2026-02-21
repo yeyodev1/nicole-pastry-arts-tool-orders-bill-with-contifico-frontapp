@@ -116,7 +116,8 @@ class APIBase {
   }
 
   private buildUrl(endpoint: string): string {
-    return `${this.baseUrl}/${endpoint}`
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint
+    return `${this.baseUrl}/${cleanEndpoint}`
   }
 
   protected getHeaders(): { [key: string]: string } {

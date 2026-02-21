@@ -121,19 +121,21 @@ onMounted(() => {
         <h1>Centro de Suministros</h1>
         <p>Gestión profesional de materia prima y adquisiciones</p>
       </div>
-      <div class="search-container">
-        <i class="fas fa-search"></i>
-        <input 
-          v-model="searchQuery" 
-          @input="handleSearch"
-          placeholder="Buscar material, código, item..." 
-          type="text"
-        />
-      </div>
-      <div class="header-actions">
-        <button class="btn-primary" @click="openModal()">
-          <i class="fas fa-plus"></i> Ingreso / Nuevo
-        </button>
+      <div class="header-controls">
+        <div class="search-container">
+          <i class="fas fa-search"></i>
+          <input 
+            v-model="searchQuery" 
+            @input="handleSearch"
+            placeholder="Buscar material..." 
+            type="text"
+          />
+        </div>
+        <div class="header-actions">
+          <button class="btn-primary" @click="openModal()">
+            <i class="fas fa-plus"></i> Ingreso / Nuevo
+          </button>
+        </div>
       </div>
     </div>
 
@@ -258,40 +260,72 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
 
   @media (min-width: 1024px) {
     flex-direction: row;
     justify-content: space-between;
     align-items: flex-end;
+    margin-bottom: 3rem;
   }
 
   .title {
     h1 {
       color: #1e293b;
-      font-size: 2.25rem;
+      font-size: 1.75rem;
       font-weight: 900;
       letter-spacing: -0.02em;
       margin: 0;
+
+      @media (min-width: 640px) {
+        font-size: 2.25rem;
+      }
     }
 
     p {
       color: #64748b;
-      font-size: 1.1rem;
-      margin-top: 0.5rem;
+      font-size: 0.95rem;
+      margin-top: 0.25rem;
       font-weight: 500;
+
+      @media (min-width: 640px) {
+        font-size: 1.1rem;
+        margin-top: 0.5rem;
+      }
     }
   }
 }
 
-.search-container {
-  flex: 1;
-  max-width: 450px;
-  position: relative;
-  margin: 1rem 0;
+.header-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+
+  @media (min-width: 768px) {
+    flex-direction: row;
+    align-items: center;
+    gap: 1.5rem;
+  }
 
   @media (min-width: 1024px) {
-    margin: 0 2rem;
+    width: auto;
+    flex: 1;
+    justify-content: flex-end;
+    margin-left: 2rem;
+  }
+}
+
+.search-container {
+  position: relative;
+  width: 100%;
+
+  @media (min-width: 768px) {
+    max-width: 350px;
+  }
+
+  @media (min-width: 1024px) {
+    max-width: 450px;
   }
 
   i {
@@ -303,14 +337,18 @@ onMounted(() => {
   }
 
   input {
-    width: 100%;
-    padding: 0.9rem 1rem 0.9rem 2.75rem;
+    padding: 0.8rem 1rem 0.8rem 2.75rem;
     border: 2px solid #e2e8f0;
     border-radius: 16px;
-    font-size: 1rem;
+    font-size: 0.95rem;
     transition: all 0.2s;
     background: white;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
+
+    @media (min-width: 640px) {
+      padding: 0.9rem 1rem 0.9rem 2.75rem;
+      font-size: 1rem;
+    }
 
     &:focus {
       outline: none;
@@ -322,15 +360,21 @@ onMounted(() => {
 
 .header-actions {
   display: flex;
-  gap: 1rem;
+  width: 100%;
+
+  @media (min-width: 768px) {
+    width: auto;
+  }
 
   .btn-primary {
-    height: 52px;
+    width: 100%;
+    height: 48px;
     border-radius: 16px;
     font-weight: 800;
     padding: 0 1.5rem;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.75rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -338,6 +382,15 @@ onMounted(() => {
     color: white;
     border: none;
     box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.2);
+    white-space: nowrap;
+
+    @media (min-width: 640px) {
+      height: 52px;
+    }
+
+    @media (min-width: 768px) {
+      width: auto;
+    }
 
     &:hover {
       transform: translateY(-2px);
