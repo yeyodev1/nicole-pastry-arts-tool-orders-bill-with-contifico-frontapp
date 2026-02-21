@@ -7,7 +7,7 @@ import POSShipmentCard from './components/POSShipmentCard.vue'
 import DeliveryModal from './components/DeliveryModal.vue'
 import BulkReceptionModal from './components/BulkReceptionModal.vue'
 import RestockDailyModal from './components/RestockDailyModal.vue'
-import ToastNotification from '@/components/ToastNotification.vue'
+import { useToast } from '@/composables/useToast'
 import POSFilterBar, { type POSFilterMode } from './components/POSFilterBar.vue'
 
 const isLoading = ref(false)
@@ -26,9 +26,7 @@ const showDeliveryModal = ref(false)
 const showRestockModal = ref(false)
 const selectedOrder = ref<POSOrder | null>(null)
 
-const toast = ref<{ show: boolean; message: string; type: 'success' | 'error' | 'info' }>({
-  show: false, message: '', type: 'success',
-})
+const { success, error: showError, info } = useToast()
 
 const fetchData = async () => {
   isLoading.value = true
@@ -53,7 +51,7 @@ const fetchData = async () => {
     orders.value = allOrders
   } catch (error) {
     console.error('Error fetching data:', error)
-    toast.value = { show: true, message: 'Error cargando información', type: 'error' }
+    showError('Error cargando información')
   } finally {
     isLoading.value = false
   }
@@ -69,27 +67,31 @@ const handleMarkAsDeliveredPrep = (order: POSOrder) => { selectedOrder.value = o
 const handleMarkAsDelivered = async (orderId: string) => {
   try {
     await POSService.markAsDelivered(orderId)
-    toast.value = { show: true, message: 'Orden marcada como entregada', type: 'success' }
+    success('Orden marcada como entregada')
     showDeliveryModal.value = false
     fetchData()
   } catch {
-    toast.value = { show: true, message: 'Error al actualizar estado', type: 'error' }
+    showError('Error al actualizar estado')
   }
 }
 
-const handleBulkSuccess = () => { toast.value = { show: true, message: 'Recepción Masiva Completada', type: 'success' }; showBulkModal.value = false; fetchData() }
-const handleRestockSuccess = () => { toast.value = { show: true, message: 'Cierre de Producción enviado exitosamente', type: 'success' }; showRestockModal.value = false }
-const handleNotification = (n: { message: string; type: 'success' | 'error' | 'info' }) => { toast.value = { show: true, ...n } }
+const handleBulkSuccess = () => { success('Recepción Masiva Completada'); showBulkModal.value = false; fetchData() }
+const handleRestockSuccess = () => { success('Cierre de Producción enviado exitosamente'); showRestockModal.value = false }
+const handleNotification = (n: { message: string; type: 'success' | 'error' | 'info' }) => {
+  if (n.type === 'success') success(n.message)
+  else if (n.type === 'error') showError(n.message)
+  else info(n.message)
+}
 
 const { isExporting, exportDispatchOrder } = useOrderExport()
 const handleExportDispatch = async () => {
-  if (orders.value.length === 0) { toast.value = { show: true, message: 'No hay pedidos para exportar', type: 'info' }; return }
+  if (orders.value.length === 0) { info('No hay pedidos para exportar'); return }
   try {
     const branchName = selectedBranch.value === 'Todas las sucursales' ? 'General (Todas)' : selectedBranch.value
     await exportDispatchOrder(orders.value, branchName)
-    toast.value = { show: true, message: 'Reporte de Entregas exportado', type: 'success' }
+    success('Reporte de Entregas exportado')
   } catch {
-    toast.value = { show: true, message: 'Error al exportar reporte', type: 'error' }
+    showError('Error al exportar reporte')
   }
 }
 
@@ -152,7 +154,7 @@ onMounted(fetchData)
     <BulkReceptionModal :is-open="showBulkModal" :dispatches="pendingDispatchesForBulk" @close="showBulkModal = false" @success="handleBulkSuccess" />
     <DeliveryModal :is-open="showDeliveryModal" :order="selectedOrder || ({} as POSOrder)" @close="showDeliveryModal = false" @confirm="handleMarkAsDelivered" />
     <RestockDailyModal :is-open="showRestockModal" :branch="selectedBranch === 'Todas las sucursales' ? 'San Marino' : selectedBranch" @close="showRestockModal = false" @success="handleRestockSuccess" @notify="handleNotification" />
-    <ToastNotification :show="toast.show" :message="toast.message" :type="toast.type" @close="toast.show = false" />
+
 
     <div class="floating-badge" :class="selectedBranch.toLowerCase().replace(/\s+/g, '-')">
       <div class="badge-icon"><i class="fa-solid fa-store"></i></div>
