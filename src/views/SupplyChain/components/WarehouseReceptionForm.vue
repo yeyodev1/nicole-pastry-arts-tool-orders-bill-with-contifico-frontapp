@@ -2,15 +2,37 @@
 import { ref, computed, watch } from 'vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import ConfirmationModal from '@/components/ConfirmationModal.vue'
+import type { RawMaterial, Provider, Option, WarehouseInForm } from '@/types/warehouse'
 
 const props = defineProps({
-  form: { type: Object, required: true },
-  materials: { type: Array, required: true },
-  providers: { type: Array, required: true },
-  suggestedOrders: { type: Array, required: true },
-  isSubmitting: { type: Boolean, required: true },
-  materialOptions: { type: Array, required: true },
-  filteredProviderOptions: { type: Array, required: true }
+  form: {
+    type: Object as () => WarehouseInForm,
+    required: true
+  },
+  materials: {
+    type: Array as () => RawMaterial[],
+    required: true
+  },
+  providers: {
+    type: Array as () => Provider[],
+    required: true
+  },
+  suggestedOrders: {
+    type: Array as () => any[],
+    required: true
+  },
+  isSubmitting: {
+    type: Boolean,
+    required: true
+  },
+  materialOptions: {
+    type: Array as () => Option[],
+    required: true
+  },
+  filteredProviderOptions: {
+    type: Array as () => Option[],
+    required: true
+  }
 })
 
 const emit = defineEmits(['submit', 'apply-suggestion', 'update:form'])
@@ -25,7 +47,7 @@ const getDisplayUnit = (unit: string) => {
 }
 
 const selectedMaterial = computed(() => {
-  return props.materials.find((m: any) => m._id === props.form.rawMaterial)
+  return props.materials.find((m: RawMaterial) => m._id === props.form.rawMaterial)
 })
 
 const totalValue = computed(() => {
@@ -34,8 +56,8 @@ const totalValue = computed(() => {
 })
 
 // Suggestion options for the redesigned selector
-const suggestionOptions = computed(() => {
-  const options: any[] = []
+const suggestionOptions = computed<Option[]>(() => {
+  const options: Option[] = []
   props.suggestedOrders.forEach((order: any) => {
     order.items.forEach((item: any, idx: number) => {
       options.push({
@@ -198,6 +220,7 @@ const confirmIn = () => {
     <ConfirmationModal
       :isOpen="showInModal"
       title="Confirmar Recepción"
+      message="Confirme los datos de la recepción de materia prima."
       @close="showInModal = false"
       @confirm="confirmIn"
     >
@@ -207,7 +230,7 @@ const confirmIn = () => {
            <li><strong>Materia Prima:</strong> {{ selectedMaterial?.name }}</li>
            <li><strong>Cantidad:</strong> {{ form.quantity }} {{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : '' }}</li>
            <li><strong>Total recepción:</strong> <span class="modal-value">USD ${{ totalValue.toFixed(2) }}</span></li>
-           <li><strong>Proveedor:</strong> {{providers.find((p: any) => p._id === form.provider)?.name || 'N/A'}}</li>
+           <li><strong>Proveedor:</strong> {{providers.find((p: Provider) => p._id === form.provider)?.name || 'N/A'}}</li>
          </ul>
       </template>
     </ConfirmationModal>
