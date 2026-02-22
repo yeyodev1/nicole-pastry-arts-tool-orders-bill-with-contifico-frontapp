@@ -35,10 +35,17 @@ onMounted(() => {
 })
 
 // Role-based Nav Logic
-const isRetail = computed(() => userRole.value === 'RetailManager')
-const isProduction = computed(() => userRole.value === 'production')
-const isSupplyChain = computed(() => userRole.value === 'SUPPLY_CHAIN_MANAGER')
-const isSales = computed(() => !userRole.value || userRole.value === 'sales' || userRole.value === 'admin') // Default/Admin
+const isRetail = computed(() => userRole.value?.toUpperCase() === 'RETAILMANAGER')
+const isProduction = computed(() => userRole.value?.toLowerCase() === 'production')
+const isSupplyChain = computed(() => userRole.value?.toUpperCase() === 'SUPPLY_CHAIN_MANAGER')
+const isSalesManager = computed(() => {
+  const role = userRole.value?.toUpperCase()
+  return role === 'SALES_MANAGER' || role === 'ADMIN' || role === 'SALES' // Including SALES temporarily for transition
+})
+const isSales = computed(() => {
+  const role = userRole.value?.toUpperCase() || ''
+  return !role || role === 'SALES' || role === 'SALES_REP' || role === 'SALES_MANAGER' || role === 'ADMIN'
+})
 </script>
 
 <template>
@@ -79,6 +86,7 @@ const isSales = computed(() => !userRole.value || userRole.value === 'sales' || 
             <router-link to="/orders/new" active-class="active">Nuevo Pedido</router-link>
             <router-link to="/reports/sales-by-responsible" active-class="active">Ventas</router-link>
             <router-link to="/reports/delivery" active-class="active">Transporte</router-link>
+            <router-link v-if="isSalesManager" to="/admin/users" active-class="active">Gestión Equipo</router-link>
           </template>
         </div>
 
@@ -114,6 +122,7 @@ const isSales = computed(() => !userRole.value || userRole.value === 'sales' || 
               <router-link to="/orders/new" @click="closeMenu">Nuevo Pedido</router-link>
               <router-link to="/reports/sales-by-responsible" @click="closeMenu">Ventas</router-link>
               <router-link to="/reports/delivery" @click="closeMenu">Transporte</router-link>
+              <router-link v-if="isSalesManager" to="/admin/users" @click="closeMenu">Gestión Equipo</router-link>
             </template>
             
             <div class="mobile-footer">

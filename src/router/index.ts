@@ -147,6 +147,12 @@ const router = createRouter({
       name: 'pos-restock-management',
       component: () => import('../views/pos/RestockManagementView.vue'),
       meta: { requiresAuth: true, role: 'RetailManager', title: 'Configuración Stock' }
+    },
+    {
+      path: '/admin/users',
+      name: 'manage-users',
+      component: () => import('../views/admin/ManagementUsersView.vue'),
+      meta: { requiresAuth: true, role: 'SALES_MANAGER', title: 'Gestión de Equipo' }
     }
   ],
 })
@@ -188,26 +194,20 @@ router.beforeEach((to, from, next) => {
 
   // 3. Role-Based Access Control logic
   if (isAuthenticated) {
-    // Production user
-    if (role === 'production' && !to.path.startsWith('/production')) {
-      next({ name: 'production-summary' })
+    // Sales Manager user
+    if (role === 'SALES_MANAGER' && (!to.path.startsWith('/orders') && !to.path.startsWith('/admin') && !to.path.startsWith('/reports'))) {
+      next({ name: 'create-order' })
       return
     }
 
-    // RetailManager user should stick to /pos
-    if (role === 'RetailManager' && !to.path.startsWith('/pos')) {
-      next({ name: 'pos-shipments' })
+    // Sales Rep user
+    if (role === 'SALES_REP' && (!to.path.startsWith('/orders') && !to.path.startsWith('/reports'))) {
+      next({ name: 'create-order' })
       return
     }
 
-    // Supply Chain user
-    if (role === 'SUPPLY_CHAIN_MANAGER' && !to.path.startsWith('/supply-chain')) {
-      next({ name: 'providers-list' })
-      return
-    }
-
-    // Sales user trying to access production or pos routes?
-    if (role === 'sales' && (to.path.startsWith('/production') || to.path.startsWith('/pos'))) {
+    // legacy sales role
+    if (role === 'sales' && (to.path.startsWith('/production') || to.path.startsWith('/pos') || to.path.startsWith('/supply-chain'))) {
       next({ name: 'create-order' })
       return
     }

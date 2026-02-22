@@ -244,15 +244,7 @@ const selectTime = (time: string) => {
         <input v-model="props.modelValue.customerPhone" required />
       </div>
       
-      <div class="form-group">
-        <label>Responsable</label>
-        <select v-model="props.modelValue.responsible">
-          <option value="Web">Web</option>
-          <option value="Hillary">Hillary</option>
-          <option value="E">E</option>
-          <option value="Ivin">Ivin</option>
-        </select>
-      </div>
+      <!-- Responsable is now automated by backend -->
     </div>
 
     <!-- Modal para nuevo motorizado -->
