@@ -12,6 +12,7 @@ interface SalesByResponsibleResponse {
     totalSales: number
     count: number
     role: string
+    commission: number
   }>
 }
 

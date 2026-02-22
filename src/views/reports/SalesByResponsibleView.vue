@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import AnalyticsService from '@/services/analytics.service'
 
 const monthlyGoal = ref(0)
@@ -29,7 +29,7 @@ const fetchStats = async () => {
   try {
     const data = await AnalyticsService.getSalesByResponsible(dateRange.value.from, dateRange.value.to)
     stats.value = data.stats
-    monthlyGoal.value = data.monthlyGoal || 13000
+    monthlyGoal.value = data.monthlyGoal || 10000
     // Calculate total explicitly for progress bar
     totalSales.value = data.stats.reduce((acc: number, curr: any) => acc + curr.totalSales, 0)
   } catch (error) {
@@ -38,6 +38,18 @@ const fetchStats = async () => {
     isLoading.value = false
   }
 }
+
+const totalCommissions = computed(() => {
+  return stats.value.reduce((acc: number, curr: any) => acc + (curr.commission || 0), 0)
+})
+
+const isManager = computed(() => {
+  const userInfoStr = localStorage.getItem('user_info')
+  if (!userInfoStr) return false
+  const user = JSON.parse(userInfoStr)
+  const role = user.role?.toUpperCase() || ''
+  return role === 'SALES_MANAGER' || role === 'ADMIN' || role === 'SALES'
+})
 
 onMounted(() => {
   initDates()
@@ -48,7 +60,13 @@ onMounted(() => {
 <template>
   <div class="report-page">
     <main class="container">
-      <h1 class="page-title">Ventas por Responsable</h1>
+      <div class="page-header">
+        <h1 class="page-title">Ventas & Comisiones</h1>
+        <router-link v-if="isManager" to="/admin/users" class="btn-config">
+          <i class="fa-solid fa-users-gear"></i>
+          Gestionar Equipo
+        </router-link>
+      </div>
       
       <div class="filters-card">
         <div class="date-group">
@@ -91,13 +109,30 @@ onMounted(() => {
 
         <!-- Summary Cards -->
          <div class="summary-card total">
-            <h3>Venta Total (Periodo)</h3>
+            <h3>Venta Total</h3>
             <p class="value">${{ totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
          </div>
+
+         <div class="summary-card commission">
+            <h3>Comisión Total Estimada</h3>
+            <p class="value total-commission">${{ totalCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+         </div>
+
          <div class="summary-card count">
             <h3>Total Pedidos</h3>
             <p class="value">{{stats.reduce((acc, curr) => acc + curr.count, 0)}}</p>
          </div>
+      </div>
+
+      <!-- Tiers Explanation (New UX) -->
+      <div class="commission-info-bar">
+        <div class="info-item">
+          <i class="fas fa-info-circle"></i>
+          <span><strong>REGLAS DE COMISIÓN:</strong></span>
+          <span class="tier">$10k-$13k: <strong>5%</strong></span>
+          <span class="tier">$13k-$16k: <strong>10%</strong></span>
+          <span class="tier">>$16k: <strong>15%</strong></span>
+        </div>
       </div>
 
       <div v-if="!isLoading" class="table-container">
@@ -106,9 +141,10 @@ onMounted(() => {
             <tr>
               <th>Responsable</th>
               <th>Rol</th>
-              <th>Cantidad Pedidos</th>
+              <th>Pedidos</th>
               <th>Total Ventas</th>
               <th>% del Total</th>
+              <th>Comisión</th>
             </tr>
           </thead>
           <tbody>
@@ -121,17 +157,23 @@ onMounted(() => {
                  <span class="role-badge" :class="stat.role.toLowerCase()">{{ stat.role }}</span>
                </td>
                <td>{{ stat.count }}</td>
-               <td class="amount">${{ stat.totalSales.toFixed(2) }}</td>
-               <td>
+               <td class="amount">${{ stat.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</td>
+               <td class="percentage">
                  {{
                   totalSales > 0
                     ? ((stat.totalSales / totalSales) * 100).toFixed(1)
                     : '0.0'
                 }}%
                </td>
+               <td class="commission-cell">
+                 <span v-if="stat.commission > 0" class="commission-value">
+                   ${{ stat.commission.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}
+                 </span>
+                 <span v-else class="no-commission">-</span>
+               </td>
             </tr>
             <tr v-if="stats.length === 0">
-              <td colspan="5" class="empty-cell">No hay datos en este rango de fechas</td>
+              <td colspan="6" class="empty-cell">No hay datos en este rango de fechas</td>
             </tr>
           </tbody>
         </table>
@@ -158,6 +200,40 @@ onMounted(() => {
     font-family: $font-principal;
     color: $NICOLE-PURPLE;
     font-size: 1.5rem;
+  }
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.btn-config {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: white;
+  color: $NICOLE-PURPLE;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  border: 1px solid rgba($NICOLE-PURPLE, 0.2);
+  font-weight: 600;
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+
+  &:hover {
+    background-color: rgba($NICOLE-PURPLE, 0.03);
+    border-color: $NICOLE-PURPLE;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  i {
+    font-size: 1rem;
   }
 }
 
@@ -205,6 +281,37 @@ onMounted(() => {
   margin-bottom: 2rem;
 }
 
+.commission-info-bar {
+  background: #fdf2f8;
+  border: 1px solid #fbcfe8;
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+
+  .info-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    color: $NICOLE-PURPLE;
+    font-size: 0.9rem;
+
+    i {
+      font-size: 1.1rem;
+    }
+
+    .tier {
+      background: white;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid #f9a8d4;
+      font-family: monospaced;
+    }
+  }
+}
+
 .summary-card {
   background: white;
   padding: 1.5rem;
@@ -227,6 +334,14 @@ onMounted(() => {
     font-weight: 700;
     color: $NICOLE-PURPLE;
     margin: 0;
+  }
+
+  &.commission {
+    border-left: 4px solid #f59e0b; // Amber highlight for commission
+
+    .total-commission {
+      color: #b45309;
+    }
   }
 
   /* Goal Card Specifics */
@@ -336,6 +451,23 @@ onMounted(() => {
         &.amount {
           font-weight: 600;
           color: $NICOLE-SECONDARY;
+        }
+
+        &.commission-cell {
+          text-align: right;
+          font-weight: 700;
+
+          .commission-value {
+            color: #b45309;
+            background: #fef3c7;
+            padding: 0.25rem 0.5rem;
+            border-radius: 6px;
+          }
+
+          .no-commission {
+            color: $text-light;
+            font-weight: 400;
+          }
         }
 
         &:last-child {
