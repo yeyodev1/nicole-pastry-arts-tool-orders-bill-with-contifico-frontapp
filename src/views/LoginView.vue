@@ -24,7 +24,7 @@ const handleLogin = async () => {
       if (response.user) {
         localStorage.setItem('user_info', JSON.stringify(response.user))
       }
-      router.push('/orders/new')
+      router.push('/')
     }
   } catch (err: any) {
     if (err.status === 401 || err.message === 'USER_NOT_FOUND' || err.message === 'PASSWORD_INCORRECT') {

@@ -14,7 +14,6 @@ const router = createRouter({
           try {
             const user = JSON.parse(userInfoStr)
             if (user?.role === 'production') return { name: 'production-summary' }
-            if (user?.role === 'production') return { name: 'production-summary' }
             if (user?.role === 'RetailManager') return { name: 'pos-shipments' }
             if (user?.role === 'SUPPLY_CHAIN_MANAGER') return { name: 'providers-list' }
             return { name: 'create-order' }
@@ -185,7 +184,6 @@ router.beforeEach((to, from, next) => {
   // 2. Redirect authenticated users away from login page
   if (to.name === 'login' && isAuthenticated) {
     if (role === 'production') next({ name: 'production-summary' })
-    if (role === 'production') next({ name: 'production-summary' })
     else if (role === 'RetailManager') next({ name: 'pos-shipments' })
     else if (role === 'SUPPLY_CHAIN_MANAGER') next({ name: 'providers-list' })
     else next({ name: 'create-order' })
@@ -209,6 +207,24 @@ router.beforeEach((to, from, next) => {
     // legacy sales role
     if (role === 'sales' && (to.path.startsWith('/production') || to.path.startsWith('/pos') || to.path.startsWith('/supply-chain'))) {
       next({ name: 'create-order' })
+      return
+    }
+
+    // Production guard
+    if (role === 'production' && !to.path.startsWith('/production')) {
+      next({ name: 'production-summary' })
+      return
+    }
+
+    // Retail Manager guard
+    if (role === 'RetailManager' && !to.path.startsWith('/pos')) {
+      next({ name: 'pos-shipments' })
+      return
+    }
+
+    // Supply Chain Manager guard
+    if (role === 'SUPPLY_CHAIN_MANAGER' && !to.path.startsWith('/supply-chain')) {
+      next({ name: 'inventory-summary' })
       return
     }
   }
