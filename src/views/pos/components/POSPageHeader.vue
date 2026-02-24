@@ -24,6 +24,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  selectedCount: {
+    type: Number,
+    default: 0,
+  }
 })
 
 const emit = defineEmits<{
@@ -50,11 +54,18 @@ const branchOptions = computed(() =>
     </div>
 
     <div class="controls">
-      <Transition name="bulk-btn">
-        <button v-if="hasPendingDispatches" class="btn-bulk" @click="emit('open-bulk')">
+      <div class="main-actions">
+        <button class="btn-restock" @click="emit('open-restock')">
+          <i class="fa-solid fa-clipboard-check"></i> Cierre de Producción (Reposición)
+        </button>
+
+        <button 
+          class="btn-bulk" 
+          @click="emit('open-bulk')"
+        >
           <i class="fa-solid fa-boxes-stacked"></i> Recepción Masiva
         </button>
-      </Transition>
+      </div>
 
       <div class="separator"></div>
 
@@ -78,7 +89,7 @@ const branchOptions = computed(() =>
 
       <button class="btn-export-dispatch" :class="{ 'is-loading': isExporting }" @click="emit('export')">
         <i :class="isExporting ? 'fas fa-spinner fa-spin' : 'fas fa-file-excel'"></i>
-        {{ isExporting ? 'Exportando...' : 'Exportar Reporte' }}
+        {{ isExporting ? 'Exportando...' : (selectedCount > 0 ? `Exportar Reporte (${selectedCount})` : 'Exportar Reporte') }}
       </button>
     </div>
   </div>
@@ -148,6 +159,48 @@ $tablet: 768px;
   }
 }
 
+.main-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+
+  @include from-tablet {
+    flex-direction: row;
+    width: auto;
+    gap: 0.5rem;
+  }
+}
+
+.btn-restock {
+  background: $NICOLE-PURPLE;
+  color: white;
+  border: none;
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+  width: 100%;
+  font-size: 0.95rem;
+  box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.2);
+
+  @include from-tablet {
+    width: auto;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.9rem;
+  }
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba($NICOLE-PURPLE, 0.3);
+  }
+}
+
 .btn-export-dispatch {
   background: #F0FDF4;
   color: #16A34A;
@@ -209,6 +262,20 @@ $tablet: 768px;
   &:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 14px rgba($NICOLE-SECONDARY, 0.3);
+  }
+
+  &.is-disabled {
+    background: #F1F5F9;
+    color: #94A3B8;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+    border: 1px solid #E2E8F0;
+
+    &:hover {
+      background: #F1F5F9;
+      transform: none;
+    }
   }
 }
 

@@ -53,6 +53,7 @@ export interface POSFilters {
   filterMode?: string;
   date?: string;
   receivedOnly?: boolean;
+  receptionStatus?: string | string[];
 }
 
 class POSService extends APIBase {
@@ -65,6 +66,14 @@ class POSService extends APIBase {
       if (filters.search) url += `&search=${encodeURIComponent(filters.search)}`
       if (filters.filterMode) url += `&filterMode=${encodeURIComponent(filters.filterMode)}`
       if (filters.date) url += `&date=${encodeURIComponent(filters.date)}`
+
+      if (filters.receptionStatus) {
+        if (Array.isArray(filters.receptionStatus)) {
+          filters.receptionStatus.forEach(s => url += `&receptionStatus=${encodeURIComponent(s)}`)
+        } else {
+          url += `&receptionStatus=${encodeURIComponent(filters.receptionStatus)}`
+        }
+      }
 
       const response = await this.get<{ data: POSOrder[] }>(url)
       return response.data.data
@@ -123,6 +132,19 @@ class POSService extends APIBase {
       return response.data
     } catch (error) {
       console.error('Error marking as delivered:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Mark an order as settled in a physical island branch
+   */
+  async settleInIsland(orderId: string, islandName: string): Promise<any> {
+    try {
+      const response = await this.put(`pos/orders/${orderId}/settle`, { islandName })
+      return response.data
+    } catch (error) {
+      console.error('Error settling in island:', error)
       throw error
     }
   }

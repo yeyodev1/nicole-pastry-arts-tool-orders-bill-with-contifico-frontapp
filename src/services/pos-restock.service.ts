@@ -9,6 +9,7 @@ export interface RestockItem {
     stockFinal: number;
     bajas: number;
     pedidoSugerido: number;
+    pedidoFinal: number;
     date: string;
     detailedLosses?: DetailedLoss[];
   };
@@ -35,6 +36,7 @@ export interface RestockEntryItem {
   bajas: number;
   bajasNote?: string;
   stockFinal: number; // This is the 'excedente'
+  pedidoFinal: number;
   detailedLosses?: DetailedLoss[];
 }
 

@@ -13,12 +13,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'success'): void;
+  (e: 'open-restock'): void;
 }>();
 
 const isProcessing = ref(false);
 const bulkNotes = ref('');
 type BulkFilterMode = 'yesterday' | 'today' | 'tomorrow' | 'today_tomorrow' | 'all';
-const filterMode = ref<BulkFilterMode>('today');
+const filterMode = ref<BulkFilterMode>('all');
 
 // --- CONSOLIDATED LOGIC ---
 
@@ -65,9 +66,9 @@ const calculateConsolidated = () => {
   const tomorrowStr = getDStr(tomorrow);
 
   props.dispatches.forEach(d => {
-    // Status Check
+    // Status Check: Show PENDING or PROBLEM
     const status = d.dispatch.receptionStatus;
-    if (status && status !== 'PENDING') return;
+    if (status && !['PENDING', 'PROBLEM'].includes(status)) return;
 
     // Standardized date parsing for EC
     const dDateObj = parseECTDate(d.deliveryDate);
@@ -157,12 +158,24 @@ const handleConfirm = async () => {
   });
 
   try {
-    const promises = Array.from(dispatchUpdates.entries()).map(([dispatchId, data]) => {
-      return POSService.confirmReception(data.orderId, dispatchId, {
+    const promises = Array.from(dispatchUpdates.entries()).map(async ([dispatchId, data]) => {
+      // 1. Confirm reception first
+      await POSService.confirmReception(data.orderId, dispatchId, {
         receivedBy: 'Encargado POS (Masivo)',
         receptionNotes: bulkNotes.value || 'Recepción Masiva General',
         items: data.items
       });
+
+      // 2. Automagically "Settle in Island" (Mark as Restocked)
+      // Find the order in props.dispatches to get its branch
+      const orderData = props.dispatches.find(d => d.orderId === data.orderId);
+      if (orderData && orderData.branch) {
+        try {
+          await POSService.settleInIsland(data.orderId, orderData.branch);
+        } catch (sErr) {
+          console.warn(`Non-blocking error settling order ${data.orderId}:`, sErr);
+        }
+      }
     });
 
     await Promise.all(promises);
@@ -188,7 +201,13 @@ const handleConfirm = async () => {
             <h3><i class="fa-solid fa-boxes-stacked"></i> Recepción General Masiva</h3>
             <p>Verifica y recibe el total de productos del camión.</p>
         </div>
-        <button class="btn-close" @click="$emit('close')"><i class="fa-solid fa-times"></i></button>
+        <div class="header-actions">
+            <button class="btn-restock-shortcut" @click="emit('open-restock')" title="Ir a Cierre de Producción (Reposición)">
+              <i class="fa-solid fa-clipboard-check"></i>
+              <span>Hacer Reposición</span>
+            </button>
+            <button class="btn-close" @click="$emit('close')"><i class="fa-solid fa-times"></i></button>
+        </div>
       </div>
 
       <div class="modal-body">
@@ -209,6 +228,11 @@ const handleConfirm = async () => {
             <p v-else-if="filterMode === 'tomorrow'">No hay ítems para <strong>MAÑANA</strong>.</p>
             <p v-else-if="filterMode === 'today_tomorrow'">No hay ítems para <strong>HOY Y MAÑANA</strong>.</p>
             <p v-else>No hay ítems pendientes en general.</p>
+
+            <button class="btn-restock-empty" @click="emit('open-restock')">
+                <i class="fa-solid fa-clipboard-check"></i>
+                Hacer Cierre de Producción (Reposición)
+            </button>
         </div>
 
         <div v-else class="table-container">
@@ -346,6 +370,42 @@ const handleConfirm = async () => {
     &:hover {
       color: $text-dark;
     }
+  }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.btn-restock-shortcut {
+  background: white;
+  color: $NICOLE-PURPLE;
+  border: 1.2px solid $NICOLE-PURPLE;
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+
+  &:hover {
+    background: rgba($NICOLE-PURPLE, 0.05);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba($NICOLE-PURPLE, 0.1);
+  }
+
+  @media (max-width: 480px) {
+    span {
+      display: none;
+    }
+
+    padding: 0.4rem 0.6rem;
   }
 }
 
@@ -583,7 +643,7 @@ select {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
+  gap: 1.5rem;
 
   i {
     font-size: 3rem;
@@ -593,6 +653,35 @@ select {
   p {
     font-size: 1.1rem;
     margin: 0;
+  }
+
+  .btn-restock-empty {
+    margin-top: 1rem;
+    background: white;
+    color: $NICOLE-PURPLE;
+    border: 2px solid $NICOLE-PURPLE;
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    font-weight: 800;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 15px rgba($NICOLE-PURPLE, 0.1);
+
+    &:hover {
+      background: $NICOLE-PURPLE;
+      color: white;
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba($NICOLE-PURPLE, 0.25);
+    }
+
+    i {
+      font-size: 1.2rem;
+      color: inherit;
+    }
   }
 }
 </style>

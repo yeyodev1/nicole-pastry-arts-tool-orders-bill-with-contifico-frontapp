@@ -243,7 +243,8 @@ export function useOrderExport() {
       sortedOrders.forEach((order, index) => {
         const dateStr = order.deliveryDate ? formatECT(order.deliveryDate, false) : ''
         const products = order.products || []
-        const itemsStr = products.map((p: any) => `${p.quantity} ${p.name}`).join(' + ')
+        // Formatting products as a vertical list with bullet points
+        const itemsStr = products.map((p: any) => `• ${p.quantity} ${p.name}`).join('\n')
 
         let address = ''
         if (order.deliveryType === 'delivery') {
@@ -323,7 +324,10 @@ export function useOrderExport() {
               left: { style: 'thin', color: { rgb: "CCCCCC" } },
               right: { style: 'thin', color: { rgb: "CCCCCC" } }
             },
-            alignment: { vertical: 'center' }
+            alignment: {
+              vertical: 'top',
+              wrapText: true
+            }
           })
         }
       })
