@@ -25,23 +25,54 @@ const showBulkModal = ref(false)
 const showDeliveryModal = ref(false)
 const showRestockModal = ref(false)
 const selectedOrder = ref<POSOrder | null>(null)
+const selectedOrderIds = ref<Set<string>>(new Set())
+
+const isAllSelected = computed(() => {
+  if (orders.value.length === 0) return false
+  return orders.value.every(o => selectedOrderIds.value.has(o._id))
+})
+
+const toggleOrderSelection = (orderId: string) => {
+  if (selectedOrderIds.value.has(orderId)) {
+    selectedOrderIds.value.delete(orderId)
+  } else {
+    selectedOrderIds.value.add(orderId)
+  }
+}
+
+const toggleSelectAll = () => {
+  if (isAllSelected.value) {
+    selectedOrderIds.value.clear()
+  } else {
+    orders.value.forEach(o => selectedOrderIds.value.add(o._id))
+  }
+}
 
 const { success, error: showError, info } = useToast()
 
 const fetchData = async () => {
   isLoading.value = true
+  selectedOrderIds.value.clear()
   try {
     const filters = { search: searchQuery.value, filterMode: filterMode.value, date: customDate.value }
-    const [pickupData, incomingData] = await Promise.all([
+    const [pickupData, incomingData, bulkData] = await Promise.all([
       POSService.getPickupOrders(selectedBranch.value, filters),
       POSService.getIncomingDispatches(selectedBranch.value, filters),
+      POSService.getIncomingDispatches(selectedBranch.value, {
+        filterMode: 'all',
+        receptionStatus: ['PENDING', 'PROBLEM']
+      })
     ])
     const pickups = pickupData || []
     const incoming = incomingData
       .filter(o => o.posStatus === 'IN_TRANSIT')
       .flatMap(o => (o.dispatches || []).filter(d => d.receptionStatus === 'PENDING').map(d => ({ ...o, orderId: o._id, dispatch: d })))
 
-    pendingDispatchesForBulk.value = incoming
+    pendingDispatchesForBulk.value = bulkData
+      .flatMap(o => (o.dispatches || [])
+        .filter(d => ['PENDING', 'PROBLEM'].includes(d.receptionStatus))
+        .map(d => ({ ...o, orderId: o._id, dispatch: d }))
+      )
 
     const mergedMap = new Map()
     pickups.forEach(o => mergedMap.set(o._id, o))
@@ -76,7 +107,11 @@ const handleMarkAsDelivered = async (orderId: string) => {
 }
 
 const handleBulkSuccess = () => { success('Recepción Masiva Completada'); showBulkModal.value = false; fetchData() }
-const handleRestockSuccess = () => { success('Cierre de Producción enviado exitosamente'); showRestockModal.value = false }
+const handleRestockSuccess = () => {
+  success('Cierre de Producción enviado exitosamente')
+  showRestockModal.value = false
+  fetchData()
+}
 const handleNotification = (n: { message: string; type: 'success' | 'error' | 'info' }) => {
   if (n.type === 'success') success(n.message)
   else if (n.type === 'error') showError(n.message)
@@ -85,10 +120,15 @@ const handleNotification = (n: { message: string; type: 'success' | 'error' | 'i
 
 const { isExporting, exportDispatchOrder } = useOrderExport()
 const handleExportDispatch = async () => {
-  if (orders.value.length === 0) { info('No hay pedidos para exportar'); return }
+  const exportOrders = selectedOrderIds.value.size > 0
+    ? orders.value.filter(o => selectedOrderIds.value.has(o._id))
+    : orders.value
+
+  if (exportOrders.length === 0) { info('No hay pedidos para exportar'); return }
+
   try {
     const branchName = selectedBranch.value === 'Todas las sucursales' ? 'General (Todas)' : selectedBranch.value
-    await exportDispatchOrder(orders.value, branchName)
+    await exportDispatchOrder(exportOrders, branchName)
     success('Reporte de Entregas exportado')
   } catch {
     showError('Error al exportar reporte')
@@ -107,6 +147,7 @@ onMounted(fetchData)
         :hasPendingDispatches="pendingDispatchesForBulk.length > 0"
         :isLoading="isLoading"
         :isExporting="isExporting"
+        :selectedCount="selectedOrderIds.size"
         @open-restock="showRestockModal = true"
         @open-bulk="showBulkModal = true"
         @export="handleExportDispatch"
@@ -128,9 +169,16 @@ onMounted(fetchData)
 
       <div v-else class="view-content">
         <div class="info-bar" v-if="orders.length > 0">
-          <i class="fa-solid fa-circle-check"></i>
-          <strong v-if="selectedBranch === 'Todas las sucursales'">Reporte Unificado de todas las sucursales</strong>
-          <template v-else>Gestión de <strong>{{ selectedBranch }}</strong>: Pedidos listos para entrega al cliente.</template>
+          <div class="info-text">
+            <i class="fa-solid fa-circle-check"></i>
+            <strong v-if="selectedBranch === 'Todas las sucursales'">Reporte Unificado de todas las sucursales</strong>
+            <template v-else>Gestión de <strong>{{ selectedBranch }}</strong>: Pedidos listos para entrega al cliente.</template>
+          </div>
+          
+          <button class="btn-select-all" @click="toggleSelectAll">
+            <i :class="isAllSelected ? 'fa-solid fa-square-check' : 'fa-regular fa-square'"></i>
+            {{ isAllSelected ? 'Deseleccionar todos' : 'Seleccionar todos' }}
+          </button>
         </div>
 
         <div class="shipments-grid">
@@ -145,13 +193,21 @@ onMounted(fetchData)
             :key="order._id"
             :order="order"
             :selectedBranch="selectedBranch"
+            :isSelected="selectedOrderIds.has(order._id)"
             @deliver="handleMarkAsDeliveredPrep"
+            @toggle-selection="toggleOrderSelection"
           />
         </div>
       </div>
     </main>
 
-    <BulkReceptionModal :is-open="showBulkModal" :dispatches="pendingDispatchesForBulk" @close="showBulkModal = false" @success="handleBulkSuccess" />
+    <BulkReceptionModal 
+      :is-open="showBulkModal" 
+      :dispatches="pendingDispatchesForBulk" 
+      @close="showBulkModal = false" 
+      @success="handleBulkSuccess" 
+      @open-restock="showBulkModal = false; showRestockModal = true"
+    />
     <DeliveryModal :is-open="showDeliveryModal" :order="selectedOrder || ({} as POSOrder)" @close="showDeliveryModal = false" @confirm="handleMarkAsDelivered" />
     <RestockDailyModal :is-open="showRestockModal" :branch="selectedBranch === 'Todas las sucursales' ? 'San Marino' : selectedBranch" @close="showRestockModal = false" @success="handleRestockSuccess" @notify="handleNotification" />
 
@@ -210,15 +266,46 @@ $tablet: 768px;
 .info-bar {
   background: #F0F9FF;
   border: 1px solid #BAE6FD;
-  padding: 0.8rem 1rem;
+  padding: 0.6rem 1rem;
   border-radius: 8px;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
   color: #0369A1;
   font-size: 0.85rem;
   font-weight: 600;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.info-text {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
+}
+
+.btn-select-all {
+  background: transparent;
+  border: none;
+  color: #0369A1;
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(#0369A1, 0.05);
+    color: $NICOLE-PURPLE;
+  }
+
+  i {
+    font-size: 1.1rem;
+  }
 }
 
 .loading-state,

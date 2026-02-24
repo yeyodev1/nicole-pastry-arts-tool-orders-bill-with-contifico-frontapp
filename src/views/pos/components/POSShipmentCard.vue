@@ -6,17 +6,25 @@ import { useOrderHelpers } from '@/composables/useOrderHelpers'
 const props = defineProps({
   order: { type: Object as () => POSOrder, required: true },
   selectedBranch: { type: String, required: true },
+  isSelected: { type: Boolean, default: false }
 })
 
 const emit = defineEmits<{
   (e: 'deliver', order: POSOrder): void
+  (e: 'toggle-selection', orderId: string): void
 }>()
 
 const { getEffectivePaymentMethod, getStatusLabel, getStatusColorClass, calculateRemainingBalance, isOrderFullyPaid } = useOrderHelpers()
 </script>
 
 <template>
-  <div class="shipment-card" :class="getStatusColorClass(order)">
+  <div class="shipment-card" :class="[getStatusColorClass(order), { 'is-selected': isSelected }]">
+    <div class="card-selection" @click.stop="emit('toggle-selection', order._id)">
+       <div class="custom-checkbox">
+          <i v-if="isSelected" class="fa-solid fa-square-check"></i>
+          <i v-else class="fa-regular fa-square"></i>
+       </div>
+    </div>
     <div class="card-header">
       <div class="header-left">
         <div class="order-id-track">
@@ -111,6 +119,36 @@ const { getEffectivePaymentMethod, getStatusLabel, getStatusColorClass, calculat
 .shipment-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.1);
+}
+
+.shipment-card.is-selected {
+  border-color: $NICOLE-PURPLE;
+  box-shadow: 0 8px 30px rgba($NICOLE-PURPLE, 0.15);
+  background: rgba($NICOLE-PURPLE, 0.02);
+}
+
+.card-selection {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.custom-checkbox {
+  font-size: 1.4rem;
+  color: #CBD5E1;
+  transition: all 0.2s;
+
+  &:hover {
+    transform: scale(1.1);
+    color: $NICOLE-PURPLE;
+  }
+
+  .fa-square-check {
+    color: $NICOLE-PURPLE;
+  }
 }
 
 .status-blue {
