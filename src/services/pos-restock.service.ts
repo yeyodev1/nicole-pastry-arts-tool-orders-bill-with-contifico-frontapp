@@ -4,6 +4,7 @@ export interface RestockItem {
   productName: string;
   unit: string;
   isGeneral?: boolean;
+  requiresMinimum?: boolean;
   category?: 'Producción' | 'Bodega';
   stockObjectiveTomorrow: number;
   stockObjectiveToday: number;
@@ -37,6 +38,7 @@ export interface RestockEntryItem {
   productName: string;
   unit: string;
   isGeneral?: boolean;
+  requiresMinimum?: boolean;
   category?: 'Producción' | 'Bodega';
   bajas: number;
   bajasNote?: string;

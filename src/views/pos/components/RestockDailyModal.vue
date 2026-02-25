@@ -31,6 +31,7 @@ interface RestockItemData {
   productName: string;
   unit: string;
   isGeneral: boolean;
+  requiresMinimum: boolean;
   category: 'Producción' | 'Bodega';
   stockObjectiveTomorrow: number;
   stockObjectiveToday: number;
@@ -77,6 +78,7 @@ const fetchDailyForm = async () => {
           productName: item.productName,
           unit: item.unit,
           isGeneral: item.isGeneral || false,
+          requiresMinimum: item.requiresMinimum || false,
           category: item.category || 'Producción',
           stockObjectiveTomorrow: item.stockObjectiveTomorrow,
           stockObjectiveToday: item.stockObjectiveToday,
@@ -222,6 +224,7 @@ const handleQuickAdd = (newProduct: any) => {
     productName: newProduct.productName,
     unit: newProduct.unit,
     isGeneral: newProduct.isGeneral,
+    requiresMinimum: newProduct.requiresMinimum || false,
     category: newProduct.category || 'Producción',
     stockObjectiveTomorrow: 0,
     stockObjectiveToday: 0,
@@ -233,6 +236,16 @@ const handleQuickAdd = (newProduct: any) => {
 
   formItems.value.unshift(newItem);
   emit('notify', { message: `"${newProduct.productName}" agregado al reporte.`, type: 'success' });
+
+  // UX Improvement: Auto-focus the quantity field of the new item
+  // We wait for DOM update then look for the first input with a class related to quantity
+  setTimeout(() => {
+    const container = document.querySelector('.products-container');
+    if (container) {
+      const firstInput = container.querySelector('input:not([readonly])') as HTMLInputElement;
+      if (firstInput) firstInput.focus();
+    }
+  }, 100);
 };
 
 // --- Modal Control ---
@@ -313,18 +326,23 @@ watch(localBranch, () => {
                 v-for="item in formItems" 
                 :key="item.productName" 
                 class="product-item"
-                :class="{ 'zero-order': !item.isGeneral && calculatePedido(item) === 0, 'is-general-item': item.isGeneral }"
+                :class="{
+                  'zero-order': !item.isGeneral && calculatePedido(item) === 0,
+                  'is-general-item': item.isGeneral,
+                  'has-min-stock': item.requiresMinimum
+                }"
                 >
                     <div class="product-header">
                         <div class="header-left">
                           <span class="product-name">{{ item.productName }}</span>
                           <span class="unit-badge">{{ item.unit }}</span>
                           <span v-if="item.isGeneral" class="general-badge">SUMINISTRO</span>
+                          <span v-if="item.requiresMinimum" class="min-stock-badge">STOCK MIN</span>
                           <span class="dest-badge" :class="item.category.toLowerCase()">{{ item.category }}</span>
                         </div>
                         
                         <button 
-                          v-if="!item.isGeneral"
+                          v-if="!item.isGeneral || item.requiresMinimum"
                           type="button" 
                           class="btn-report-loss" 
                           :class="{ 'has-losses': item.detailedLosses.length > 0 }"
@@ -335,8 +353,8 @@ watch(localBranch, () => {
                         </button>
                     </div>
 
-                    <!-- Simplified input for General Items -->
-                    <div v-if="item.isGeneral" class="general-inputs-wrap">
+                    <!-- Simplified input for General Items (Only if NOT requiresMinimum) -->
+                    <div v-if="item.isGeneral && !item.requiresMinimum" class="general-inputs-wrap">
                         <div class="input-col">
                             <label>Cantidad a Pedir</label>
                             <div class="override-wrap">
@@ -355,7 +373,7 @@ watch(localBranch, () => {
                         </div>
                     </div>
 
-                    <!-- Standard inputs for Regular Products -->
+                    <!-- Standard inputs for Regular Products OR Supplies with Minimum Stock -->
                     <div v-else class="inputs-grid">
                         <div class="input-col">
                             <label>Bajas Totales</label>
@@ -799,6 +817,17 @@ $bg-overlay: rgba(0, 0, 0, 0.5);
   padding: 2px 6px;
   border-radius: 4px;
   letter-spacing: 0.5px;
+}
+
+.min-stock-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: #F0FDF4;
+  color: #16A34A;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  border: 1px solid #BBF7D0;
 }
 
 .dest-badge {

@@ -14,6 +14,7 @@ interface ProductConfig {
   contificoId: string; // Needed for edit/delete
   category: string;
   isGeneral: boolean;
+  requiresMinimum: boolean;
   objectives: WeeklyObjectives;
 }
 
@@ -53,6 +54,7 @@ const fetchConfiguration = async () => {
       contificoId: p.contificoId || p.id || '', // Ensure we have an ID
       category: p.category || 'General',
       isGeneral: p.isGeneral || false,
+      requiresMinimum: p.requiresMinimum || false,
       objectives: p.objectives || { monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0, sunday: 0 },
     }));
 
@@ -162,7 +164,8 @@ watch(branch, () => {
               id: editingProduct.contificoId,
               nombre: editingProduct.productName,
               unidad: editingProduct.unit,
-              isGeneral: editingProduct.isGeneral
+              isGeneral: editingProduct.isGeneral,
+              requiresMinimum: editingProduct.requiresMinimum
             } as any : undefined"
             :initial-objectives="editingProduct?.objectives"
             @close="showModal = false"
@@ -204,7 +207,7 @@ watch(branch, () => {
                               <span class="unit">{{ product.unit }}</span>
                           </td>
                            <td v-for="day in weekDays" :key="day.key" class="cell-value">
-                               <template v-if="!product.isGeneral">
+                               <template v-if="!product.isGeneral || product.requiresMinimum">
                                  <span :class="{ 'zero': product.objectives[day.key as keyof WeeklyObjectives] === 0 }">
                                    {{ product.objectives[day.key as keyof WeeklyObjectives] }}
                                  </span>

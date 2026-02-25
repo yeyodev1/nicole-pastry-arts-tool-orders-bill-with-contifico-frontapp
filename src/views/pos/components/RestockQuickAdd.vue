@@ -23,6 +23,7 @@ const isAddingManual = ref(false);
 const manualName = ref('');
 const manualUnit = ref('UND');
 const category = ref<'Producción' | 'Bodega'>('Producción');
+const requiresMinimum = ref(false);
 
 const categoryOptions = [
   { value: 'Producción', label: 'Producción' },
@@ -139,6 +140,7 @@ const addManual = async () => {
       productName: manualName.value.trim(),
       unit: manualUnit.value,
       isGeneral: true,
+      requiresMinimum: requiresMinimum.value,
       category: category.value,
       objectives: { monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0, sunday: 0 }
     };
@@ -148,6 +150,7 @@ const addManual = async () => {
       productName: manualName.value.trim(),
       unit: manualUnit.value,
       isGeneral: true,
+      requiresMinimum: requiresMinimum.value,
       category: category.value
     });
 
@@ -163,6 +166,7 @@ const resetForm = () => {
   searchResults.value = [];
   isAddingManual.value = false;
   manualName.value = '';
+  requiresMinimum.value = false;
 };
 
 const startManual = () => {
@@ -260,6 +264,10 @@ const startManual = () => {
             v-model="category"
             :options="categoryOptions"
           />
+        </div>
+        <div class="min-stock-toggle" title="¿Controlar stock mínimo diario?">
+          <input type="checkbox" v-model="requiresMinimum" id="req-min-quick">
+          <label for="req-min-quick">Meta Diaria</label>
         </div>
         <button class="btn-confirm-add" @click="addManual" :disabled="!manualName.trim()">
           <i class="fa-solid fa-check"></i>
@@ -585,6 +593,41 @@ const startManual = () => {
       background: #cbd5e1;
       opacity: 0.5;
       cursor: not-allowed;
+    }
+  }
+}
+
+.min-stock-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  height: 36px;
+  cursor: pointer;
+
+  input {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    accent-color: $NICOLE-PRIMARY;
+  }
+
+  label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  &:hover {
+    border-color: $NICOLE-PRIMARY;
+
+    label {
+      color: $NICOLE-PRIMARY;
     }
   }
 }

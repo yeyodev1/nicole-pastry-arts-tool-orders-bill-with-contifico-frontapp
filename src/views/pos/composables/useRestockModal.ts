@@ -11,6 +11,7 @@ export interface RestockProduct extends Product {
   contificoId?: string; // or id if itmaps correctly
   categoria_nombre?: string;
   isGeneral?: boolean;
+  requiresMinimum?: boolean;
   category?: 'Producción' | 'Bodega';
 }
 
@@ -34,6 +35,7 @@ export function useRestockModal(props: UseRestockModalProps) {
 
   const objectives = ref<WeeklyObjectives>({ ...defaultObjectives });
   const isGeneral = ref(false);
+  const requiresMinimum = ref(false);
   const manualName = ref('');
   const manualUnit = ref('UND');
   const category = ref<'Producción' | 'Bodega'>('Producción');
@@ -49,6 +51,7 @@ export function useRestockModal(props: UseRestockModalProps) {
       // CRITICAL: Robust isGeneral detection
       const productIsGeneral = props.initialProduct.isGeneral === true || !props.initialProduct.contificoId;
       isGeneral.value = productIsGeneral;
+      requiresMinimum.value = props.initialProduct.requiresMinimum || false;
 
       manualName.value = props.initialProduct.productName || props.initialProduct.nombre || '';
       manualUnit.value = props.initialProduct.unit || props.initialProduct.unidad || 'UND';
@@ -59,6 +62,7 @@ export function useRestockModal(props: UseRestockModalProps) {
       searchQuery.value = '';
       searchResults.value = [];
       isGeneral.value = false;
+      requiresMinimum.value = false;
       manualName.value = '';
       manualUnit.value = 'UND';
       category.value = 'Producción';
@@ -111,6 +115,7 @@ export function useRestockModal(props: UseRestockModalProps) {
     searchQuery.value = '';
     objectives.value = { ...defaultObjectives };
     isGeneral.value = false;
+    requiresMinimum.value = false;
     manualName.value = '';
     manualUnit.value = 'UND';
     category.value = 'Producción';
@@ -138,6 +143,7 @@ export function useRestockModal(props: UseRestockModalProps) {
           productName: manualName.value.trim(),
           unit: manualUnit.value || 'UND',
           isGeneral: true,
+          requiresMinimum: requiresMinimum.value,
           category: category.value,
           objectives: objectives.value
         };
@@ -179,6 +185,7 @@ export function useRestockModal(props: UseRestockModalProps) {
     selectedProduct,
     objectives,
     isGeneral,
+    requiresMinimum,
     manualName,
     manualUnit,
     category,

@@ -23,6 +23,7 @@ const {
   selectedProduct,
   objectives,
   isGeneral,
+  requiresMinimum,
   manualName,
   manualUnit,
   category,
@@ -183,13 +184,24 @@ const handleSave = async () => {
               <span class="category-badge">{{ category }}</span>
             </div>
           </div>
+          
+          <!-- New Toggle for General Items -->
+          <div v-if="isGeneral" class="min-stock-toggle-config">
+            <div class="toggle-option" :class="{ active: !requiresMinimum }" @click="requiresMinimum = false">
+              <i class="fa-solid fa-box"></i> Simple
+            </div>
+            <div class="toggle-option" :class="{ active: requiresMinimum }" @click="requiresMinimum = true">
+              <i class="fa-solid fa-chart-line"></i> Meta Diaria
+            </div>
+          </div>
+
           <button class="btn-change" @click="clearSelection">
             <i class="fa-solid fa-pen"></i> Cambiar
           </button>
         </div>
 
-        <!-- Objectives Configuration (Hidden for General Items) -->
-        <div v-if="!isGeneral" class="objectives-section">
+        <!-- Objectives Configuration (Visible if NOT isGeneral OR if requiresMinimum) -->
+        <div v-if="!isGeneral || requiresMinimum" class="objectives-section">
           <p class="instruction">
             Define el <strong>Stock Mínimo</strong> diario:
           </p>
@@ -462,6 +474,48 @@ const handleSave = async () => {
       color: $text-dark;
       border-color: $gray-300;
       color: $NICOLE-PRIMARY;
+    }
+  }
+}
+
+.min-stock-toggle-config {
+  display: flex;
+  background: white;
+  border: 1px solid #e2e8f0;
+  padding: 3px;
+  border-radius: 10px;
+  gap: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+  .toggle-option {
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #64748b;
+    border-radius: 7px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s;
+
+    i {
+      font-size: 0.8rem;
+      opacity: 0.7;
+    }
+
+    &.active {
+      background: $NICOLE-PRIMARY;
+      color: white;
+
+      i {
+        opacity: 1;
+      }
+    }
+
+    &:hover:not(.active) {
+      background: #f8fafc;
+      color: #334155;
     }
   }
 }
