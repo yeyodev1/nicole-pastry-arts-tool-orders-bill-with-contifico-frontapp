@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { posRestockService, type DailyFormData, type DetailedLoss } from '@/services/pos-restock.service';
 import RestockLossDetailModal from './RestockLossDetailModal.vue';
+import RestockQuickAdd from './RestockQuickAdd.vue';
 import ConfirmationModal from '@/components/ConfirmationModal.vue';
 import SearchableSelect from '@/components/ui/SearchableSelect.vue';
 
@@ -29,6 +30,8 @@ const goToManagement = () => {
 interface RestockItemData {
   productName: string;
   unit: string;
+  isGeneral: boolean;
+  category: 'Producción' | 'Bodega';
   stockObjectiveTomorrow: number;
   stockObjectiveToday: number;
   bajas: number;
@@ -73,6 +76,8 @@ const fetchDailyForm = async () => {
         return {
           productName: item.productName,
           unit: item.unit,
+          isGeneral: item.isGeneral || false,
+          category: item.category || 'Producción',
           stockObjectiveTomorrow: item.stockObjectiveTomorrow,
           stockObjectiveToday: item.stockObjectiveToday,
           bajas: (isToday && item.lastEntry) ? item.lastEntry.bajas : 0,
@@ -106,7 +111,7 @@ const getFinalPedido = (item: RestockItemData): number => {
 // Items whose manual override exceeds the stock objective
 const overriddenItems = computed(() =>
   formItems.value.filter(
-    item => item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow
+    item => !item.isGeneral && item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow
   )
 );
 const hasExcessiveOverride = computed(() => overriddenItems.value.length > 0);
@@ -182,6 +187,9 @@ const executeSubmission = async () => {
       submittedBy: 'POS User',
       items: formItems.value.map(item => ({
         productName: item.productName,
+        unit: item.unit,
+        isGeneral: item.isGeneral,
+        category: item.category,
         bajas: item.bajas,
         stockFinal: item.excedente,
         pedidoFinal: getFinalPedido(item),
@@ -199,6 +207,32 @@ const executeSubmission = async () => {
   } finally {
     isSubmitting.value = false;
   }
+};
+
+// --- Quick Add Logic ---
+const handleQuickAdd = (newProduct: any) => {
+  // Check if already in list
+  const exists = formItems.value.some(i => i.productName === newProduct.productName);
+  if (exists) {
+    emit('notify', { message: 'El producto ya está en el reporte.', type: 'warning' });
+    return;
+  }
+
+  const newItem: RestockItemData = {
+    productName: newProduct.productName,
+    unit: newProduct.unit,
+    isGeneral: newProduct.isGeneral,
+    category: newProduct.category || 'Producción',
+    stockObjectiveTomorrow: 0,
+    stockObjectiveToday: 0,
+    bajas: 0,
+    excedente: 0,
+    detailedLosses: [],
+    pedidoOverride: null
+  };
+
+  formItems.value.unshift(newItem);
+  emit('notify', { message: `"${newProduct.productName}" agregado al reporte.`, type: 'success' });
 };
 
 // --- Modal Control ---
@@ -268,19 +302,29 @@ watch(localBranch, () => {
             </div>
 
             <div class="products-container">
+                <!-- Quick Add Component -->
+                <RestockQuickAdd 
+                  :branch="localBranch"
+                  @add="handleQuickAdd"
+                  @close="closeModal"
+                />
+
                 <div 
                 v-for="item in formItems" 
                 :key="item.productName" 
                 class="product-item"
-                :class="{ 'zero-order': calculatePedido(item) === 0 }"
+                :class="{ 'zero-order': !item.isGeneral && calculatePedido(item) === 0, 'is-general-item': item.isGeneral }"
                 >
                     <div class="product-header">
                         <div class="header-left">
                           <span class="product-name">{{ item.productName }}</span>
                           <span class="unit-badge">{{ item.unit }}</span>
+                          <span v-if="item.isGeneral" class="general-badge">SUMINISTRO</span>
+                          <span class="dest-badge" :class="item.category.toLowerCase()">{{ item.category }}</span>
                         </div>
                         
                         <button 
+                          v-if="!item.isGeneral"
                           type="button" 
                           class="btn-report-loss" 
                           :class="{ 'has-losses': item.detailedLosses.length > 0 }"
@@ -291,7 +335,28 @@ watch(localBranch, () => {
                         </button>
                     </div>
 
-                    <div class="inputs-grid">
+                    <!-- Simplified input for General Items -->
+                    <div v-if="item.isGeneral" class="general-inputs-wrap">
+                        <div class="input-col">
+                            <label>Cantidad a Pedir</label>
+                            <div class="override-wrap">
+                                <input 
+                                    type="number" 
+                                    v-model.number="item.pedidoOverride" 
+                                    min="0" 
+                                    class="input-mini primary"
+                                    placeholder="0"
+                                >
+                            </div>
+                        </div>
+                        <div class="general-info">
+                            <i class="fa-solid fa-info-circle"></i>
+                            <span>Este item se pedirá directamente a <strong>{{ item.category.toLowerCase() }}</strong>.</span>
+                        </div>
+                    </div>
+
+                    <!-- Standard inputs for Regular Products -->
+                    <div v-else class="inputs-grid">
                         <div class="input-col">
                             <label>Bajas Totales</label>
                             <input 
@@ -347,7 +412,7 @@ watch(localBranch, () => {
 
                     <!-- Inline excess alert -->
                     <div
-                      v-if="item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow"
+                      v-if="!item.isGeneral && item.pedidoOverride !== null && item.pedidoOverride > item.stockObjectiveTomorrow"
                       class="excess-inline-alert"
                     >
                       <i class="fa-solid fa-triangle-exclamation"></i>
@@ -718,6 +783,67 @@ $bg-overlay: rgba(0, 0, 0, 0.5);
     strong {
       color: #ef4444;
     }
+  }
+}
+
+.is-general-item {
+  border-left: 6px solid #6366F1;
+  background: #F8FAFF;
+}
+
+.general-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: #EEF2FF;
+  color: #6366F1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.dest-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+
+  &.producción {
+    background: rgba(#A855F7, 0.1);
+    color: #A855F7;
+  }
+
+  &.bodega {
+    background: rgba(#16a34a, 0.1);
+    color: #16a34a;
+  }
+}
+
+.general-inputs-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+
+  .input-col {
+    width: 140px;
+  }
+}
+
+.general-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #64748B;
+  background: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px dashed #E2E8F0;
+
+  i {
+    color: #6366F1;
   }
 }
 

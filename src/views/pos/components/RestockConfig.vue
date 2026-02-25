@@ -3,6 +3,7 @@ import { type PropType, toRef, computed } from 'vue';
 import type { WeeklyObjectives } from '@/services/pos-restock.service';
 import { useRestockModal, type RestockProduct } from '@/views/pos/composables/useRestockModal';
 import RestockSearch from './RestockSearch.vue';
+import SearchableSelect from '@/components/ui/SearchableSelect.vue';
 
 const props = defineProps({
   branch: { type: String, required: true },
@@ -20,7 +21,11 @@ const {
   isLoading,
   isSaving,
   selectedProduct,
-  objectives, // Reactive objectives from composable
+  objectives,
+  isGeneral,
+  manualName,
+  manualUnit,
+  category,
   handleSearchInput,
   selectProduct,
   clearSelection,
@@ -30,6 +35,11 @@ const {
   initialProduct: props.initialProduct,
   initialObjectives: props.initialObjectives
 });
+
+const categoryOptions = [
+  { value: 'Producción', label: 'Producción' },
+  { value: 'Bodega', label: 'Bodega' }
+];
 
 const weekDays = [
   { key: 'monday', label: 'Lun' },
@@ -62,33 +72,124 @@ const handleSave = async () => {
     
     <!-- SEARCH VIEW -->
     <Transition name="fade" mode="out-in">
-      <div v-if="!selectedProduct" class="search-view" key="search">
-        <RestockSearch 
-          :query="searchQuery"
-          :results="searchResults"
-          :is-loading="isLoading"
-          @update:query="handleSearchInput"
-          @select="selectProduct"
-        />
+      <div v-if="!selectedProduct && !isGeneral" class="search-view" key="search">
+        <div class="mode-toggle">
+          <button 
+            class="toggle-btn" 
+            :class="{ active: !isGeneral }" 
+            @click="isGeneral = false"
+          >
+            <i class="fa-solid fa-magnifying-glass"></i> Buscar Producto
+          </button>
+          <button 
+            class="toggle-btn" 
+            :class="{ active: isGeneral }" 
+            @click="isGeneral = true"
+          >
+            <i class="fa-solid fa-plus-circle"></i> Nuevo Suministro
+          </button>
+        </div>
+
+        <div v-if="!isGeneral" class="search-container">
+          <RestockSearch 
+            :query="searchQuery"
+            :results="searchResults"
+            :is-loading="isLoading"
+            @update:query="handleSearchInput"
+            @select="selectProduct"
+          />
+        </div>
+      </div>
+      
+      <!-- MANUAL ENTRY VIEW (for new general item) -->
+      <div v-else-if="!selectedProduct && isGeneral" class="manual-view" key="manual">
+        <div class="mode-toggle">
+          <button 
+            class="toggle-btn" 
+            :class="{ active: !isGeneral }" 
+            @click="isGeneral = false"
+          >
+            <i class="fa-solid fa-magnifying-glass"></i> Buscar Producto
+          </button>
+          <button 
+            class="toggle-btn" 
+            :class="{ active: isGeneral }" 
+            @click="isGeneral = true"
+          >
+            <i class="fa-solid fa-plus-circle"></i> Nuevo Suministro
+          </button>
+        </div>
+
+        <div class="manual-form">
+          <div class="category-top-selector">
+            <label>Destino del Pedido</label>
+            <SearchableSelect 
+              v-model="category"
+              :options="categoryOptions"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Nombre del Suministro <span class="required">*</span></label>
+            <input 
+              v-model="manualName" 
+              type="text" 
+              placeholder="Ej: Cajas de Torta 12x12, Servilletas..." 
+              class="manual-input"
+            />
+          </div>
+
+          <div class="input-group">
+            <label>Unidad</label>
+            <select v-model="manualUnit" class="manual-select">
+              <option value="UND">Unidad (UND)</option>
+              <option value="PAQ">Paquete (PAQ)</option>
+              <option value="KG">Kilogramo (KG)</option>
+              <option value="GR">Gramo (GR)</option>
+              <option value="L">Litro (L)</option>
+              <option value="CJA">Caja (CJA)</option>
+            </select>
+          </div>
+          
+          <button 
+            class="btn-continue" 
+            :disabled="!manualName.trim()"
+            @click="selectedProduct = {} as any"
+          >
+             {{ isGeneral ? 'Continuar' : 'Continuar a Objetivos' }} <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        </div>
       </div>
 
       <!-- CONFIG VIEW -->
       <div v-else class="config-view" key="config">
         
+        <!-- Category selector (Now at the Very Top) -->
+        <div class="category-top-selector">
+           <label>Destino del pedido:</label>
+           <SearchableSelect 
+             v-model="category"
+             :options="categoryOptions"
+           />
+        </div>
+
         <!-- Product Card -->
-        <div class="product-card">
+        <div class="product-card" :class="{ 'is-general': isGeneral }">
           <div class="info">
-            <label>Producto seleccionado</label>
-            <h4>{{ selectedProduct.nombre }}</h4>
-            <span class="unit-badge">{{ selectedProduct.unidad || 'UND' }}</span>
+            <label>{{ isGeneral ? 'Suministro Manual' : 'Producto seleccionado' }}</label>
+            <h4>{{ isGeneral ? manualName : selectedProduct?.nombre }}</h4>
+            <div class="badges">
+              <span class="unit-badge">{{ isGeneral ? manualUnit : (selectedProduct?.unidad || 'UND') }}</span>
+              <span class="category-badge">{{ category }}</span>
+            </div>
           </div>
           <button class="btn-change" @click="clearSelection">
             <i class="fa-solid fa-pen"></i> Cambiar
           </button>
         </div>
 
-        <!-- Objectives Configuration -->
-        <div class="objectives-section">
+        <!-- Objectives Configuration (Hidden for General Items) -->
+        <div v-if="!isGeneral" class="objectives-section">
           <p class="instruction">
             Define el <strong>Stock Mínimo</strong> diario:
           </p>
@@ -113,6 +214,11 @@ const handleSave = async () => {
             <i class="fa-solid fa-circle-info"></i>
             <span>Los días con valor <strong>0</strong> no generarán alerta de restock.</span>
           </div>
+        </div>
+
+        <div v-else class="objectives-info-box">
+           <i class="fa-solid fa-info-circle"></i>
+           <p>Los suministros <strong>no requieren</strong> stock mínimo diario. Se solicitarán manualmente según necesidad en el reporte diario.</p>
         </div>
 
         <!-- Actions -->
@@ -151,6 +257,136 @@ const handleSave = async () => {
   gap: 1.5rem;
 }
 
+.mode-toggle {
+  display: flex;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
+  border: 1px solid #e2e8f0;
+}
+
+.toggle-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+
+  i {
+    font-size: 0.9rem;
+  }
+
+  &.active {
+    background: white;
+    color: $NICOLE-PRIMARY;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  &:hover:not(.active) {
+    color: #334155;
+    background: rgba(255, 255, 255, 0.5);
+  }
+}
+
+.manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.5rem 0.5rem;
+}
+
+.category-top-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: #fdfafb; // Subtle hint
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px dashed $NICOLE-PURPLE;
+
+  label {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: $NICOLE-PURPLE;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+
+    .required {
+      color: #ef4444;
+    }
+  }
+}
+
+.manual-input,
+.manual-select {
+  padding: 10px 14px;
+  border: 1px solid $border-light;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  color: $text-dark;
+  outline: none;
+  transition: all 0.2s;
+
+  &:focus {
+    border-color: $NICOLE-PRIMARY;
+    box-shadow: 0 0 0 3px rgba($NICOLE-PRIMARY, 0.1);
+  }
+}
+
+.btn-continue {
+  margin-top: 1rem;
+  background: $NICOLE-PRIMARY;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  transition: all 0.2s;
+
+  &:hover:not(:disabled) {
+    background: darken($NICOLE-PRIMARY, 5%);
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.config-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 .product-card {
   background-color: $gray-50;
   border: 1px solid $border-light;
@@ -180,14 +416,31 @@ const handleSave = async () => {
       font-weight: 600;
     }
 
+    .badges {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-top: 0.5rem;
+    }
+
     .unit-badge {
       font-size: 0.75rem;
       color: $NICOLE-PRIMARY;
       background: rgba($NICOLE-PRIMARY, 0.1);
       padding: 0.15rem 0.5rem;
       border-radius: 4px;
-      align-self: flex-start;
-      margin-top: 0.25rem;
+      font-weight: 700;
+    }
+
+    .category-badge {
+      font-size: 0.7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      background: #f1f5f9;
+      color: #64748b;
+      padding: 0.15rem 0.6rem;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
     }
   }
 
@@ -263,12 +516,13 @@ const handleSave = async () => {
   }
 }
 
-.info-note {
+.info-note,
+.objectives-info-box {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
   background-color: $purple-overlay;
-  padding: 0.75rem;
+  padding: 1rem;
   border-radius: 8px;
   color: $NICOLE-PRIMARY;
   font-size: 0.85rem;
@@ -276,6 +530,11 @@ const handleSave = async () => {
 
   i {
     margin-top: 2px;
+    font-size: 1rem;
+  }
+
+  p {
+    margin: 0;
   }
 }
 
