@@ -13,6 +13,7 @@ interface ProductConfig {
   unit: string;
   contificoId: string; // Needed for edit/delete
   category: string;
+  isGeneral: boolean;
   objectives: WeeklyObjectives;
 }
 
@@ -51,6 +52,7 @@ const fetchConfiguration = async () => {
       unit: p.unit,
       contificoId: p.contificoId || p.id || '', // Ensure we have an ID
       category: p.category || 'General',
+      isGeneral: p.isGeneral || false,
       objectives: p.objectives || { monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0, sunday: 0 },
     }));
 
@@ -160,6 +162,7 @@ watch(branch, () => {
               id: editingProduct.contificoId,
               nombre: editingProduct.productName,
               unidad: editingProduct.unit,
+              isGeneral: editingProduct.isGeneral
             } as any : undefined"
             :initial-objectives="editingProduct?.objectives"
             @close="showModal = false"
@@ -193,14 +196,21 @@ watch(branch, () => {
                   <tbody>
                       <tr v-for="product in products" :key="product.productName">
                           <td class="cell-product">
-                              <span class="name">{{ product.productName }}</span>
+                              <div class="name-row">
+                                <span class="name">{{ product.productName }}</span>
+                                <span v-if="product.isGeneral" class="general-badge">SUMINISTRO</span>
+                                <span class="dest-badge" :class="product.category.toLowerCase()">{{ product.category }}</span>
+                              </div>
                               <span class="unit">{{ product.unit }}</span>
                           </td>
-                          <td v-for="day in weekDays" :key="day.key" class="cell-value">
-                              <span :class="{ 'zero': product.objectives[day.key as keyof WeeklyObjectives] === 0 }">
-                                {{ product.objectives[day.key as keyof WeeklyObjectives] }}
-                              </span>
-                          </td>
+                           <td v-for="day in weekDays" :key="day.key" class="cell-value">
+                               <template v-if="!product.isGeneral">
+                                 <span :class="{ 'zero': product.objectives[day.key as keyof WeeklyObjectives] === 0 }">
+                                   {{ product.objectives[day.key as keyof WeeklyObjectives] }}
+                                 </span>
+                               </template>
+                               <span v-else class="na-placeholder">-</span>
+                           </td>
                           <td class="cell-actions">
                               <button class="btn-icon edit" @click="handleEdit(product)" title="Editar">
                                 <i class="fa-solid fa-pen"></i>
@@ -459,9 +469,44 @@ $danger-color: #ef4444;
     display: flex;
     flex-direction: column;
 
+    .name-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
     .name {
       font-weight: 600;
       color: $text-color;
+    }
+
+    .general-badge {
+      font-size: 0.6rem;
+      font-weight: 800;
+      background: #EEF2FF;
+      color: #6366F1;
+      padding: 1px 5px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+
+    .dest-badge {
+      font-size: 0.6rem;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+
+      &.producción {
+        background: rgba(#A855F7, 0.1);
+        color: #A855F7;
+      }
+
+      &.bodega {
+        background: rgba(#16a34a, 0.1);
+        color: #16a34a;
+      }
     }
 
     .unit {
@@ -484,6 +529,12 @@ $danger-color: #ef4444;
     .zero {
       color: #cbd5e1;
       font-weight: 400;
+    }
+
+    .na-placeholder {
+      color: #cbd5e1;
+      font-weight: 400;
+      opacity: 0.6;
     }
   }
 

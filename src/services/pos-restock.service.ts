@@ -3,6 +3,8 @@ import APIBase from './httpBase';
 export interface RestockItem {
   productName: string;
   unit: string;
+  isGeneral?: boolean;
+  category?: 'Producción' | 'Bodega';
   stockObjectiveTomorrow: number;
   stockObjectiveToday: number;
   lastEntry?: {
@@ -33,6 +35,9 @@ export interface DetailedLoss {
 
 export interface RestockEntryItem {
   productName: string;
+  unit: string;
+  isGeneral?: boolean;
+  category?: 'Producción' | 'Bodega';
   bajas: number;
   bajasNote?: string;
   stockFinal: number; // This is the 'excedente'

@@ -6,8 +6,12 @@ import type { Product } from '@/types/order';
 // Interface for the extended product with unit, if not in original type
 export interface RestockProduct extends Product {
   unidad?: string;
+  unit?: string;
+  productName?: string;
   contificoId?: string; // or id if itmaps correctly
   categoria_nombre?: string;
+  isGeneral?: boolean;
+  category?: 'Producción' | 'Bodega';
 }
 
 export interface UseRestockModalProps {
@@ -29,6 +33,10 @@ export function useRestockModal(props: UseRestockModalProps) {
   };
 
   const objectives = ref<WeeklyObjectives>({ ...defaultObjectives });
+  const isGeneral = ref(false);
+  const manualName = ref('');
+  const manualUnit = ref('UND');
+  const category = ref<'Producción' | 'Bodega'>('Producción');
 
   let debounceTimer: ReturnType<typeof setTimeout>;
 
@@ -37,11 +45,23 @@ export function useRestockModal(props: UseRestockModalProps) {
     if (props.initialProduct) {
       selectedProduct.value = props.initialProduct;
       objectives.value = props.initialObjectives ? { ...props.initialObjectives } : { ...defaultObjectives };
+
+      // CRITICAL: Robust isGeneral detection
+      const productIsGeneral = props.initialProduct.isGeneral === true || !props.initialProduct.contificoId;
+      isGeneral.value = productIsGeneral;
+
+      manualName.value = props.initialProduct.productName || props.initialProduct.nombre || '';
+      manualUnit.value = props.initialProduct.unit || props.initialProduct.unidad || 'UND';
+      category.value = props.initialProduct.category || 'Producción';
     } else {
       selectedProduct.value = null;
       objectives.value = { ...defaultObjectives };
       searchQuery.value = '';
       searchResults.value = [];
+      isGeneral.value = false;
+      manualName.value = '';
+      manualUnit.value = 'UND';
+      category.value = 'Producción';
     }
   };
 
@@ -81,43 +101,64 @@ export function useRestockModal(props: UseRestockModalProps) {
     // Reset objectives when selecting a new product
     objectives.value = { ...defaultObjectives };
     searchResults.value = [];
+    isGeneral.value = false;
+    // We could preserve category or reset it, let's keep current category choice
   };
 
   const clearSelection = () => {
-    // If we are in "Edit Mode" (initialProduct exists), clearing selection might mean 
-    // going back to search? Or maybe canceling?
-    // Usually "Change" button calls this.
-    // If we are editing, maybe we shouldn't allow changing product easily or it treats as new add?
-    // For now, standard behavior: clear selection allows searching new.
     selectedProduct.value = null;
     searchResults.value = [];
     searchQuery.value = '';
     objectives.value = { ...defaultObjectives };
+    isGeneral.value = false;
+    manualName.value = '';
+    manualUnit.value = 'UND';
+    category.value = 'Producción';
   };
 
   const saveConfiguration = async (): Promise<{ success: boolean; message?: string }> => {
-    if (!selectedProduct.value) {
+    const isNowGeneral = isGeneral.value === true;
+
+    if (!isNowGeneral && !selectedProduct.value) {
       return { success: false, message: 'No hay producto seleccionado.' };
+    }
+
+    if (isNowGeneral && !manualName.value.trim()) {
+      return { success: false, message: 'El nombre del item es requerido.' };
     }
 
     isSaving.value = true;
     try {
-      // Prioritize contificoId if available, otherwise use id
-      const idToUse = selectedProduct.value.contificoId || selectedProduct.value.id;
-
-      if (!idToUse) {
-        return { success: false, message: 'El producto seleccionado no tiene un ID válido.' };
-      }
-
       const currentBranch = unref(props.branch);
+      let payload: any;
 
-      const payload = {
-        branch: currentBranch,
-        productName: selectedProduct.value.nombre,
-        unit: selectedProduct.value.unidad || 'UND',
-        contificoId: idToUse,
-        objectives: objectives.value
-      };
+      if (isNowGeneral) {
+        payload = {
+          branch: currentBranch,
+          productName: manualName.value.trim(),
+          unit: manualUnit.value || 'UND',
+          isGeneral: true,
+          category: category.value,
+          objectives: objectives.value
+        };
+      } else {
+        // Prioritize contificoId if available, otherwise use id (from Contifico search)
+        const idToUse = selectedProduct.value?.contificoId || selectedProduct.value?.id;
+
+        if (!idToUse) {
+          return { success: false, message: 'El producto seleccionado no tiene un ID de Contifico válido.' };
+        }
+
+        payload = {
+          branch: currentBranch,
+          productName: selectedProduct.value?.nombre || selectedProduct.value?.productName,
+          unit: selectedProduct.value?.unidad || selectedProduct.value?.unit || 'UND',
+          contificoId: idToUse,
+          isGeneral: false,
+          category: category.value,
+          objectives: objectives.value
+        };
+      }
 
       await posRestockService.upsertObjective(payload);
       return { success: true };
@@ -137,6 +178,10 @@ export function useRestockModal(props: UseRestockModalProps) {
     isSaving,
     selectedProduct,
     objectives,
+    isGeneral,
+    manualName,
+    manualUnit,
+    category,
 
     // Actions
     handleSearchInput,
