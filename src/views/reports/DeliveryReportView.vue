@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { deliveryService, type DeliveryReport, type DeliveryPerson } from '@/services/delivery.service'
 import OrderService from '@/services/order.service'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
@@ -10,6 +10,25 @@ const report = ref<DeliveryReport | null>(null)
 const riders = ref<DeliveryPerson[]>([])
 const loading = ref(false)
 const { success, error: showError } = useToast()
+
+// Pagination State
+const currentPage = ref(1)
+const itemsPerPage = 10
+
+const totalPages = computed(() => report.value?.totalPages || 1)
+
+const setPageAndFetch = async (page: number) => {
+  currentPage.value = page
+  await generateReport(true)
+}
+
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) setPageAndFetch(currentPage.value + 1)
+}
+
+const prevPage = () => {
+  if (currentPage.value > 1) setPageAndFetch(currentPage.value - 1)
+}
 
 // Assignment Modal State
 const isManagementModalOpen = ref(false)
@@ -39,9 +58,7 @@ const toggleSelection = (orderId: string) => {
 const toggleAll = (event: Event) => {
   const isChecked = (event.target as HTMLInputElement).checked
   if (isChecked && report.value) {
-    // Only selectable orders (unassigned? or all? user said unassigned mostly but "seleccionar varios pedidos no asignado")
-    // Let's allow selecting any visible order for flexibility
-    selectedOrderIds.value = report.value.orders.map(o => o._id)
+    selectedOrderIds.value = report.value.orders.map((o: any) => o._id)
   } else {
     selectedOrderIds.value = []
   }
@@ -117,14 +134,19 @@ const fetchRiders = async () => {
   }
 }
 
-const generateReport = async () => {
+const generateReport = async (isPageChange = false) => {
+  if (!isPageChange) currentPage.value = 1
+
   loading.value = true
   try {
     report.value = await deliveryService.getReport(
       filters.value.startDate as string,
       filters.value.endDate as string,
-      filters.value.personId || undefined
+      filters.value.personId || undefined,
+      currentPage.value,
+      itemsPerPage
     )
+    selectedOrderIds.value = []
   } catch (error) {
     console.error('Error generating report:', error)
   } finally {
@@ -216,7 +238,7 @@ onMounted(() => {
           </select>
         </div>
         <div class="filter-actions">
-          <button @click="generateReport" class="btn-primary" :disabled="loading">
+          <button @click="generateReport(false)" class="btn-primary" :disabled="loading">
             <i class="fa-solid fa-sync" :class="{ 'fa-spin': loading }"></i>
             Actualizar Reporte
           </button>
@@ -271,7 +293,7 @@ onMounted(() => {
             <thead>
               <tr>
                 <th>
-                    <input type="checkbox" @change="toggleAll" :checked="report.orders.length > 0 && selectedOrderIds.length === report.orders.length" />
+                    <input type="checkbox" @change="toggleAll" :checked="report.orders.length > 0 && selectedOrderIds.length > 0 && selectedOrderIds.length >= report.orders.length" />
                 </th>
                 <th>Fecha Entrega</th>
                 <th>Cliente</th>
@@ -282,32 +304,60 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="order in report.orders" :key="order._id" :class="{ 'selected-row': selectedOrderIds.includes(order._id) }">
-                <td>
-                    <input type="checkbox" :checked="selectedOrderIds.includes(order._id)" @change="toggleSelection(order._id)" />
-                </td>
-                <td>{{ formatDate(order.deliveryDate) }}</td>
-                <td>{{ order.customerName }}</td>
-                <td>
-                  <div v-if="order.deliveryPerson" class="rider-tag">
-                    <i class="fa-solid fa-truck-fast"></i>
-                    {{ order.deliveryPerson.name }}
-                  </div>
-                  <div v-else class="rider-tag unassigned">
-                    <i class="fa-solid fa-triangle-exclamation"></i>
-                    Sin asignar
-                  </div>
-                </td>
-                <td class="amount">${{ order.deliveryValue.toFixed(2) }}</td>
-                <td>${{ order.totalValue.toFixed(2) }}</td>
-                <td>
-                  <button @click="openAssignModal(order)" class="btn-table-action" :title="order.deliveryPerson ? 'Cambiar Motorizado' : 'Asignar Motorizado'">
-                    <i class="fa-solid fa-user-plus"></i>
-                  </button>
-                </td>
-              </tr>
+              <template v-if="loading">
+                <tr v-for="n in 5" :key="`skeleton-${n}`" class="skeleton-row">
+                  <td><div class="skeleton skeleton-box"></div></td>
+                  <td><div class="skeleton skeleton-text" style="width: 70%"></div></td>
+                  <td><div class="skeleton skeleton-text" style="width: 90%"></div></td>
+                  <td><div class="skeleton skeleton-badge"></div></td>
+                  <td><div class="skeleton skeleton-text" style="width: 50%"></div></td>
+                  <td><div class="skeleton skeleton-text" style="width: 60%"></div></td>
+                  <td><div class="skeleton skeleton-box"></div></td>
+                </tr>
+              </template>
+              <template v-else-if="report.orders.length > 0">
+                <tr v-for="order in report.orders" :key="order._id" :class="{ 'selected-row': selectedOrderIds.includes(order._id) }">
+                  <td>
+                      <input type="checkbox" :checked="selectedOrderIds.includes(order._id)" @change="toggleSelection(order._id)" />
+                  </td>
+                  <td>{{ formatDate(order.deliveryDate) }}</td>
+                  <td>{{ order.customerName }}</td>
+                  <td>
+                    <div v-if="order.deliveryPerson?.name" class="rider-tag">
+                      <i class="fa-solid fa-truck-fast"></i>
+                      {{ order.deliveryPerson.name }}
+                    </div>
+                    <div v-else class="rider-tag unassigned">
+                      <i class="fa-solid fa-triangle-exclamation"></i>
+                      Sin asignar
+                    </div>
+                  </td>
+                  <td class="amount">${{ order.deliveryValue.toFixed(2) }}</td>
+                  <td>${{ order.totalValue.toFixed(2) }}</td>
+                  <td>
+                    <button @click="openAssignModal(order)" class="btn-table-action" :title="order.deliveryPerson?.name ? 'Cambiar Motorizado' : 'Asignar Motorizado'">
+                      <i class="fa-solid fa-user-plus"></i>
+                    </button>
+                  </td>
+                </tr>
+              </template>
+              <template v-else>
+                <tr>
+                  <td colspan="7" class="empty">No hay pedidos para este periodo.</td>
+                </tr>
+              </template>
             </tbody>
           </table>
+        </div>
+        
+        <div class="pagination-controls" v-if="totalPages > 1">
+           <button @click="prevPage" :disabled="currentPage === 1" class="btn-icon">
+              <i class="fa-solid fa-chevron-left"></i>
+           </button>
+           <span class="page-info">Página {{ currentPage }} de {{ totalPages }}</span>
+           <button @click="nextPage" :disabled="currentPage === totalPages" class="btn-icon">
+              <i class="fa-solid fa-chevron-right"></i>
+           </button>
         </div>
       </div>
     </div>
@@ -894,6 +944,81 @@ onMounted(() => {
 
 .table-container {
   overflow-x: auto;
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-top: 1px solid $border-light;
+
+  .btn-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid $border-light;
+    background: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: $text-dark;
+    transition: all 0.2s;
+
+    &:hover:not(:disabled) {
+      background: $gray-50;
+      color: $NICOLE-PURPLE;
+      border-color: $NICOLE-PURPLE;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .page-info {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: $text-dark;
+  }
+}
+
+/* Skeleton Loader */
+.skeleton {
+  background: linear-gradient(90deg, #f4f4f5 25%, #e4e4e7 50%, #f4f4f5 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+  border-radius: 4px;
+}
+
+.skeleton-text {
+  height: 16px;
+  width: 100%;
+}
+
+.skeleton-box {
+  height: 20px;
+  width: 20px;
+  border-radius: 4px;
+}
+
+.skeleton-badge {
+  height: 28px;
+  width: 110px;
+  border-radius: 20px;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 @media (max-width: 600px) {

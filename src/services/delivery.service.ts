@@ -11,6 +11,8 @@ export interface DeliveryPerson {
 export interface DeliveryReport {
   total: number
   count: number
+  totalPages: number
+  currentPage: number
   summary: Array<{
     name: string
     total: number
@@ -35,9 +37,9 @@ class DeliveryService extends APIBase {
     return response.data.data
   }
 
-  async getReport(startDate: string, endDate: string, personId?: string): Promise<DeliveryReport> {
+  async getReport(startDate: string, endDate: string, personId?: string, page: number = 1, limit: number = 10): Promise<DeliveryReport> {
     const response = await this.get<{ data: DeliveryReport }>('orders/reports/delivery', undefined, {
-      params: { startDate, endDate, deliveryPersonId: personId }
+      params: { startDate, endDate, deliveryPersonId: personId, page, limit }
     })
     return response.data.data
   }

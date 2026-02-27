@@ -74,16 +74,16 @@ onMounted(fetchRiders)
 </script>
 
 <template>
-  <div class="card assign-card" :class="{ 'warning': !order.deliveryPerson }">
+  <div class="card assign-card" :class="{ 'warning': !order.deliveryPerson?.name }">
     <div class="header">
       <h2>Entrega / Transporte</h2>
       <button v-if="!isEditing" @click="toggleEdit" class="btn-edit-link">
-        {{ order.deliveryPerson ? 'Cambiar' : 'Asignar' }}
+        {{ order.deliveryPerson?.name ? 'Cambiar' : 'Asignar' }}
       </button>
     </div>
 
     <div v-if="!isEditing" class="view-mode">
-       <div v-if="order.deliveryPerson" class="rider-info">
+       <div v-if="order.deliveryPerson?.name" class="rider-info">
           <div class="avatar">{{ order.deliveryPerson.name.charAt(0) }}</div>
           <div class="details">
              <span class="name">{{ order.deliveryPerson.name }}</span>
