@@ -73,21 +73,21 @@ watch(isOpen, (newVal) => {
       @click="toggleDropdown"
     >
       <div class="selected-value">
-        <i class="fas fa-search icon"></i>
+        <i class="fa-solid fa-shield-halved icon"></i>
         <span v-if="selectedOption" class="text">{{ selectedOption.label }}</span>
         <span v-else class="placeholder">{{ placeholder }}</span>
       </div>
-      <i class="fas fa-chevron-down arrow" :class="{ rotate: isOpen }"></i>
+      <i class="fa-solid fa-chevron-down arrow" :class="{ rotate: isOpen }"></i>
     </div>
 
     <transition name="dropdown">
       <div v-if="isOpen" class="dropdown-menu">
         <div class="search-box">
-          <i class="fas fa-search"></i>
+          <i class="fa-solid fa-magnifying-glass"></i>
           <input 
             v-model="searchQuery" 
             type="text" 
-            placeholder="Buscar..."
+            placeholder="Buscar rol..."
             @click.stop
           />
         </div>
@@ -104,7 +104,7 @@ watch(isOpen, (newVal) => {
               <span class="option-label">{{ option.label }}</span>
               <span v-if="option.subtitle" class="option-subtitle">{{ option.subtitle }}</span>
             </div>
-            <i v-if="option.value === modelValue" class="fas fa-check check-icon"></i>
+            <i v-if="option.value === modelValue" class="fa-solid fa-check check-icon"></i>
           </div>
           
           <div v-if="filteredOptions.length === 0" class="no-results">
@@ -127,17 +127,17 @@ watch(isOpen, (newVal) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.9rem 1rem;
-  background: #f8fafc;
-  border: 2px solid #f1f5f9;
+  padding: 1rem 1.25rem;
+  background: white;
+  border: 2px solid #e2e8f0;
   border-radius: 14px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
 
   &:hover:not(.disabled) {
-    background: white;
-    border-color: #e2e8f0;
+    border-color: $NICOLE-PURPLE;
+    background: #fdfaff;
   }
 
   &.open {
@@ -186,15 +186,28 @@ watch(isOpen, (newVal) => {
 
 .dropdown-menu {
   position: absolute;
-  top: calc(100% + 0.5rem);
+  top: calc(100% + 8px);
   left: 0;
   right: 0;
   background: white;
-  border-radius: 16px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-  border: 1px solid #f1f5f9;
-  z-index: 100;
+  border-radius: 18px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  z-index: 1000;
   overflow: hidden;
+  animation: dropdownSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdownSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .search-box {

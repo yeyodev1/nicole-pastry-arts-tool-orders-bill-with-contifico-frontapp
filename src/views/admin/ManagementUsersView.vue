@@ -3,12 +3,40 @@ import { ref, onMounted, computed } from 'vue'
 import UserService from '@/services/user.service'
 import type { User } from '@/types/user'
 import { useToast } from '@/composables/useToast'
+import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import UserDeleteModal from './components/UserDeleteModal.vue'
 
 const { success, error: showError } = useToast()
 const users = ref<User[]>([])
 const isLoading = ref(false)
+
+// Logged-in user protection
+const loggedInUserId = computed(() => {
+  try {
+    const info = localStorage.getItem('user_info')
+    return info ? JSON.parse(info)?._id?.toString() : null
+  } catch { return null }
+})
+
+const loggedInEmail = computed(() => {
+  try {
+    const info = localStorage.getItem('user_info')
+    return info ? JSON.parse(info)?.email : null
+  } catch { return null }
+})
+
+// Returns true if the given user is the one currently logged in
+const isSelf = (user: User) => {
+  const userId = (user as any)._id?.toString()
+  const matchById = loggedInUserId.value && userId === loggedInUserId.value
+  const matchByEmail = loggedInEmail.value && user.email === loggedInEmail.value
+  return !!(matchById || matchByEmail)
+}
 const showModal = ref(false)
 const isEditing = ref(false)
+const showDeleteModal = ref(false)
+const showSelfDeleteModal = ref(false)
+const userToDelete = ref<User | null>(null)
 const currentUser = ref<Partial<User>>({
   name: '',
   email: '',
@@ -26,19 +54,25 @@ const ALL_ROLES = [
 ]
 
 const filteredRoles = computed(() => {
-  const userInfoStr = localStorage.getItem('user_info')
-  if (!userInfoStr) return []
-  const user = JSON.parse(userInfoStr)
+  try {
+    const userInfoStr = localStorage.getItem('user_info')
+    if (!userInfoStr) return ALL_ROLES
 
-  if (user.role === 'SALES_MANAGER') {
-    return ALL_ROLES.filter(r => r.value === 'SALES_REP')
+    const user = JSON.parse(userInfoStr)
+    const role = user.role?.toUpperCase()
+
+    // Only full admins see everything
+    if (role === 'ADMIN' || role === 'admin') {
+      return ALL_ROLES
+    }
+
+    // Sales Managers and any other role authorized to be here
+    // can only create/manage Sales Reps and other Sales Managers
+    return ALL_ROLES.filter(r => ['SALES_REP', 'SALES_MANAGER'].includes(r.value))
+  } catch (e) {
+    console.error('Error parsing user_info:', e)
+    return ALL_ROLES.filter(r => ['SALES_REP', 'SALES_MANAGER'].includes(r.value))
   }
-
-  if (user.role === 'admin') {
-    return ALL_ROLES
-  }
-
-  return [] // Other roles shouldn't be here
 })
 
 const fetchUsers = async () => {
@@ -79,21 +113,47 @@ const handleSave = async () => {
       success('Nuevo integrante añadido al equipo')
     }
     showModal.value = false
-    fetchUsers()
+    await fetchUsers()
   } catch (e: any) {
-    showError(e.message || 'Error al guardar cambios')
+    // httpBase throws { status, message, data } - not standard axios shape
+    const errorMsg = e.data?.message || e.message || ''
+    if (errorMsg === 'EMAIL_ALREADY_REGISTERED') {
+      showError('Este correo ya se encuentra registrado en el sistema')
+    } else {
+      showError(errorMsg || 'Error al guardar cambios')
+    }
   }
 }
 
-const handleDelete = async (id: string) => {
-  if (confirm('¿Realmente desea desvincular a este usuario del sistema?')) {
-    try {
-      await UserService.deleteUser(id)
-      success('Usuario removido exitosamente')
-      fetchUsers()
-    } catch (e) {
-      showError('Error al remover usuario')
-    }
+const handleDelete = (user: User) => {
+  // If trying to delete self, show funny guard modal
+  if (isSelf(user)) {
+    showSelfDeleteModal.value = true
+    return
+  }
+  userToDelete.value = user
+  showDeleteModal.value = true
+}
+
+const confirmDelete = async () => {
+  const userId = (userToDelete.value as any)?._id
+  if (!userId) {
+    showError('No se encontró el ID del usuario para eliminar.')
+    showDeleteModal.value = false
+    userToDelete.value = null
+    return
+  }
+
+  try {
+    await UserService.deleteUser(userId)
+    success('Colaborador removido exitosamente')
+    await fetchUsers()
+  } catch (e: any) {
+    console.error('Delete error:', e)
+    showError(e.message || 'No se pudo remover al usuario. Intente nuevamente.')
+  } finally {
+    showDeleteModal.value = false
+    userToDelete.value = null
   }
 }
 
@@ -140,8 +200,12 @@ onMounted(fetchUsers)
     <!-- User Grid -->
     <div v-else class="users-grid">
       <TransitionGroup name="list">
-        <div v-for="user in users" :key="(user as any)._id" class="glass-card user-card">
+        <div v-for="user in users" :key="(user as any)._id" class="glass-card user-card" :class="{ 'is-self': isSelf(user) }">
           <div class="card-top">
+             <!-- Self profile badge -->
+             <span v-if="isSelf(user)" class="self-badge">
+               <i class="fa-solid fa-shield-halved"></i> Tu Perfil
+             </span>
              <div class="avatar-wrapper">
                 <div class="avatar-gradient">
                   {{ user.name.charAt(0).toUpperCase() }}
@@ -152,7 +216,7 @@ onMounted(fetchUsers)
                 <button @click="openEditModal(user)" class="action-btn" title="Editar">
                   <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <button @click="handleDelete((user as any)._id)" class="action-btn danger" title="Eliminar">
+                <button @click="handleDelete(user)" class="action-btn danger" title="Eliminar">
                   <i class="fa-solid fa-trash-can"></i>
                 </button>
              </div>
@@ -221,14 +285,11 @@ onMounted(fetchUsers)
             <div class="form-row">
               <div class="form-field">
                 <label>Asignar Rol</label>
-                <div class="input-container">
-                  <i class="fa-solid fa-shield-halved"></i>
-                  <select v-model="currentUser.role">
-                    <option v-for="role in filteredRoles" :key="role.value" :value="role.value">
-                      {{ role.label }}
-                    </option>
-                  </select>
-                </div>
+                <SearchableSelect 
+                  v-model="currentUser.role"
+                  :options="filteredRoles"
+                  placeholder="Seleccionar rol de equipo..."
+                />
               </div>
             </div>
 
@@ -239,6 +300,35 @@ onMounted(fetchUsers)
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Hold-to-Delete Modal -->
+    <UserDeleteModal 
+      :is-open="showDeleteModal"
+      :user-name="userToDelete?.name || ''"
+      @close="showDeleteModal = false"
+      @confirm="confirmDelete"
+    />
+
+    <!-- Funny Self-Delete Guard Modal -->
+    <Transition name="fade">
+      <div v-if="showSelfDeleteModal" class="premium-overlay" @click.self="showSelfDeleteModal = false">
+        <div class="self-delete-modal">
+          <div class="chaos-icon">
+            <span>&#128562;</span>
+          </div>
+          <h2>&#128165; Woah, woah, woah...</h2>
+          <p class="chaos-text">
+            ¿Borrarte a <strong>ti mismo</strong>?<br/>
+            ¿Quieres destruir la empresa desde adentro?<br/>
+            ¡No seas caos en zapatos! 👟
+          </p>
+          <p class="chaos-sub">Si de verdad quieres salir... <em>cierra sesión como una persona normal.</em></p>
+          <button class="btn-chaos-ok" @click="showSelfDeleteModal = false">
+            <i class="fa-solid fa-hand"></i> Ok, me tranquilizo
+          </button>
         </div>
       </div>
     </Transition>
@@ -358,6 +448,11 @@ onMounted(fetchUsers)
   position: relative;
   overflow: hidden;
 
+  &.is-self {
+    border-color: rgba($NICOLE-PURPLE, 0.3);
+    box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.1);
+  }
+
   &:hover {
     transform: translateY(-5px);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
@@ -376,9 +471,31 @@ onMounted(fetchUsers)
     transition: opacity 0.3s;
   }
 
+  &.is-self::before {
+    opacity: 1;
+  }
+
   &:hover::before {
     opacity: 1;
   }
+}
+
+.self-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: linear-gradient(135deg, $NICOLE-PURPLE, #7c3aed);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.35rem 0.75rem;
+  border-radius: 50px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  box-shadow: 0 4px 10px rgba($NICOLE-PURPLE, 0.3);
+  z-index: 1;
 }
 
 .glass-card {
@@ -533,7 +650,7 @@ onMounted(fetchUsers)
   width: 100%;
   max-width: 550px;
   border-radius: 24px;
-  overflow: hidden;
+  position: relative;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   animation: modalEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -592,6 +709,7 @@ onMounted(fetchUsers)
 
 .premium-form {
   padding: 2rem;
+  padding-bottom: 3rem; // Added more space at the bottom
 
   .form-row {
     margin-bottom: 1.5rem;
@@ -725,5 +843,102 @@ onMounted(fetchUsers)
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+// Funny Self-Delete Guard Modal
+.self-delete-modal {
+  background: white;
+  width: 95%;
+  max-width: 420px;
+  border-radius: 28px;
+  padding: 3rem 2.5rem 2.5rem;
+  text-align: center;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.3);
+  border: 2px solid #fde68a;
+  animation: modalEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+
+  .chaos-icon {
+    font-size: 5rem;
+    line-height: 1;
+    margin-bottom: 1rem;
+    animation: shake 0.6s ease infinite;
+  }
+
+  h2 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin: 0 0 1.25rem;
+    letter-spacing: -0.5px;
+  }
+
+  .chaos-text {
+    font-size: 1rem;
+    color: #374151;
+    line-height: 1.8;
+    margin-bottom: 1rem;
+
+    strong {
+      color: #dc2626;
+      font-weight: 900;
+    }
+  }
+
+  .chaos-sub {
+    font-size: 0.85rem;
+    color: #94a3b8;
+    font-style: italic;
+    margin-bottom: 2rem;
+
+    em {
+      font-weight: 700;
+      color: $NICOLE-PURPLE;
+    }
+  }
+
+  .btn-chaos-ok {
+    background: linear-gradient(135deg, $NICOLE-PURPLE, #a855f7);
+    color: white;
+    border: none;
+    padding: 1rem 2.5rem;
+    border-radius: 14px;
+    font-weight: 800;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    box-shadow: 0 8px 20px rgba($NICOLE-PURPLE, 0.3);
+
+    &:hover {
+      transform: translateY(-2px) scale(1.03);
+      box-shadow: 0 14px 28px rgba($NICOLE-PURPLE, 0.4);
+    }
+  }
+}
+
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  20% {
+    transform: rotate(-8deg);
+  }
+
+  40% {
+    transform: rotate(8deg);
+  }
+
+  60% {
+    transform: rotate(-4deg);
+  }
+
+  80% {
+    transform: rotate(4deg);
+  }
 }
 </style>
