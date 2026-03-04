@@ -30,6 +30,7 @@ const {
   rawBucketFilter,
   rawFilteredOrders,
   rawStatsByDestination,
+  rawStatsByDestinationAndRound,
   selectedRawProducts,
   toggleRawProductSelection,
   clearRawSelection,
@@ -322,7 +323,7 @@ onMounted(async () => {
         </div>
 
         <div class="destination-grid">
-          <div v-for="(products, destination) in rawStatsByDestination" :key="destination" class="destination-card">
+          <div v-for="(rounds, destination) in rawStatsByDestinationAndRound" :key="destination" class="destination-card">
             <div class="dest-title">
               <div class="dest-icon-box">
                 <i v-if="destination === 'San Marino'" class="fas fa-store"></i>
@@ -333,45 +334,58 @@ onMounted(async () => {
               </div>
               <div class="dest-info">
                 <h3>{{ destination }}</h3>
-                <span class="dest-total">{{Object.values(products).reduce((a, b) => a + b, 0)}} unids</span>
+                <span class="dest-total">
+                  {{Object.values(rounds).reduce((acc, products) => acc + Object.values(products).reduce((a, b) => a + b, 0), 0)}} unids
+                </span>
               </div>
             </div>
-            <div class="dest-table-container">
-              <table class="raw-table">
-                <thead>
-                  <tr>
-                    <th>Producto</th>
-                    <th class="col-qty">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr 
-                    v-for="(qty, productName) in products" 
-                    :key="productName"
-                    class="raw-row"
-                    :class="{ selected: selectedRawProducts.has(productName) }"
-                    @click="toggleRawProductSelection(productName)"
-                  >
-                    <td class="col-check">
-                      <div class="custom-checkbox" :class="{ checked: selectedRawProducts.has(productName) }">
-                        <i v-if="selectedRawProducts.has(productName)" class="fas fa-check"></i>
-                      </div>
-                    </td>
-                    <td>{{ productName }}</td>
-                    <td class="col-qty">
-                      <strong>{{ qty }}</strong>
-                      <button class="btn-item-export" @click.stop="exportSingleItem(productName)" title="Exportar Producción de este item">
-                        <i class="fas fa-file-export"></i>
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+
+            <!-- Iterate through rounds within destination -->
+            <div v-for="(products, roundLabel) in rounds" :key="roundLabel" class="round-section">
+              <!-- Round Badge (only for named rounds) -->
+              <div v-if="roundLabel" class="round-badge-header">
+                <i class="fas fa-clock"></i>
+                <span>{{ roundLabel }}</span>
+                <span class="round-total">{{Object.values(products).reduce((a, b) => a + b, 0)}} unids</span>
+              </div>
+
+              <div class="dest-table-container">
+                <table class="raw-table">
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th class="col-qty">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr 
+                      v-for="(qty, productName) in products" 
+                      :key="productName"
+                      class="raw-row"
+                      :class="{ selected: selectedRawProducts.has(productName) }"
+                      @click="toggleRawProductSelection(productName)"
+                    >
+                      <td class="col-check">
+                        <div class="custom-checkbox" :class="{ checked: selectedRawProducts.has(productName) }">
+                          <i v-if="selectedRawProducts.has(productName)" class="fas fa-check"></i>
+                        </div>
+                      </td>
+                      <td>{{ productName }}</td>
+                      <td class="col-qty">
+                        <strong>{{ qty }}</strong>
+                        <button class="btn-item-export" @click.stop="exportSingleItem(productName)" title="Exportar Producción de este item">
+                          <i class="fas fa-file-export"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
 
-        <div v-if="Object.keys(rawStatsByDestination).length === 0" class="empty-raw">
+        <div v-if="Object.keys(rawStatsByDestinationAndRound).length === 0" class="empty-raw">
           <i class="fas fa-folder-open"></i>
           <p>No hay items registrados para este periodo en modo crudo.</p>
         </div>
@@ -1078,6 +1092,45 @@ $color-delayed: #e67e22;
     tr:hover td {
       background: #fdfdfd;
     }
+  }
+}
+
+.round-section {
+  &+.round-section {
+    border-top: 2px dashed #e2e8f0;
+  }
+
+  .dest-table-container {
+    padding: 0.5rem 1rem 1rem;
+  }
+}
+
+.round-badge-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  margin: 0;
+  background: linear-gradient(135deg, #ede9fe, #f3e8ff);
+  border-bottom: 1px solid #ddd6fe;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #7c3aed;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+
+  i {
+    font-size: 0.75rem;
+  }
+
+  .round-total {
+    margin-left: auto;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: rgba(124, 58, 237, 0.12);
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #6d28d9;
   }
 }
 

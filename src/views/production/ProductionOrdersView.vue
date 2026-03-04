@@ -535,6 +535,14 @@ const getDispatchBadge = (status?: string) => {
                       </div>
                       <small class="dest-detail" v-if="getDestination(order).detail">{{ getDestination(order).detail }}</small>
                     </div>
+
+                    <div
+                      v-if="order.comments && (order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega')"
+                      class="delivery-round-badge"
+                    >
+                      <i class="fas fa-clock"></i>
+                      {{ order.comments }}
+                    </div>
                   </td>
                   <td class="col-items">
                     <div class="items-dropdown" :class="{ 'is-expanded': expandedOrders.includes(order._id) }">
@@ -641,6 +649,14 @@ const getDispatchBadge = (status?: string) => {
                         <span>{{ getDestination(order).label }}</span>
                       </div>
                       <small class="dest-detail" v-if="getDestination(order).detail">{{ getDestination(order).detail }}</small>
+                    </div>
+
+                    <div
+                      v-if="order.comments && (order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega')"
+                      class="delivery-round-badge"
+                    >
+                      <i class="fas fa-clock"></i>
+                      {{ order.comments }}
                     </div>
                   </td>
                   <td class="col-items">
@@ -1215,6 +1231,26 @@ $color-danger: #e74c3c;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+
+.delivery-round-badge {
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: linear-gradient(135deg, #ede9fe, #f3e8ff);
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+
+  i {
+    font-size: 0.65rem;
   }
 }
 
