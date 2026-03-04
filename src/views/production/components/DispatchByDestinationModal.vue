@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import ProductionService from '@/services/production.service'
+import ProductionSettingsService, { type ProductionDestination } from '@/services/production-settings.service'
+import { useToast } from '@/composables/useToast' // Added this import
+import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import DestinationDeleteModal from './DestinationDeleteModal.vue'
 
 const props = defineProps({
   isOpen: Boolean
@@ -8,15 +12,25 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'success'])
 
-const step = ref<1 | 2>(1)
+const step = ref<1 | 2 | 3>(1)
 const selectedDestination = ref('')
 const isLoading = ref(false)
 const rawOrders = ref<any[]>([])
 const items = ref<{ name: string; pending: number; toSend: number }[]>([])
 const filterMode = ref<'today' | 'tomorrow' | 'all'>('today')
 
-// Destinations
-const destinations = ['San Marino', 'Mall del Sol', 'Centro de Producción', 'Domicilio / Delivery']
+const destinations = ref<ProductionDestination[]>([])
+const toast = useToast() // Added this initialization
+const isManager = computed(() => {
+  const userInfoStr = localStorage.getItem('user_info')
+  if (!userInfoStr) return false
+  const user = JSON.parse(userInfoStr)
+  const role = user.role?.toUpperCase() || ''
+  // Allow ADMIN, SALES_MANAGER, and PRODUCTION to configure destinations
+  return role === 'SALES_MANAGER' || role === 'ADMIN' || role === 'PRODUCTION'
+})
+
+// Removed old destinations static array
 
 const isSameDay = (d1: Date, d2: Date) => {
   return d1.getFullYear() === d2.getFullYear() &&
@@ -36,19 +50,20 @@ const calculatePendingItems = () => {
   rawOrders.value.forEach((o: any) => {
     // 1. Filter by Destination
     let destMatch = false
-    if (selectedDestination.value === 'Domicilio / Delivery') {
-      if (o.deliveryType === 'delivery') destMatch = true
-    } else {
-      const branch = (o.branch || '').toLowerCase()
-      // Simple match
-      if (selectedDestination.value === 'San Marino' && branch.includes('marino')) destMatch = true
-      else if (selectedDestination.value === 'Mall del Sol' && (branch.includes('mall') || branch.includes('sol'))) destMatch = true
-      else if (selectedDestination.value === 'Centro de Producción' && (branch.includes('centro') || branch.includes('producc'))) destMatch = true
+    const destConfig = destinations.value.find(d => d.name === selectedDestination.value)
+
+    if (destConfig) {
+      if (destConfig.name === 'Domicilio / Delivery' && o.deliveryType === 'delivery') {
+        destMatch = true
+      } else {
+        const branch = (o.branch || '').toLowerCase()
+        destMatch = destConfig.matchKeywords.some(keyword => branch.includes(keyword.toLowerCase()))
+      }
     }
 
     if (!destMatch) return
 
-    // 2. Filter by Date (New Requirement)
+    // 2. Filter by Date
     const dDate = new Date(o.deliveryDate)
     let dateMatch = false
     if (filterMode.value === 'all') dateMatch = true
@@ -122,8 +137,6 @@ watch(filterMode, () => {
   calculatePendingItems()
 })
 
-import { watch } from 'vue' // Add watch import
-
 const errorMessage = ref('')
 
 const handleConfirm = async () => {
@@ -159,43 +172,195 @@ const reset = () => {
   errorMessage.value = ''
 }
 
+const fetchDestinations = async () => {
+  try {
+    const settings = await ProductionSettingsService.getSettings()
+    if (settings && settings.destinations) {
+      destinations.value = settings.destinations
+    }
+  } catch (e) {
+    console.error('Error fetching destinations:', e)
+  }
+}
+
+// Config editor logic
+const editableDestinations = ref<ProductionDestination[]>([])
+const originalDestinations = ref<ProductionDestination[]>([])
+const isSavingConfig = ref(false)
+
+const hasUnsavedChanges = computed(() => {
+  return JSON.stringify(editableDestinations.value) !== JSON.stringify(originalDestinations.value)
+})
+
+// Delete Modal State
+const showDeleteModal = ref(false)
+const destinationToDelete = ref<ProductionDestination | null>(null)
+
+const openDeleteModal = (dest: ProductionDestination) => {
+  destinationToDelete.value = dest
+  showDeleteModal.value = true
+}
+
+const confirmDelete = async () => {
+  if (destinationToDelete.value) {
+    const idx = editableDestinations.value.findIndex(d => d.id === destinationToDelete.value?.id)
+    if (idx !== -1) {
+      editableDestinations.value.splice(idx, 1)
+      await saveConfig(true)
+    }
+  }
+  showDeleteModal.value = false
+  destinationToDelete.value = null
+}
+
+const openConfig = () => {
+  // Deep clone current setup to edit safely
+  editableDestinations.value = JSON.parse(JSON.stringify(destinations.value))
+  originalDestinations.value = JSON.parse(JSON.stringify(destinations.value))
+  step.value = 3
+}
+
+const addDestinationConfig = () => {
+  const newId = `dest-${Date.now()}`
+  editableDestinations.value.push({
+    id: newId,
+    name: 'Nuevo Destino',
+    icon: 'fas fa-store',
+    matchKeywords: []
+  })
+}
+
+const removeDestinationConfig = (index: number) => {
+  editableDestinations.value.splice(index, 1)
+}
+
+// --- Hold-to-Delete Logic removed ---
+
+
+const addKeyword = (dest: ProductionDestination, event: Event) => {
+  const input = event.target as HTMLInputElement
+  const value = input.value.trim()
+  if (value) {
+    if (!dest.matchKeywords) dest.matchKeywords = []
+    // Prevent duplicates
+    if (!dest.matchKeywords.includes(value.toLowerCase())) {
+      dest.matchKeywords.push(value.toLowerCase())
+    }
+    input.value = ''
+  }
+}
+
+const removeKeyword = (dest: ProductionDestination, keywordIndex: number) => {
+  dest.matchKeywords.splice(keywordIndex, 1)
+}
+
+const saveConfig = async (isAutoDelete = false) => {
+  // Removed empty check to allow clearing all destinations
+
+  // Validate empty names
+  const hasEmptyNames = editableDestinations.value.some(d => !d.name.trim())
+  if (hasEmptyNames) {
+    if (!isAutoDelete) toast.info('Todos los destinos deben tener un nombre.')
+    return
+  }
+
+  try {
+    isSavingConfig.value = true
+    const response = await ProductionSettingsService.updateSettings({ destinations: editableDestinations.value })
+
+    if (response) {
+      destinations.value = response.destinations
+      originalDestinations.value = JSON.parse(JSON.stringify(destinations.value))
+
+      if (isAutoDelete) {
+        toast.info('Cambios guardados automáticamente.')
+      } else {
+        toast.info('Configuración guardada satisfactoriamente.')
+      }
+    }
+  } catch (e) {
+    console.error('Error saving config:', e)
+  } finally {
+    isSavingConfig.value = false
+  }
+}
+
+
+
+// Common icons for destinations
+const availableIcons = [
+  { class: 'fas fa-store', label: 'Tienda' },
+  { class: 'fas fa-store-alt', label: 'Tienda Alternativa' },
+  { class: 'fas fa-shopping-bag', label: 'Centro Comercial' },
+  { class: 'fas fa-shopping-cart', label: 'Carrito' },
+  { class: 'fas fa-industry', label: 'Fábrica / Centro' },
+  { class: 'fas fa-motorcycle', label: 'Delivery' },
+  { class: 'fas fa-truck', label: 'Camión' },
+  { class: 'fas fa-map-marker-alt', label: 'Ubicación' },
+  { class: 'fas fa-building', label: 'Edificio' },
+  { class: 'fas fa-home', label: 'Casa' },
+  { class: 'fas fa-utensils', label: 'Restaurante' },
+  { class: 'fas fa-coffee', label: 'Cafetería' }
+]
+
+const iconOptions = computed(() => availableIcons.map(icon => ({
+  value: icon.class,
+  label: icon.label,
+  icon: icon.class
+})))
+
 // Reset state when modal is opened
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
     reset()
+    fetchDestinations()
+    showDeleteModal.value = false
+    destinationToDelete.value = null
   }
 })
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click="$emit('close')">
-    <div class="modal-content" @click.stop>
-      
-      <!-- STEP 1: DESTINATION -->
-      <div v-if="step === 1">
-        <header>
-          <h2>Selecciona Destino</h2>
-          <button class="btn-close" @click="$emit('close')">&times;</button>
+  <Transition name="modal-fade">
+    <div v-if="isOpen" class="modal-overlay" @click="$emit('close')">
+      <div class="modal-content" @click.stop>
+        
+        <Transition name="slide-fade" mode="out-in">
+          <!-- STEP 1: DESTINATION -->
+          <div v-if="step === 1" class="step-container" key="step1">
+            <header>
+              <h2>Selecciona Destino</h2>
+          <div class="header-actions">
+            <button v-if="isManager" class="btn-config" @click="openConfig">
+              <i class="fas fa-cog"></i> Administrar Destinos
+            </button>
+            <button class="btn-close" @click="$emit('close')">&times;</button>
+          </div>
         </header>
 
-        <div class="dest-grid">
+        <div v-if="destinations.length === 0" class="empty-destinations">
+           <i class="fas fa-map-marker-alt icon-empty"></i>
+           <p>No hay lugares de despacho configurados.</p>
+           <button v-if="isManager" class="btn-primary" @click="openConfig">
+              <i class="fas fa-plus"></i> Configurar Lugares
+           </button>
+           <p v-else class="text-muted">Contacta a un administrador para configurar los destinos.</p>
+        </div>
+        <div v-else class="dest-grid">
             <button 
                 v-for="dest in destinations" 
-                :key="dest"
+                :key="dest.id"
                 class="btn-dest"
-                @click="handleDestinationSelect(dest)"
+                @click="handleDestinationSelect(dest.name)"
             >
-                <i class="fas fa-store-alt" v-if="dest.includes('Marino')"></i>
-                <i class="fas fa-shopping-bag" v-else-if="dest.includes('Mall')"></i>
-                <i class="fas fa-industry" v-else-if="dest.includes('Centro')"></i>
-                <i class="fas fa-motorcycle" v-else></i>
-                <span>{{ dest }}</span>
+                <i :class="dest.icon"></i>
+                <span>{{ dest.name }}</span>
             </button>
         </div>
       </div>
 
       <!-- STEP 2: ITEMS -->
-      <div v-if="step === 2">
+      <div v-else-if="step === 2" class="step-container" key="step2">
         <header>
             <button class="btn-back" @click="reset"><i class="fas fa-arrow-left"></i></button>
             <div class="title-col">
@@ -250,11 +415,122 @@ watch(() => props.isOpen, (newVal) => {
         </div>
       </div>
 
+      <!-- STEP 3: EDITOR (Admin Only) -->
+      <div v-else-if="step === 3 && isManager" class="editor-step step-container" key="step3">
+        <header>
+            <button class="btn-back" @click="step = 1"><i class="fas fa-arrow-left"></i></button>
+            <h2>Administrar Destinos</h2>
+            <button class="btn-close" @click="$emit('close')">&times;</button>
+        </header>
+
+        <div v-if="errorMessage" class="error-banner">
+          <i class="fas fa-exclamation-circle"></i> {{ errorMessage }}
+        </div>
+        
+        <div class="editor-list">
+          <!-- Empty State in Editor -->
+          <div v-if="editableDestinations.length === 0" class="editor-empty-state">
+             <div class="empty-icon-wrap">
+                <i class="fa-solid fa-map-location-dot"></i>
+             </div>
+             <h3>Aún no tienes destinos configurados</h3>
+             <p>Comienza añadiendo los lugares a donde enviarás producción todos los días. Ej: Tienda principal, Isla, etc.</p>
+          </div>
+
+          <TransitionGroup name="list" tag="div" class="list-wrapper">
+            <div 
+              v-for="(dest, index) in editableDestinations" 
+              :key="dest.id" 
+              class="editor-row"
+            >
+              <div class="editor-fields">
+                <div class="form-group">
+                  <label>Nombre del Destino</label>
+                  <input type="text" v-model="dest.name" placeholder="Ej: San Marino" />
+                </div>
+                <div class="form-group icon-selector-group">
+                  <label>Icono Visual</label>
+                <SearchableSelect
+                  v-model="dest.icon"
+                  :options="iconOptions"
+                  placeholder="Seleccionar ícono..."
+                  searchPlaceholder="Buscar ícono..."
+                >
+                  <template #icon>
+                    <i :class="dest.icon || 'fas fa-map-marker-alt'" style="color: #812a73; font-size: 1.1rem; width: 22px; text-align: center;"></i>
+                  </template>
+                </SearchableSelect>
+              </div>
+                <div class="form-group keywords-group">
+                  <label>Palabras Clave asociadas a la Sucursal</label>
+                  <div class="tag-input-container">
+                    <div class="tags-list">
+                      <TransitionGroup name="tag-fade">
+                        <span 
+                          v-for="(kw, kId) in dest.matchKeywords" 
+                          :key="kId + kw" 
+                          class="keyword-tag"
+                        >
+                          {{ kw }}
+                          <button class="btn-remove-tag" @click="removeKeyword(dest, kId)" title="Quitar palabra">
+                            <i class="fas fa-times"></i>
+                          </button>
+                        </span>
+                      </TransitionGroup>
+                    </div>
+                    <input 
+                      type="text" 
+                      placeholder="Escribe una palabra y presiona Enter..." 
+                      @keydown.enter.prevent="addKeyword(dest, $event)"
+                      @blur="addKeyword(dest, $event)"
+                    />
+                  </div>
+                  <small>Buscará si la "Sucursal" del pedido contiene alguna de estas palabras. Se aplicará a todas como cuadros visuales.</small>
+                </div>
+              </div>
+              
+              <button class="btn-remove-dest" @click="openDeleteModal(dest)" title="Eliminar Destino">
+                <i class="fas fa-trash-alt"></i>
+              </button>
+            </div>
+          </TransitionGroup>
+        </div>
+
+        <div class="editor-actions-bottom">
+          <button class="btn-add-dest" @click="addDestinationConfig">
+            <i class="fas fa-plus"></i> Añadir Nuevo Destino
+          </button>
+
+          <button 
+            class="btn-save-config" 
+            :class="{ 'has-changes': hasUnsavedChanges }"
+            @click="saveConfig(false)" 
+            :disabled="isSavingConfig"
+          >
+              <i class="fas fa-save" v-if="!isSavingConfig"></i>
+              <i class="fas fa-spinner fa-spin" v-else></i>
+              {{ isSavingConfig ? 'Guardando...' : (hasUnsavedChanges ? '¡Guardar Cambios!' : 'Configuración Guardada') }}
+          </button>
+        </div>
+      </div>
+      </Transition>
+
     </div>
   </div>
+  </Transition>
+
+  <!-- DELETE MODAL INTEGRATION -->
+  <DestinationDeleteModal
+    :is-open="showDeleteModal"
+    :destination-name="destinationToDelete?.name || ''"
+    @close="showDeleteModal = false"
+    @confirm="confirmDelete"
+  />
 </template>
 
 <style lang="scss" scoped>
+@import '@/styles/colorVariables.module.scss';
+
 $font-stack: 'Inter', system-ui, sans-serif;
 
 .modal-overlay {
@@ -272,7 +548,7 @@ $font-stack: 'Inter', system-ui, sans-serif;
 }
 
 .modal-content {
-  background: white;
+  background: $white;
   width: 90%;
   max-width: 500px;
   border-radius: 16px;
@@ -293,7 +569,32 @@ header {
   h2 {
     margin: 0;
     font-size: 1.2rem;
-    color: #2c3e50;
+    color: $text-dark;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .btn-config {
+    background: $warning;
+    color: $white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    &:hover {
+      background: $warning-dark;
+    }
   }
 
   .btn-close {
@@ -301,7 +602,7 @@ header {
     border: none;
     font-size: 1.5rem;
     cursor: pointer;
-    color: #95a5a6;
+    color: $gray-400;
   }
 
   .btn-back {
@@ -309,14 +610,62 @@ header {
     border: none;
     font-size: 1rem;
     cursor: pointer;
-    color: #2c3e50;
+    color: $text-dark;
     margin-right: 1rem;
+  }
+}
+
+.empty-destinations {
+  padding: 3rem 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: $gray-50;
+  border-radius: 12px;
+  border: 2px dashed $border-light;
+
+  .icon-empty {
+    font-size: 3rem;
+    color: $gray-400;
+  }
+
+  p {
+    color: $gray-600;
+    margin: 0;
+    font-weight: 500;
+  }
+
+  .text-muted {
+    font-size: 0.85rem;
+    color: $gray-500;
+  }
+
+  .btn-primary {
+    background: $NICOLE-PURPLE;
+    color: $white;
+    border: none;
+    padding: 0.8rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+
+    &:hover {
+      background: $purple-dark;
+      transform: translateY(-2px);
+    }
   }
 }
 
 .filter-tabs {
   display: flex;
-  background: #f1f2f6;
+  background: $gray-100;
   padding: 4px;
   border-radius: 8px;
   margin-bottom: 1rem;
@@ -328,13 +677,14 @@ header {
     padding: 6px;
     border-radius: 6px;
     font-weight: 600;
-    color: #7f8c8d;
+    color: $gray-600;
     cursor: pointer;
     font-size: 0.85rem;
+    transition: all 0.2s;
 
     &.active {
-      background: white;
-      color: #2c3e50;
+      background: $white;
+      color: $text-dark;
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     }
   }
@@ -346,7 +696,7 @@ header {
   gap: 1rem;
 
   .btn-dest {
-    background: #f8f9fa;
+    background: $gray-50;
     border: 2px solid transparent;
     border-radius: 12px;
     padding: 1.5rem;
@@ -359,21 +709,21 @@ header {
 
     i {
       font-size: 1.8rem;
-      color: #34495e;
+      color: $text-dark;
     }
 
     span {
       font-weight: 600;
-      color: #2c3e50;
+      color: $text-dark;
       font-size: 0.9rem;
     }
 
     &:hover {
-      background: #eaf2f8;
-      border-color: #3498db;
+      background: $purple-overlay;
+      border-color: $NICOLE-PURPLE;
 
       i {
-        color: #3498db;
+        color: $NICOLE-PURPLE;
       }
     }
   }
@@ -383,7 +733,7 @@ header {
   flex: 1;
   overflow-y: auto;
   margin-bottom: 1rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid $border-light;
 
   .list-header {
     display: grid;
@@ -391,12 +741,12 @@ header {
     padding: 0.8rem 0;
     font-size: 0.75rem;
     font-weight: 700;
-    color: #95a5a6;
+    color: $gray-500;
     text-transform: uppercase;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid $border-light;
     position: sticky;
     top: 0;
-    background: white;
+    background: $white;
   }
 
   .item-row {
@@ -404,16 +754,16 @@ header {
     grid-template-columns: 2fr 1fr 1.5fr;
     padding: 0.8rem 0;
     align-items: center;
-    border-bottom: 1px solid #f9f9f9;
+    border-bottom: 1px solid $gray-50;
 
     .prod-name {
       font-weight: 600;
       font-size: 0.9rem;
-      color: #2c3e50;
+      color: $text-dark;
     }
 
     .prod-pending {
-      color: #e67e22;
+      color: $warning;
       font-weight: 700;
       text-align: center;
     }
@@ -429,16 +779,16 @@ header {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #eaf2f8;
-        border: 1px solid #d4e6f1;
+        background: $purple-overlay;
+        border: 1px solid $border-light;
         border-radius: 6px;
         cursor: pointer;
-        color: #3498db;
+        color: $NICOLE-PURPLE;
         transition: all 0.2s;
 
         &:hover {
-          background: #3498db;
-          color: white;
+          background: $NICOLE-PURPLE;
+          color: $white;
         }
 
         i {
@@ -449,16 +799,17 @@ header {
       input {
         width: 100%;
         padding: 6px;
-        border: 1px solid #dfe6e9;
+        border: 1px solid $border-light;
         border-radius: 6px;
         text-align: center;
         font-weight: 700;
-        color: #2ecc71;
+        color: $success;
         font-size: 1rem;
+        background: $white;
 
         &:focus {
           outline: none;
-          border-color: #2ecc71;
+          border-color: $success;
         }
       }
     }
@@ -469,8 +820,8 @@ header {
   .btn-confirm {
     width: 100%;
     padding: 1rem;
-    background: #2ecc71;
-    color: white;
+    background: $success;
+    color: $white;
     border: none;
     border-radius: 10px;
     font-weight: 700;
@@ -483,12 +834,12 @@ header {
     transition: all 0.2s;
 
     &:hover:not(:disabled) {
-      background: #27ae60;
+      background: $success-dark;
       transform: translateY(-1px);
     }
 
     &:disabled {
-      background: #bdc3c7;
+      background: $gray-400;
       cursor: not-allowed;
     }
   }
@@ -497,7 +848,401 @@ header {
 .empty {
   padding: 2rem;
   text-align: center;
-  color: #95a5a6;
+  color: $gray-500;
   font-size: 0.9rem;
+}
+
+// Editor styles
+.editor-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+
+  .editor-list {
+    flex: 1;
+    overflow-y: visible;
+    /* To allow SearchableSelect dropdown to pop out */
+    padding-right: 0.5rem;
+    padding-bottom: 3rem;
+    /* Extra space at bottom to scroll past dropdowns */
+    margin-bottom: 1rem;
+
+    /* Create custom scrollbar just in case inner container still needs to scroll */
+    max-height: calc(80vh - 200px);
+    overflow-y: auto;
+
+    .editor-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      background: $gray-50;
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 1px solid $border-light;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+      transition: all 0.3s ease;
+
+      &:hover {
+        border-color: $NICOLE-PURPLE;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      }
+
+      .editor-fields {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.8rem;
+
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.3rem;
+
+          label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: $gray-600;
+          }
+
+          input {
+            padding: 0.6rem;
+            border: 1px solid $border-light;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            color: $text-dark;
+            width: 100%;
+            background: $white;
+
+            &:focus {
+              outline: none;
+              border-color: $NICOLE-PURPLE;
+              box-shadow: 0 0 0 2px $purple-overlay;
+            }
+          }
+        }
+
+        .keywords-group {
+          .tag-input-container {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid $border-light;
+            border-radius: 8px;
+            background: $white;
+            padding: 0.5rem;
+            transition: border-color 0.2s;
+
+            &:focus-within {
+              border-color: $NICOLE-PURPLE;
+              box-shadow: 0 0 0 2px $purple-overlay;
+            }
+
+            .tags-list {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 0.5rem;
+              margin-bottom: 0.5rem;
+
+              .keyword-tag {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.4rem;
+                background: rgba($NICOLE-PURPLE, 0.08);
+                color: $NICOLE-PURPLE;
+                padding: 0.35rem 0.6rem;
+                border-radius: 6px;
+                font-size: 0.85rem;
+                font-weight: 500;
+                border: 1px solid rgba($NICOLE-PURPLE, 0.2);
+
+                .btn-remove-tag {
+                  background: transparent;
+                  border: none;
+                  color: $NICOLE-PURPLE;
+                  cursor: pointer;
+                  padding: 0;
+                  margin: 0;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 0.8rem;
+                  opacity: 0.6;
+                  transition: opacity 0.2s;
+
+                  &:hover {
+                    opacity: 1;
+                    color: $error;
+                  }
+                }
+              }
+            }
+
+            input {
+              border: none;
+              padding: 0.2rem 0.4rem;
+              width: 100%;
+              font-size: 0.9rem;
+              background: transparent;
+              box-shadow: none;
+
+              &:focus {
+                outline: none;
+                box-shadow: none;
+              }
+            }
+          }
+        }
+
+        small {
+          font-size: 0.75rem;
+          color: $gray-500;
+        }
+      }
+    }
+
+  }
+
+  .btn-remove-dest {
+    background: transparent;
+    color: $gray-400;
+    border: none;
+    padding: 0.5rem;
+    cursor: pointer;
+    font-size: 1.2rem;
+    border-radius: 6px;
+    transition: all 0.2s;
+
+    &:hover {
+      color: $error;
+      background: rgba($error, 0.1);
+    }
+  }
+}
+
+.editor-actions-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid $border-light;
+  background: white;
+  margin-top: auto;
+
+  .btn-add-dest {
+    background: transparent;
+    color: $NICOLE-PURPLE;
+    border: 2px dashed $border-light;
+    padding: 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+
+    &:hover {
+      background: $purple-overlay;
+      border-color: $NICOLE-PURPLE;
+      transform: translateY(-2px);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+  }
+
+  .btn-save-config {
+    width: 100%;
+    padding: 1rem;
+    background: $NICOLE-PURPLE;
+    color: $white;
+    border: none;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+
+    &:disabled:not(.has-changes) {
+      background: $gray-400;
+      cursor: not-allowed;
+    }
+
+    &.has-changes {
+      background: $success;
+      animation: gentle-pulse 2s infinite;
+
+      &:hover {
+        background: $success-dark;
+      }
+    }
+  }
+}
+
+@keyframes gentle-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba($success, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 10px rgba($success, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba($success, 0);
+  }
+}
+
+.editor-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 3rem 1.5rem;
+  background: #fdfaff;
+  border: 2px dashed rgba($NICOLE-PURPLE, 0.2);
+  border-radius: 16px;
+  margin-top: 1rem;
+
+  .empty-icon-wrap {
+    width: 70px;
+    height: 70px;
+    background: rgba($NICOLE-PURPLE, 0.1);
+    color: $NICOLE-PURPLE;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 2rem;
+    margin-bottom: 1.2rem;
+  }
+
+  h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.15rem;
+    color: $text-dark;
+  }
+
+  p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: $gray-500;
+    line-height: 1.5;
+    max-width: 90%;
+  }
+}
+
+// Transitions
+.tag-fade-enter-active,
+.tag-fade-leave-active {
+  transition: all 0.25s ease;
+}
+
+.tag-fade-enter-from,
+.tag-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.slide-fade-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.2s cubic-bezier(1, 0.5, 0.8, 1);
+}
+
+.slide-fade-enter-from {
+  transform: translateX(10px);
+  opacity: 0;
+}
+
+.slide-fade-leave-to {
+  transform: translateX(-10px);
+  opacity: 0;
+}
+
+@keyframes vanish {
+  0% {
+    transform: scale(1) rotate(0deg);
+    filter: blur(2px) grayscale(1);
+    opacity: 0.7;
+  }
+
+  20% {
+    transform: scale(1.05) rotate(2deg);
+    filter: blur(4px) grayscale(1) brightness(1.5);
+  }
+
+  100% {
+    transform: scale(0.2) rotate(-15deg) translateY(-100px);
+    filter: blur(20px) grayscale(1) brightness(10);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+}
+
+// List transitions
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.4s ease;
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+.list-leave-active {
+  position: absolute;
+  width: 100%;
+}
+
+.list-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem; // Separation between items
+}
+
+.step-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 </style>

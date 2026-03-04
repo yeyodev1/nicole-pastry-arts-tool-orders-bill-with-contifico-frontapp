@@ -5,6 +5,8 @@ export interface GoalSettingsData {
   sellerGoal: number
   // Per-person overrides: keyed by person name (stat._id from analytics)
   individualGoals: Record<string, number>
+  // Dynamic commission tiers. Rate is a percentage (e.g. 2 for 2%)
+  commissionTiers: Array<{ threshold: number; rate: number }>
 }
 
 interface GoalSettingsResponse {

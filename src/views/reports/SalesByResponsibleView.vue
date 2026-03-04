@@ -13,6 +13,8 @@ const sellerGoal = ref(DEFAULT_SELLER_GOAL)
 const managerGoal = ref(DEFAULT_MANAGER_GOAL)
 // Per-person overrides: keyed by stat._id (person's name from analytics)
 const individualGoals = ref<Record<string, number>>({})
+// Dynamic Commission Tiers
+const commissionTiers = ref<{ threshold: number; rate: number }[]>([])
 
 const showGoalEditor = ref(false)
 const isSavingGoals = ref(false)
@@ -78,10 +80,25 @@ const fetchStats = async () => {
     const data = await AnalyticsService.getSalesByResponsible(dateRange.value.from, dateRange.value.to)
     stats.value = data.stats
     totalSales.value = data.stats.reduce((acc: number, curr: any) => acc + curr.totalSales, 0)
+    if (data.commissionTiers) {
+      commissionTiers.value = [...data.commissionTiers]
+    }
   } catch (error) {
     console.error('Error fetching stats:', error)
   } finally {
     isLoading.value = false
+  }
+}
+
+const addTier = () => {
+  const highest = commissionTiers.value.reduce((acc, curr) => Math.max(acc, curr.threshold), 0)
+  commissionTiers.value.push({ threshold: highest + 5000, rate: 0 })
+  commissionTiers.value.sort((a, b) => a.threshold - b.threshold)
+}
+
+const removeTier = (index: number) => {
+  if (commissionTiers.value.length > 1) {
+    commissionTiers.value.splice(index, 1)
   }
 }
 
@@ -93,6 +110,7 @@ const saveGoals = async () => {
       managerGoal: managerGoal.value,
       sellerGoal: sellerGoal.value,
       individualGoals: { ...individualGoals.value },
+      commissionTiers: commissionTiers.value,
     })
     goalSaveStatus.value = 'success'
     setTimeout(() => { goalSaveStatus.value = 'idle' }, 2500)
@@ -116,6 +134,9 @@ onMounted(async () => {
     managerGoal.value = goals.managerGoal
     sellerGoal.value = goals.sellerGoal
     individualGoals.value = { ...goals.individualGoals }
+    if (goals.commissionTiers) {
+      commissionTiers.value = [...goals.commissionTiers]
+    }
   } catch {
     // Defaults already set via ref initialization
   }
@@ -217,6 +238,36 @@ onMounted(async () => {
           </div>
         </div>
 
+        <!-- Custom Commission Tiers -->
+        <div class="editor-section-label" style="margin-top: 1.25rem;">
+          <span>Escalas de Comisión</span>
+          <span class="section-hint">Define los % que aplican según las metas</span>
+        </div>
+        <div class="commission-tiers-editor">
+          <div v-for="(tier, index) in commissionTiers" :key="index" class="tier-row">
+            <div class="tier-col">
+              <label>Desde</label>
+              <div class="input-prefix">
+                <span>$</span>
+                <input type="number" v-model.number="tier.threshold" min="0" step="500" />
+              </div>
+            </div>
+            <div class="tier-col">
+              <label>Tasa</label>
+              <div class="input-postfix">
+                <input type="number" v-model.number="tier.rate" min="0" max="100" step="1" />
+                <span>%</span>
+              </div>
+            </div>
+            <button class="btn-remove-tier" @click="removeTier(index)" title="Eliminar escala" :disabled="commissionTiers.length <= 1">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+          <button class="btn-add-tier" @click="addTier">
+            <i class="fas fa-plus"></i> Añadir Escala
+          </button>
+        </div>
+
         <!-- Footer: computed total + save -->
         <div class="editor-footer">
           <div class="goal-total-preview">
@@ -295,13 +346,18 @@ onMounted(async () => {
       </div>
 
       <!-- Tiers Explanation (New UX) -->
-      <div class="commission-info-bar">
+      <div v-if="commissionTiers.length" class="commission-info-bar">
         <div class="info-item">
           <i class="fas fa-info-circle"></i>
           <span><strong>REGLAS DE COMISIÓN:</strong></span>
-          <span class="tier">$0-$10k: <strong>2%</strong></span>
-          <span class="tier">$10k-$13k: <strong>3%</strong></span>
-          <span class="tier">>$13k: <strong>6%</strong></span>
+          <span v-for="(tier, index) in commissionTiers" :key="index" class="tier">
+            <template v-if="index < commissionTiers.length - 1">
+              ${{ (tier.threshold / 1000).toFixed(0) }}k-${{ ((commissionTiers[index + 1]?.threshold ?? 0) / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
+            </template>
+            <template v-else>
+              >${{ (tier.threshold / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
+            </template>
+          </span>
         </div>
       </div>
 
@@ -1016,6 +1072,122 @@ onMounted(async () => {
     .person-input {
       input {
         width: 100px;
+      }
+    }
+  }
+
+  // Commission Tiers Editor
+  .commission-tiers-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+
+    .tier-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 1rem;
+      padding: 0.75rem;
+      background: $gray-50;
+      border-radius: 8px;
+      border: 1px solid $border-light;
+
+      .tier-col {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+
+        label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: $text-light;
+          text-transform: uppercase;
+        }
+
+        .input-postfix {
+          display: flex;
+          align-items: center;
+          border: 1px solid $border-light;
+          border-radius: 8px;
+          overflow: hidden;
+          background: white;
+          transition: border-color 0.2s;
+
+          &:focus-within {
+            border-color: $NICOLE-PURPLE;
+            box-shadow: 0 0 0 3px rgba($NICOLE-PURPLE, 0.1);
+          }
+
+          input {
+            border: none;
+            outline: none;
+            padding: 0.6rem 0.75rem;
+            width: 70px;
+            font-family: $font-secondary;
+            font-size: 0.95rem;
+            color: $text-dark;
+          }
+
+          span {
+            padding: 0.6rem 0.75rem;
+            background: $gray-50;
+            color: $text-light;
+            font-weight: 600;
+            font-size: 0.95rem;
+            border-left: 1px solid $border-light;
+          }
+        }
+
+        .input-prefix input {
+          width: 90px;
+        }
+      }
+
+      .btn-remove-tier {
+        background: transparent;
+        border: 1px solid transparent;
+        color: $text-light;
+        width: 38px;
+        height: 38px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+
+        &:hover:not(:disabled) {
+          background: #fee2e2;
+          color: #ef4444;
+          border-color: #fca5a5;
+        }
+
+        &:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+      }
+    }
+
+    .btn-add-tier {
+      align-self: flex-start;
+      background: transparent;
+      border: 1px dashed rgba($text-light, 0.4);
+      color: $text-dark;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba($NICOLE-PURPLE, 0.05);
+        border-color: $NICOLE-PURPLE;
+        color: $NICOLE-PURPLE;
       }
     }
   }

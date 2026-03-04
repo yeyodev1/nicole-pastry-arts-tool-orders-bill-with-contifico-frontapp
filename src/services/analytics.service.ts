@@ -7,6 +7,7 @@ interface SalesByResponsibleResponse {
     to: string
   }
   monthlyGoal?: number
+  commissionTiers?: Array<{ threshold: number; rate: number }>
   stats: Array<{
     _id: string
     totalSales: number
