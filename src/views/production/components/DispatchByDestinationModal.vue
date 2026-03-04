@@ -10,7 +10,7 @@ const props = defineProps({
   isOpen: Boolean
 })
 
-const emit = defineEmits(['close', 'success'])
+const emit = defineEmits(['close', 'success', 'settings-updated'])
 
 const step = ref<1 | 2 | 3>(1)
 const selectedDestination = ref('')
@@ -277,6 +277,7 @@ const saveConfig = async (isAutoDelete = false) => {
       } else {
         toast.info('Configuración guardada satisfactoriamente.')
       }
+      emit('settings-updated')
     }
   } catch (e) {
     console.error('Error saving config:', e)
