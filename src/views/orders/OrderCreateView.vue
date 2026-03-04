@@ -34,7 +34,7 @@ const formData = reactive<OrderFormData>({
   deliveryDate: '',
   deliveryTime: '',
   deliveryType: 'pickup',
-  branch: 'San Marino', // Default or undefined
+  branch: '', // Dynamic
   deliveryAddress: '',
   googleMapsLink: '',
   invoiceNeeded: false,
@@ -251,7 +251,7 @@ const resetForm = () => {
     deliveryDate: '',
     deliveryTime: '',
     deliveryType: 'pickup',
-    branch: 'San Marino',
+    branch: '',
     deliveryAddress: '',
     googleMapsLink: '',
     invoiceNeeded: false,
@@ -264,7 +264,7 @@ const resetForm = () => {
     registerPaymentNow: false,
     isCredit: false,
     settledInIsland: false,
-    settledIslandName: 'San Marino',
+    settledIslandName: '',
     paymentDetails: {
       forma_cobro: 'TRA',
       monto: 0,
