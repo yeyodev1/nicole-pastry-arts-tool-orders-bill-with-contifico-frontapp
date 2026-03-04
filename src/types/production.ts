@@ -6,6 +6,7 @@ export interface OrderDetail {
   stage: string
   branch?: string
   deliveryType?: string
+  deliveryRound?: string | null
 }
 
 export interface SummaryItem {

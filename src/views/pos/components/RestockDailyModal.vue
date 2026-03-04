@@ -2,8 +2,10 @@
 import { ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { posRestockService, type DailyFormData, type DetailedLoss } from '@/services/pos-restock.service';
+import ProductionSettingsService from '@/services/production-settings.service';
 import RestockLossDetailModal from './RestockLossDetailModal.vue';
 import RestockQuickAdd from './RestockQuickAdd.vue';
+import RestockDistributionStep, { type DeliveryRoundResult } from './RestockDistributionStep.vue';
 import ConfirmationModal from '@/components/ConfirmationModal.vue';
 import SearchableSelect from '@/components/ui/SearchableSelect.vue';
 
@@ -16,10 +18,19 @@ const emit = defineEmits(['close', 'success', 'notify']);
 
 const router = useRouter();
 
-// --- Branch switching ---
-const BRANCHES = ['San Marino', 'Mall del Sol', 'Centro de Producción'];
+// --- Branch switching (dynamic) ---
+const dynamicBranches = ref<string[]>([]);
 const localBranch = ref(props.branch);
-const branchOptions = computed(() => BRANCHES.map(b => ({ value: b, label: b })));
+const branchOptions = computed(() => dynamicBranches.value.map(b => ({ value: b, label: b })));
+
+const fetchBranches = async () => {
+  try {
+    const settings = await ProductionSettingsService.getSettings();
+    dynamicBranches.value = (settings.destinations || []).map((d: any) => d.name);
+  } catch (e) {
+    console.error('Error fetching dynamic branches:', e);
+  }
+};
 
 const goToManagement = () => {
   closeModal();
@@ -55,6 +66,10 @@ const activeProductForLoss = ref<RestockItemData | null>(null);
 const showConfirmModal = ref(false);
 
 const hasExistingEntry = ref(false);
+
+// --- Step Flow: 'form' → 'distribution' ---
+const currentStep = ref<'form' | 'distribution'>('form');
+const distributionData = ref<DeliveryRoundResult[] | null>(null);
 
 // --- Fetch Logic ---
 const fetchDailyForm = async () => {
@@ -171,9 +186,30 @@ const handleSaveLosses = (losses: DetailedLoss[]) => {
   activeProductForLoss.value = null;
 };
 
-// --- Submit Logic ---
+// --- Submit Logic (Step 1 → Distribution) ---
 const handleSubmitClick = () => {
   if (!formData.value) return;
+  // Navigate to distribution step instead of confirm
+  currentStep.value = 'distribution';
+};
+
+const handleBackToForm = () => {
+  currentStep.value = 'form';
+};
+
+// Items prepared for the distribution step
+const distributionItems = computed(() =>
+  formItems.value.map(item => ({
+    productName: item.productName,
+    unit: item.unit,
+    category: item.category,
+    pedidoFinal: getFinalPedido(item),
+  }))
+);
+
+// Called when distribution step is confirmed
+const handleDistributionConfirm = (data: DeliveryRoundResult[]) => {
+  distributionData.value = data;
   showConfirmModal.value = true;
 };
 
@@ -183,20 +219,27 @@ const executeSubmission = async () => {
 
   isSubmitting.value = true;
   try {
+    // Build items with deliveryRounds from distribution data
     const payload = {
       branch: localBranch.value,
       date: formData.value.formDate,
       submittedBy: 'POS User',
-      items: formItems.value.map(item => ({
-        productName: item.productName,
-        unit: item.unit,
-        isGeneral: item.isGeneral,
-        category: item.category,
-        bajas: item.bajas,
-        stockFinal: item.excedente,
-        pedidoFinal: getFinalPedido(item),
-        detailedLosses: item.detailedLosses
-      }))
+      items: formItems.value.map(item => {
+        // Find rounds for this item from distribution data
+        const distItem = distributionData.value?.find(d => d.productName === item.productName);
+
+        return {
+          productName: item.productName,
+          unit: item.unit,
+          isGeneral: item.isGeneral,
+          category: item.category,
+          bajas: item.bajas,
+          stockFinal: item.excedente,
+          pedidoFinal: getFinalPedido(item),
+          detailedLosses: item.detailedLosses,
+          deliveryRounds: distItem?.deliveryRounds || []
+        };
+      })
     };
 
     await posRestockService.submitDailyEntry(payload);
@@ -250,6 +293,8 @@ const handleQuickAdd = (newProduct: any) => {
 
 // --- Modal Control ---
 const closeModal = () => {
+  currentStep.value = 'form';
+  distributionData.value = null;
   emit('close');
 };
 
@@ -257,6 +302,9 @@ const closeModal = () => {
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
     localBranch.value = props.branch;
+    currentStep.value = 'form';
+    distributionData.value = null;
+    fetchBranches();
     fetchDailyForm();
   }
 });
@@ -293,6 +341,8 @@ watch(localBranch, () => {
       </header>
 
       <div class="modal-body">
+        <!-- Step 1: Form -->
+        <template v-if="currentStep === 'form'">
         <div v-if="isLoading" class="loading">
             <div class="spinner"></div>
             Cargando formulario...
@@ -474,11 +524,21 @@ watch(localBranch, () => {
 
             <div class="modal-actions">
                 <button type="button" class="btn-cancel" @click="closeModal">Cancelar</button>
-                <button type="submit" :disabled="isSubmitting" class="btn-submit">
-                    {{ isSubmitting ? 'Enviando...' : (hasExistingEntry ? 'Actualizar Reporte de Hoy' : 'Confirmar Reporte') }}
+                <button type="submit" :disabled="isSubmitting" class="btn-submit btn-distribute">
+                    <i class="fa-solid fa-truck-ramp-box"></i>
+                    {{ isSubmitting ? 'Enviando...' : 'Distribuir Entrega' }}
                 </button>
             </div>
         </form>
+        </template>
+
+        <!-- Step 2: Distribution -->
+        <RestockDistributionStep
+          v-else-if="currentStep === 'distribution'"
+          :items="distributionItems"
+          @back="handleBackToForm"
+          @confirm="handleDistributionConfirm"
+        />
       </div>
     </div>
 
@@ -1202,6 +1262,20 @@ $bg-overlay: rgba(0, 0, 0, 0.5);
     &:disabled {
       background: #94a3b8;
       cursor: not-allowed;
+    }
+
+    &.btn-distribute {
+      background: $NICOLE-PURPLE;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 12px rgba($NICOLE-PURPLE, 0.2);
+
+      &:hover:not(:disabled) {
+        background: darken($NICOLE-PURPLE, 5%);
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba($NICOLE-PURPLE, 0.3);
+      }
     }
   }
 }

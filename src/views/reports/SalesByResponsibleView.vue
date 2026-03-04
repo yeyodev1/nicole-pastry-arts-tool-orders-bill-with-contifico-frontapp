@@ -1,47 +1,62 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import AnalyticsService from '@/services/analytics.service'
+import GoalSettingsService from '@/services/goal-settings.service'
+import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 
-const monthlyGoal = ref(0)
+// --- Role-based defaults (fallback when no individual override exists) ---
+const MANAGER_ROLE = 'SALES_MANAGER'
+const DEFAULT_SELLER_GOAL = 10000
+const DEFAULT_MANAGER_GOAL = 7000
+
+const sellerGoal = ref(DEFAULT_SELLER_GOAL)
+const managerGoal = ref(DEFAULT_MANAGER_GOAL)
+// Per-person overrides: keyed by stat._id (person's name from analytics)
+const individualGoals = ref<Record<string, number>>({})
+// Dynamic Commission Tiers
+const commissionTiers = ref<{ threshold: number; rate: number }[]>([])
+
+const showGoalEditor = ref(false)
+const isSavingGoals = ref(false)
+const goalSaveStatus = ref<'idle' | 'success' | 'error'>('idle')
+
 const totalSales = ref(0)
-
 const stats = ref<any[]>([])
 const isLoading = ref(false)
-const dateRange = ref({
-  from: '',
-  to: ''
-})
+const dateRange = ref({ from: '', to: '' })
 
-// Initialize dates (First day of month - Today)
-const initDates = () => {
-  const now = new Date()
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-
-  // Format YYYY-MM-DD
-  const formatDate = (d: Date): string => d.toISOString().split('T')[0] ?? ''
-
-  dateRange.value.from = formatDate(firstDay)
-  dateRange.value.to = formatDate(now)
-}
-
-const fetchStats = async () => {
-  isLoading.value = true
-  try {
-    const data = await AnalyticsService.getSalesByResponsible(dateRange.value.from, dateRange.value.to)
-    stats.value = data.stats
-    monthlyGoal.value = data.monthlyGoal || 10000
-    // Calculate total explicitly for progress bar
-    totalSales.value = data.stats.reduce((acc: number, curr: any) => acc + curr.totalSales, 0)
-  } catch (error) {
-    console.error('Error fetching stats:', error)
-  } finally {
-    isLoading.value = false
+/**
+ * Returns the effective goal for a stat:
+ * 1. Per-person override (if set)
+ * 2. Role-based default (managerGoal / sellerGoal)
+ */
+const getIndividualGoal = (stat: any): number => {
+  if (individualGoals.value[stat._id] !== undefined) {
+    return individualGoals.value[stat._id]!
   }
+  return stat.role?.toUpperCase() === MANAGER_ROLE ? managerGoal.value : sellerGoal.value
 }
 
-const totalCommissions = computed(() => {
-  return stats.value.reduce((acc: number, curr: any) => acc + (curr.commission || 0), 0)
+/** Makes sure every person in stats has a value in the editor draft. */
+const buildEditorDraft = () => {
+  stats.value.forEach((stat: any) => {
+    if (individualGoals.value[stat._id] === undefined) {
+      // Pre-populate with the role-based default so the input is never empty
+      individualGoals.value[stat._id] =
+        stat.role?.toUpperCase() === MANAGER_ROLE ? managerGoal.value : sellerGoal.value
+    }
+  })
+}
+
+/** Team goal = sum of effective goals for each real person in stats. */
+const teamGoal = computed(() => {
+  if (!stats.value.length) return sellerGoal.value + managerGoal.value
+  return stats.value.reduce((acc: number, stat: any) => acc + getIndividualGoal(stat), 0)
 })
+
+const totalCommissions = computed(() =>
+  stats.value.reduce((acc: number, curr: any) => acc + (curr.commission || 0), 0)
+)
 
 const isManager = computed(() => {
   const userInfoStr = localStorage.getItem('user_info')
@@ -51,8 +66,80 @@ const isManager = computed(() => {
   return role === 'SALES_MANAGER' || role === 'ADMIN' || role === 'SALES'
 })
 
-onMounted(() => {
+const initDates = () => {
+  const now = new Date()
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+  const formatDate = (d: Date): string => d.toISOString().split('T')[0] ?? ''
+  dateRange.value.from = formatDate(firstDay)
+  dateRange.value.to = formatDate(now)
+}
+
+const fetchStats = async () => {
+  isLoading.value = true
+  try {
+    const data = await AnalyticsService.getSalesByResponsible(dateRange.value.from, dateRange.value.to)
+    stats.value = data.stats
+    totalSales.value = data.stats.reduce((acc: number, curr: any) => acc + curr.totalSales, 0)
+    if (data.commissionTiers) {
+      commissionTiers.value = [...data.commissionTiers]
+    }
+  } catch (error) {
+    console.error('Error fetching stats:', error)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const addTier = () => {
+  const highest = commissionTiers.value.reduce((acc, curr) => Math.max(acc, curr.threshold), 0)
+  commissionTiers.value.push({ threshold: highest + 5000, rate: 0 })
+  commissionTiers.value.sort((a, b) => a.threshold - b.threshold)
+}
+
+const removeTier = (index: number) => {
+  if (commissionTiers.value.length > 1) {
+    commissionTiers.value.splice(index, 1)
+  }
+}
+
+const saveGoals = async () => {
+  isSavingGoals.value = true
+  goalSaveStatus.value = 'idle'
+  try {
+    await GoalSettingsService.updateGoals({
+      managerGoal: managerGoal.value,
+      sellerGoal: sellerGoal.value,
+      individualGoals: { ...individualGoals.value },
+      commissionTiers: commissionTiers.value,
+    })
+    goalSaveStatus.value = 'success'
+    setTimeout(() => { goalSaveStatus.value = 'idle' }, 2500)
+  } catch {
+    goalSaveStatus.value = 'error'
+    setTimeout(() => { goalSaveStatus.value = 'idle' }, 3000)
+  } finally {
+    isSavingGoals.value = false
+  }
+}
+
+const openEditor = () => {
+  buildEditorDraft()
+  showGoalEditor.value = true
+}
+
+onMounted(async () => {
   initDates()
+  try {
+    const goals = await GoalSettingsService.getGoals()
+    managerGoal.value = goals.managerGoal
+    sellerGoal.value = goals.sellerGoal
+    individualGoals.value = { ...goals.individualGoals }
+    if (goals.commissionTiers) {
+      commissionTiers.value = [...goals.commissionTiers]
+    }
+  } catch {
+    // Defaults already set via ref initialization
+  }
   fetchStats()
 })
 </script>
@@ -70,13 +157,19 @@ onMounted(() => {
       
       <div class="filters-card">
         <div class="date-group">
-          <div class="form-group">
-            <label>Desde:</label>
-            <input type="date" v-model="dateRange.from" @change="fetchStats" />
+          <div class="form-group custom-datepicker-group">
+            <CustomDatePicker
+              v-model="dateRange.from"
+              label="Desde"
+              @update:modelValue="fetchStats"
+            />
           </div>
-          <div class="form-group">
-            <label>Hasta:</label>
-            <input type="date" v-model="dateRange.to" @change="fetchStats" />
+          <div class="form-group custom-datepicker-group">
+            <CustomDatePicker
+              v-model="dateRange.to"
+              label="Hasta"
+              @update:modelValue="fetchStats"
+            />
           </div>
         </div>
         <button @click="fetchStats" class="btn-primary">Actualizar</button>
@@ -87,51 +180,184 @@ onMounted(() => {
         <span>Calculando estadísticas...</span>
       </div>
 
+      <!-- Goal Editor Panel -->
+      <div v-if="showGoalEditor" class="goal-editor-panel">
+        <div class="goal-editor-header">
+          <div class="editor-title">
+            <i class="fas fa-sliders-h"></i>
+            <span>Configurar Metas Individuales</span>
+          </div>
+          <button class="btn-close-editor" @click="showGoalEditor = false">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+
+        <!-- Role defaults -->
+        <div class="editor-section-label">Metas por defecto (por rol)</div>
+        <div class="goal-editor-fields">
+          <div class="goal-field">
+            <label><i class="fas fa-user-tie"></i> Jefe de Ventas (default)</label>
+            <div class="input-prefix">
+              <span>$</span>
+              <input type="number" v-model.number="managerGoal" min="0" step="500" />
+            </div>
+          </div>
+          <div class="goal-field">
+            <label><i class="fas fa-user"></i> Vendedor (default)</label>
+            <div class="input-prefix">
+              <span>$</span>
+              <input type="number" v-model.number="sellerGoal" min="0" step="500" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-person overrides -->
+        <div class="editor-section-label" style="margin-top: 1.25rem;">
+          <span>Meta por persona</span>
+          <span class="section-hint">Sobreescribe el default para cada vendedor</span>
+        </div>
+        <div class="person-goals-list">
+          <div v-for="stat in stats" :key="stat._id" class="person-goal-row">
+            <div class="person-info">
+              <span class="person-avatar">{{ stat._id.charAt(0) }}</span>
+              <div>
+                <span class="person-name">{{ stat._id }}</span>
+                <span class="person-role-chip" :class="stat.role.toLowerCase()">{{ stat.role }}</span>
+              </div>
+            </div>
+            <div class="input-prefix person-input">
+              <span>$</span>
+              <input
+                type="number"
+                :value="individualGoals[stat._id]"
+                @input="individualGoals[stat._id] = Number(($event.target as HTMLInputElement).value)"
+                min="0"
+                step="500"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Commission Tiers -->
+        <div class="editor-section-label" style="margin-top: 1.25rem;">
+          <span>Escalas de Comisión</span>
+          <span class="section-hint">Define los % que aplican según las metas</span>
+        </div>
+        <div class="commission-tiers-editor">
+          <div v-for="(tier, index) in commissionTiers" :key="index" class="tier-row">
+            <div class="tier-col">
+              <label>Desde</label>
+              <div class="input-prefix">
+                <span>$</span>
+                <input type="number" v-model.number="tier.threshold" min="0" step="500" />
+              </div>
+            </div>
+            <div class="tier-col">
+              <label>Tasa</label>
+              <div class="input-postfix">
+                <input type="number" v-model.number="tier.rate" min="0" max="100" step="1" />
+                <span>%</span>
+              </div>
+            </div>
+            <button class="btn-remove-tier" @click="removeTier(index)" title="Eliminar escala" :disabled="commissionTiers.length <= 1">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+          <button class="btn-add-tier" @click="addTier">
+            <i class="fas fa-plus"></i> Añadir Escala
+          </button>
+        </div>
+
+        <!-- Footer: computed total + save -->
+        <div class="editor-footer">
+          <div class="goal-total-preview">
+            <span class="preview-label">Meta Total del Equipo</span>
+            <span class="computed-total">${{ teamGoal.toLocaleString() }}</span>
+          </div>
+          <button
+            class="btn-save-goals"
+            :class="{ saving: isSavingGoals, saved: goalSaveStatus === 'success', error: goalSaveStatus === 'error' }"
+            :disabled="isSavingGoals"
+            @click="saveGoals"
+          >
+            <i v-if="isSavingGoals" class="fas fa-spinner fa-spin"></i>
+            <i v-else-if="goalSaveStatus === 'success'" class="fas fa-check"></i>
+            <i v-else-if="goalSaveStatus === 'error'" class="fas fa-times"></i>
+            <i v-else class="fas fa-save"></i>
+            <span v-if="isSavingGoals">Guardando...</span>
+            <span v-else-if="goalSaveStatus === 'success'">¡Guardado!</span>
+            <span v-else-if="goalSaveStatus === 'error'">Error al guardar</span>
+            <span v-else>Guardar cambios</span>
+          </button>
+        </div>
+      </div>
+
       <div v-else class="results-grid">
         <!-- Goal Progress Card -->
         <div class="summary-card goal-card">
           <div class="goal-header">
-            <h3>Objetivo Mensual</h3>
-            <span class="goal-value">${{ monthlyGoal.toLocaleString() }}</span>
+            <h3>Meta del Equipo</h3>
+            <div class="goal-header-right">
+              <span class="goal-value">${{ teamGoal.toLocaleString() }}</span>
+              <button class="btn-edit-goal" @click="openEditor" title="Editar metas">
+                <i class="fas fa-pen"></i>
+              </button>
+            </div>
           </div>
           <div class="progress-container">
-             <div 
-               class="progress-bar" 
-               :style="{ width: Math.min((totalSales / monthlyGoal) * 100, 100) + '%' }"
-               :class="{ 'success': totalSales >= monthlyGoal }"
-             ></div>
+            <div
+              class="progress-bar"
+              :style="{ width: Math.min((totalSales / teamGoal) * 100, 100) + '%' }"
+              :class="{ 'success': totalSales >= teamGoal }"
+            ></div>
           </div>
           <div class="goal-details">
-             <span>Progreso: <strong>{{ ((totalSales / monthlyGoal) * 100).toFixed(1) }}%</strong></span>
-             <span>Faltante: <strong>${{ Math.max(monthlyGoal - totalSales, 0).toLocaleString() }}</strong></span>
+            <span>Progreso: <strong>{{ ((totalSales / teamGoal) * 100).toFixed(1) }}%</strong></span>
+            <span>Faltante: <strong>${{ Math.max(teamGoal - totalSales, 0).toLocaleString() }}</strong></span>
+          </div>
+          <div class="goal-breakdown">
+            <span class="breakdown-item">
+              <i class="fas fa-user-tie"></i>
+              Jefe de Ventas: <strong>${{ managerGoal.toLocaleString() }}</strong>
+            </span>
+            <span class="breakdown-sep">+</span>
+            <span class="breakdown-item">
+              <i class="fas fa-users"></i>
+              Vendedores: <strong>${{ (teamGoal - managerGoal).toLocaleString() }}</strong>
+            </span>
           </div>
         </div>
 
         <!-- Summary Cards -->
-         <div class="summary-card total">
-            <h3>Venta Total</h3>
-            <p class="value">${{ totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
-         </div>
+        <div class="summary-card total">
+          <h3>Venta Total</h3>
+          <p class="value">${{ totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+        </div>
 
-         <div class="summary-card commission">
-            <h3>Comisión Total Estimada</h3>
-            <p class="value total-commission">${{ totalCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
-         </div>
+        <div class="summary-card commission">
+          <h3>Comisión Total Estimada</h3>
+          <p class="value total-commission">${{ totalCommissions.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</p>
+        </div>
 
-         <div class="summary-card count">
-            <h3>Total Pedidos</h3>
-            <p class="value">{{stats.reduce((acc, curr) => acc + curr.count, 0)}}</p>
-         </div>
+        <div class="summary-card count">
+          <h3>Total Pedidos</h3>
+          <p class="value">{{stats.reduce((acc, curr) => acc + curr.count, 0)}}</p>
+        </div>
       </div>
 
       <!-- Tiers Explanation (New UX) -->
-      <div class="commission-info-bar">
+      <div v-if="commissionTiers.length" class="commission-info-bar">
         <div class="info-item">
           <i class="fas fa-info-circle"></i>
           <span><strong>REGLAS DE COMISIÓN:</strong></span>
-          <span class="tier">$10k-$13k: <strong>5%</strong></span>
-          <span class="tier">$13k-$16k: <strong>10%</strong></span>
-          <span class="tier">>$16k: <strong>15%</strong></span>
+          <span v-for="(tier, index) in commissionTiers" :key="index" class="tier">
+            <template v-if="index < commissionTiers.length - 1">
+              ${{ (tier.threshold / 1000).toFixed(0) }}k-${{ ((commissionTiers[index + 1]?.threshold ?? 0) / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
+            </template>
+            <template v-else>
+              >${{ (tier.threshold / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
+            </template>
+          </span>
         </div>
       </div>
 
@@ -143,37 +369,48 @@ onMounted(() => {
               <th>Rol</th>
               <th>Pedidos</th>
               <th>Total Ventas</th>
-              <th>% del Total</th>
+              <th>Meta Individual</th>
+              <th>Progreso</th>
               <th>Comisión</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="stat in stats" :key="stat._id">
-               <td class="responsible-name">
-                 <span class="avatar-circle">{{ stat._id.charAt(0) }}</span>
-                 {{ stat._id }}
-               </td>
-               <td>
-                 <span class="role-badge" :class="stat.role.toLowerCase()">{{ stat.role }}</span>
-               </td>
-               <td>{{ stat.count }}</td>
-               <td class="amount">${{ stat.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</td>
-               <td class="percentage">
-                 {{
-                  totalSales > 0
-                    ? ((stat.totalSales / totalSales) * 100).toFixed(1)
-                    : '0.0'
-                }}%
-               </td>
-               <td class="commission-cell">
-                 <span v-if="stat.commission > 0" class="commission-value">
-                   ${{ stat.commission.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}
-                 </span>
-                 <span v-else class="no-commission">-</span>
-               </td>
+              <td class="responsible-name">
+                <span class="avatar-circle">{{ stat._id.charAt(0) }}</span>
+                {{ stat._id }}
+              </td>
+              <td>
+                <span class="role-badge" :class="stat.role.toLowerCase()">{{ stat.role }}</span>
+              </td>
+              <td>{{ stat.count }}</td>
+              <td class="amount">${{ stat.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</td>
+              <td class="individual-goal">
+                ${{ getIndividualGoal(stat).toLocaleString() }}
+              </td>
+              <td class="progress-cell">
+                <div class="mini-progress-wrap">
+                  <div class="mini-progress-bar">
+                    <div
+                      class="mini-progress-fill"
+                      :style="{ width: Math.min((stat.totalSales / getIndividualGoal(stat)) * 100, 100) + '%' }"
+                      :class="{ 'done': stat.totalSales >= getIndividualGoal(stat) }"
+                    ></div>
+                  </div>
+                  <span class="mini-progress-pct">
+                    {{ ((stat.totalSales / getIndividualGoal(stat)) * 100).toFixed(0) }}%
+                  </span>
+                </div>
+              </td>
+              <td class="commission-cell">
+                <span v-if="stat.commission > 0" class="commission-value">
+                  ${{ stat.commission.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}
+                </span>
+                <span v-else class="no-commission">-</span>
+              </td>
             </tr>
             <tr v-if="stats.length === 0">
-              <td colspan="6" class="empty-cell">No hay datos en este rango de fechas</td>
+              <td colspan="7" class="empty-cell">No hay datos en este rango de fechas</td>
             </tr>
           </tbody>
         </table>
@@ -251,24 +488,14 @@ onMounted(() => {
   .date-group {
     display: flex;
     gap: 1.5rem;
+    align-items: flex-end;
 
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
+    .form-group.custom-datepicker-group {
+      // CustomDatePicker controls its own width nicely
+      width: 200px;
 
-      label {
-        font-weight: 600;
-        color: $text-light;
-        font-size: 0.9rem;
-      }
-
-      input {
-        padding: 0.75rem;
-        border: 1px solid $border-light;
-        border-radius: 8px;
-        font-family: $font-secondary;
-        color: $text-dark;
+      @media(max-width: 500px) {
+        width: 100%;
       }
     }
   }
@@ -346,8 +573,8 @@ onMounted(() => {
 
   /* Goal Card Specifics */
   &.goal-card {
-    grid-column: span 2; // Make goal card wider if desired or keep regular
-    gap: 0.8rem;
+    grid-column: span 2;
+    gap: 0.75rem;
 
     @media(max-width: 768px) {
       grid-column: span 1;
@@ -356,16 +583,42 @@ onMounted(() => {
     .goal-header {
       display: flex;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: center;
 
       h3 {
         margin: 0;
+      }
+
+      .goal-header-right {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
       }
 
       .goal-value {
         font-weight: 700;
         color: $text-dark;
         font-size: 1.1rem;
+      }
+
+      .btn-edit-goal {
+        background: rgba($NICOLE-PURPLE, 0.08);
+        border: 1px solid rgba($NICOLE-PURPLE, 0.2);
+        color: $NICOLE-PURPLE;
+        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 0.75rem;
+        transition: all 0.2s ease;
+
+        &:hover {
+          background: rgba($NICOLE-PURPLE, 0.15);
+          transform: scale(1.05);
+        }
       }
     }
 
@@ -384,7 +637,7 @@ onMounted(() => {
       transition: width 0.6s ease;
 
       &.success {
-        background: #22c55e; // Green if reached
+        background: linear-gradient(90deg, #22c55e, #16a34a);
       }
     }
 
@@ -396,6 +649,37 @@ onMounted(() => {
 
       strong {
         color: $text-dark;
+      }
+    }
+
+    .goal-breakdown {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding-top: 0.5rem;
+      border-top: 1px dashed $border-light;
+      font-size: 0.8rem;
+      color: $text-light;
+      flex-wrap: wrap;
+
+      .breakdown-item {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+
+        i {
+          color: $NICOLE-PURPLE;
+          font-size: 0.75rem;
+        }
+
+        strong {
+          color: $text-dark;
+        }
+      }
+
+      .breakdown-sep {
+        font-weight: 700;
+        color: $text-light;
       }
     }
   }
@@ -581,5 +865,439 @@ onMounted(() => {
   text-align: center;
   padding: 2rem !important;
   color: $text-light;
+}
+
+// --- Goal Editor Panel ---
+.goal-editor-panel {
+  background: white;
+  border: 1px solid rgba($NICOLE-PURPLE, 0.2);
+  border-radius: 14px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 4px 24px rgba($NICOLE-PURPLE, 0.09);
+
+  .goal-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+
+    .editor-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 700;
+      color: $NICOLE-PURPLE;
+      font-size: 0.95rem;
+
+      i {
+        font-size: 1rem;
+      }
+    }
+
+    .btn-close-editor {
+      background: $gray-50;
+      border: 1px solid $border-light;
+      color: $text-light;
+      border-radius: 6px;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+
+      &:hover {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        color: #dc2626;
+      }
+    }
+  }
+
+  .editor-section-label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: $text-light;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.75rem;
+
+    .section-hint {
+      font-size: 0.78rem;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: $text-light;
+      font-style: italic;
+    }
+  }
+
+  .goal-editor-fields {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px dashed $border-light;
+  }
+
+  .goal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+
+    label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: $text-light;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+
+      i {
+        color: $NICOLE-PURPLE;
+      }
+    }
+  }
+
+  .input-prefix {
+    display: flex;
+    align-items: center;
+    border: 1px solid $border-light;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+
+    &:focus-within {
+      border-color: $NICOLE-PURPLE;
+      box-shadow: 0 0 0 3px rgba($NICOLE-PURPLE, 0.1);
+    }
+
+    span {
+      padding: 0.6rem 0.75rem;
+      background: $gray-50;
+      color: $text-light;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border-right: 1px solid $border-light;
+    }
+
+    input {
+      border: none;
+      outline: none;
+      padding: 0.6rem 0.75rem;
+      font-family: $font-secondary;
+      font-size: 0.95rem;
+      color: $text-dark;
+      width: 120px;
+      background: white;
+    }
+  }
+
+  // Per-person list
+  .person-goals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .person-goal-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    background: $gray-50;
+    border: 1px solid $border-light;
+    transition: border-color 0.2s;
+
+    &:hover {
+      border-color: rgba($NICOLE-PURPLE, 0.2);
+    }
+
+    .person-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+
+      .person-avatar {
+        width: 36px;
+        height: 36px;
+        background: rgba($NICOLE-PURPLE, 0.12);
+        color: $NICOLE-PURPLE;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 0.95rem;
+        flex-shrink: 0;
+      }
+
+      .person-name {
+        font-weight: 700;
+        color: $text-dark;
+        font-size: 0.95rem;
+        display: block;
+      }
+
+      .person-role-chip {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        padding: 0.15rem 0.5rem;
+        border-radius: 100px;
+        margin-top: 0.15rem;
+        display: inline-block;
+
+        &.sales_manager {
+          background: #eff6ff;
+          color: #2563eb;
+        }
+
+        &.sales_rep {
+          background: #f0fdf4;
+          color: #16a34a;
+        }
+      }
+    }
+
+    .person-input {
+      input {
+        width: 100px;
+      }
+    }
+  }
+
+  // Commission Tiers Editor
+  .commission-tiers-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+
+    .tier-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 1rem;
+      padding: 0.75rem;
+      background: $gray-50;
+      border-radius: 8px;
+      border: 1px solid $border-light;
+
+      .tier-col {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+
+        label {
+          font-size: 0.75rem;
+          font-weight: 700;
+          color: $text-light;
+          text-transform: uppercase;
+        }
+
+        .input-postfix {
+          display: flex;
+          align-items: center;
+          border: 1px solid $border-light;
+          border-radius: 8px;
+          overflow: hidden;
+          background: white;
+          transition: border-color 0.2s;
+
+          &:focus-within {
+            border-color: $NICOLE-PURPLE;
+            box-shadow: 0 0 0 3px rgba($NICOLE-PURPLE, 0.1);
+          }
+
+          input {
+            border: none;
+            outline: none;
+            padding: 0.6rem 0.75rem;
+            width: 70px;
+            font-family: $font-secondary;
+            font-size: 0.95rem;
+            color: $text-dark;
+          }
+
+          span {
+            padding: 0.6rem 0.75rem;
+            background: $gray-50;
+            color: $text-light;
+            font-weight: 600;
+            font-size: 0.95rem;
+            border-left: 1px solid $border-light;
+          }
+        }
+
+        .input-prefix input {
+          width: 90px;
+        }
+      }
+
+      .btn-remove-tier {
+        background: transparent;
+        border: 1px solid transparent;
+        color: $text-light;
+        width: 38px;
+        height: 38px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+
+        &:hover:not(:disabled) {
+          background: #fee2e2;
+          color: #ef4444;
+          border-color: #fca5a5;
+        }
+
+        &:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+      }
+    }
+
+    .btn-add-tier {
+      align-self: flex-start;
+      background: transparent;
+      border: 1px dashed rgba($text-light, 0.4);
+      color: $text-dark;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+
+      &:hover {
+        background: rgba($NICOLE-PURPLE, 0.05);
+        border-color: $NICOLE-PURPLE;
+        color: $NICOLE-PURPLE;
+      }
+    }
+  }
+
+  // Footer with total + save
+  .editor-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1.25rem;
+    border-top: 1px solid $border-light;
+    flex-wrap: wrap;
+    gap: 1rem;
+
+    .goal-total-preview {
+      display: flex;
+      flex-direction: column;
+
+      .preview-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: $text-light;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .computed-total {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: $NICOLE-PURPLE;
+        line-height: 1.2;
+      }
+    }
+
+    .btn-save-goals {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      border: none;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      background: $NICOLE-PURPLE;
+      color: white;
+
+      &:hover:not(:disabled) {
+        background: $purple-hover;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba($NICOLE-PURPLE, 0.3);
+      }
+
+      &:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+
+      &.saved {
+        background: #16a34a;
+      }
+
+      &.error {
+        background: #dc2626;
+      }
+    }
+  }
+}
+
+// --- Per-row progress cell ---
+.individual-goal {
+  font-weight: 600;
+  color: $text-light;
+  font-size: 0.9rem;
+}
+
+.progress-cell {
+  min-width: 120px;
+}
+
+.mini-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .mini-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: #f1f5f9;
+    border-radius: 4px;
+    overflow: hidden;
+
+    .mini-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #a855f7, $NICOLE-PURPLE);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+
+      &.done {
+        background: linear-gradient(90deg, #22c55e, #16a34a);
+      }
+    }
+  }
+
+  .mini-progress-pct {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: $text-light;
+    white-space: nowrap;
+  }
 }
 </style>

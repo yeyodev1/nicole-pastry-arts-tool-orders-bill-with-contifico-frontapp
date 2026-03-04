@@ -131,6 +131,40 @@ export function useProductionSummary() {
     return stats
   })
 
+  // Groups by Destination → Round Label → Product → Quantity
+  // Used for showing delivery rounds (Mañana, Tarde, etc.) in production summary
+  const rawStatsByDestinationAndRound = computed(() => {
+    const stats: Record<string, Record<string, Record<string, number>>> = {}
+    if (!rawFilteredOrders.value.length) return stats
+
+    rawFilteredOrders.value.forEach(order => {
+      let dest = 'Otros / Sin Local'
+      if (order.deliveryType === 'delivery') {
+        dest = 'Delivery'
+      } else if (order.branch) {
+        const b = order.branch.toLowerCase()
+        if (b.includes('marino')) dest = 'San Marino'
+        else if (b.includes('mall') || b.includes('sol')) dest = 'Mall del Sol'
+        else if (b.includes('centro') || b.includes('producci')) dest = 'Centro Prod.'
+        else dest = order.branch
+      }
+
+      // Determine round label from comments (only for Restock orders)
+      const isRestock = order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega'
+      const roundLabel = isRestock && order.comments ? order.comments : ''
+
+      if (!stats[dest]) stats[dest] = {}
+      if (!stats[dest]![roundLabel]) stats[dest]![roundLabel] = {}
+      const roundGroup = stats[dest]![roundLabel] as Record<string, number>
+
+      order.products.forEach((p: any) => {
+        roundGroup[p.name] = (roundGroup[p.name] || 0) + (p.quantity || 0)
+      })
+    })
+
+    return stats
+  })
+
   const hasItems = computed(() => {
     return delayedItems.value.length > 0 || todayItems.value.length > 0 || tomorrowItems.value.length > 0 || futureItems.value.length > 0
   })
@@ -176,7 +210,8 @@ export function useProductionSummary() {
           delivery: o.delivery,
           stage: o.stage,
           branch: o.branch,
-          deliveryType: o.deliveryType
+          deliveryType: o.deliveryType,
+          deliveryRound: o.deliveryRound || null
         })),
         mode: 'custom' as const,
         currentInput: undefined
@@ -355,6 +390,7 @@ export function useProductionSummary() {
     rawBucketFilter,
     rawFilteredOrders,
     rawStatsByDestination,
+    rawStatsByDestinationAndRound,
     selectedRawProducts,
     toggleRawProductSelection,
     clearRawSelection,

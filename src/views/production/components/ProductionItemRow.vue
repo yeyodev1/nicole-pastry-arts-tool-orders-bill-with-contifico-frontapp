@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import ActionHoldButton from '@/components/common/ActionHoldButton.vue'
 import { parseECTDate } from '@/utils/dateUtils'
+import { computed } from 'vue'
 
 interface OrderDetail {
   id: string
@@ -8,6 +9,7 @@ interface OrderDetail {
   client: string
   delivery: string
   stage: string
+  deliveryRound?: string | null
 }
 
 interface Item {
@@ -95,6 +97,33 @@ const triggerRegister = () => {
 const toggleExpand = () => {
   emit('toggle-expand', props.item)
 }
+
+// Computed: group orders by delivery round
+const ordersByRound = computed(() => {
+  const groups: Record<string, OrderDetail[]> = {}
+  let hasRounds = false
+
+  for (const order of props.item.orders) {
+    const label = order.deliveryRound || ''
+    if (label) hasRounds = true
+    if (!groups[label]) groups[label] = []
+    groups[label]!.push(order)
+  }
+
+  return { groups, hasRounds }
+})
+
+// Computed: round summary for display under product name
+const roundSummary = computed(() => {
+  if (!ordersByRound.value.hasRounds) return []
+  const result: { label: string; qty: number }[] = []
+  for (const [label, orders] of Object.entries(ordersByRound.value.groups)) {
+    if (!label) continue
+    const qty = orders.reduce((sum, o) => sum + o.quantity, 0)
+    result.push({ label, qty })
+  }
+  return result
+})
 </script>
 
 <template>
@@ -114,7 +143,12 @@ const toggleExpand = () => {
                     {{ formatDisplayDate(item.urgency) }}
                 </div>
                 <h3 class="product-name">{{ item._id }}</h3>
-                <button class="btn-expand-mobile" @click.stop="toggleExpand">
+            <div v-if="roundSummary.length > 0" class="round-tags">
+              <span v-for="rs in roundSummary" :key="rs.label" class="round-tag">
+                <i class="fas fa-clock"></i> {{ rs.label }}: {{ rs.qty }}
+              </span>
+            </div>
+            <button class="btn-expand-mobile" @click.stop="toggleExpand">
                     <i class="fas fa-chevron-down" :class="{ rotated: item.isExpanded }"></i>
                 </button>
             </div>
@@ -190,12 +224,38 @@ const toggleExpand = () => {
         <!-- Details Drawer -->
         <div v-if="item.isExpanded" class="row-details">
             <h4>Detalle de Pedidos</h4>
-            <div class="orders-list">
+
+            <!-- If orders have delivery rounds, show grouped -->
+            <template v-if="ordersByRound.hasRounds">
+              <div v-for="(orders, label) in ordersByRound.groups" :key="label" class="round-group">
+                <div v-if="label" class="round-group-header">
+                  <i class="fas fa-clock"></i>
+                  <span>{{ label }}</span>
+                  <span class="round-group-qty">{{orders.reduce((s, o) => s + o.quantity, 0)}} unids</span>
+                </div>
+                <div v-else class="round-group-header default">
+                  <i class="fas fa-shopping-cart"></i>
+                  <span>Ventas Directas</span>
+                  <span class="round-group-qty">{{orders.reduce((s, o) => s + o.quantity, 0)}} unids</span>
+                </div>
+                <div class="orders-list">
+                  <div v-for="order in orders" :key="order.id" class="order-pill">
+                    <b>{{ formatClient(order.client) }}</b>
+                    <span>x{{ order.quantity }}</span> ({{ formatDisplayDate(order.delivery) }})
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- No rounds: flat list -->
+            <template v-else>
+              <div class="orders-list">
                 <div v-for="order in item.orders" :key="order.id" class="order-pill">
                     <b>{{ formatClient(order.client) }}</b>
                     <span>x{{ order.quantity }}</span> ({{ formatDisplayDate(order.delivery) }})
                 </div>
-            </div>
+              </div>
+            </template>
         </div>
     </div>
 </template>
@@ -325,6 +385,30 @@ $color-info: #3498db;
       @media (min-width: 768px) {
         font-size: 1.05rem;
         padding-right: 0;
+      }
+    }
+
+    .round-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 6px;
+
+      .round-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #7c3aed;
+        background: #ede9fe;
+        padding: 2px 8px;
+        border-radius: 6px;
+        border: 1px solid #ddd6fe;
+
+        i {
+          font-size: 0.6rem;
+        }
       }
     }
 
@@ -570,6 +654,53 @@ $color-info: #3498db;
     color: #64748b;
     font-weight: 800;
     letter-spacing: 1px;
+  }
+
+  .round-group {
+    margin-bottom: 1rem;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  .round-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, #ede9fe, #f3e8ff);
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: #7c3aed;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+
+    &.default {
+      background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+      color: #059669;
+    }
+
+    i {
+      font-size: 0.7rem;
+    }
+
+    .round-group-qty {
+      margin-left: auto;
+      font-size: 0.7rem;
+      font-weight: 700;
+      background: rgba(124, 58, 237, 0.12);
+      padding: 2px 8px;
+      border-radius: 10px;
+      color: #6d28d9;
+    }
+
+    &.default .round-group-qty {
+      background: rgba(5, 150, 105, 0.12);
+      color: #047857;
+    }
   }
 
   .orders-list {

@@ -5,12 +5,14 @@ interface Option {
   value: string
   label: string
   subtitle?: string
+  icon?: string
 }
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
   options: { type: Array as () => Option[], required: true },
   placeholder: { type: String, default: 'Seleccionar...' },
+  searchPlaceholder: { type: String, default: 'Buscar rol...' },
   label: { type: String, default: '' },
   disabled: { type: Boolean, default: false }
 })
@@ -73,7 +75,9 @@ watch(isOpen, (newVal) => {
       @click="toggleDropdown"
     >
       <div class="selected-value">
-        <i class="fa-solid fa-shield-halved icon"></i>
+        <slot name="icon">
+          <i class="fa-solid fa-shield-halved icon"></i>
+        </slot>
         <span v-if="selectedOption" class="text">{{ selectedOption.label }}</span>
         <span v-else class="placeholder">{{ placeholder }}</span>
       </div>
@@ -87,7 +91,7 @@ watch(isOpen, (newVal) => {
           <input 
             v-model="searchQuery" 
             type="text" 
-            placeholder="Buscar rol..."
+            :placeholder="searchPlaceholder"
             @click.stop
           />
         </div>
@@ -101,7 +105,10 @@ watch(isOpen, (newVal) => {
             @click="selectOption(option.value)"
           >
             <div class="option-content">
-              <span class="option-label">{{ option.label }}</span>
+              <div class="option-label-wrapper">
+                <i v-if="option.icon" :class="option.icon" class="option-icon"></i>
+                <span class="option-label">{{ option.label }}</span>
+              </div>
               <span v-if="option.subtitle" class="option-subtitle">{{ option.subtitle }}</span>
             </div>
             <i v-if="option.value === modelValue" class="fa-solid fa-check check-icon"></i>
@@ -292,6 +299,19 @@ watch(isOpen, (newVal) => {
     flex-direction: column;
     gap: 0.15rem;
     flex: 1;
+
+    .option-label-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .option-icon {
+      color: $NICOLE-PURPLE;
+      width: 20px;
+      text-align: center;
+      font-size: 1.05rem;
+    }
   }
 
   .option-label {
@@ -301,9 +321,11 @@ watch(isOpen, (newVal) => {
   }
 
   .option-subtitle {
-    font-size: 0.8rem;
-    color: #94a3b8;
-    font-weight: 500;
+    font-size: 0.75rem;
+    color: $gray-400;
+    /* Made slightly lighter */
+    margin-top: 2px;
+    font-weight: 400;
   }
 
   .check-icon {

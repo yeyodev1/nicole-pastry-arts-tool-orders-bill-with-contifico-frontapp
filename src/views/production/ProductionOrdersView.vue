@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import ProductionService from '@/services/production.service'
+import ProductionSettingsService, { type ProductionDestination } from '@/services/production-settings.service'
 import { parseECTDate, getECTNow, isSameDayECT } from '@/utils/dateUtils'
 import DispatchReportModal from './components/DispatchReportModal.vue'
 import DispatchByDestinationModal from './components/DispatchByDestinationModal.vue'
@@ -27,6 +28,7 @@ interface Order {
   branch?: string
   deliveryAddress?: string
   deliveryTime?: string
+  comments?: string
 
   // Dispatch
   dispatchStatus?: string
@@ -45,7 +47,8 @@ const router = useRouter()
 
 // Filter State
 const filterMode = ref('today') // Default to Today for focus
-const filterBranch = ref<string | null>(null) // 'sanMarino', 'mallDelSol', 'centroProduccion', 'delivery'
+const filterBranch = ref<string | null>(null) // Dynamic branch name or 'delivery'
+const dynamicDestinations = ref<ProductionDestination[]>([])
 
 // Collapse State
 const isPendingExpanded = ref(true)
@@ -88,12 +91,26 @@ const toggleSelectAll = () => {
   }
 }
 
+const fetchDynamicDestinations = async () => {
+  try {
+    const settings = await ProductionSettingsService.getSettings()
+    if (settings && settings.destinations) {
+      dynamicDestinations.value = settings.destinations
+    }
+  } catch (err) {
+    console.error('Error fetching destinations:', err)
+  }
+}
+
 const fetchOrders = async () => {
   try {
     isLoading.value = true
-    const response = await ProductionService.getAllOrders()
-    // Service now returns the array directly
-    orders.value = response as any
+    // Parallel fetch
+    const [ordersRes] = await Promise.all([
+      ProductionService.getAllOrders(),
+      fetchDynamicDestinations()
+    ])
+    orders.value = ordersRes as any
   } catch (err) {
     console.error(err)
     error.value = 'No se pudieron cargar las órdenes.'
@@ -214,9 +231,19 @@ const filteredOrders = computed(() => {
       }
 
       const branch = (o.branch || '').toLowerCase()
-      if (filterBranch.value === 'sanMarino') return branch.includes('marino')
-      if (filterBranch.value === 'mallDelSol') return branch.includes('mall') || branch.includes('sol')
-      if (filterBranch.value === 'centroProduccion') return branch.includes('centro') || branch.includes('producci')
+      const comments = (o.comments || '').toLowerCase()
+
+      // Dynamic match
+      const matchedDest = dynamicDestinations.value.find(d => d.name === filterBranch.value)
+      if (matchedDest) {
+        const nameMatch = branch === matchedDest.name.toLowerCase() || branch.includes(matchedDest.name.toLowerCase())
+        const keywordMatch = matchedDest.matchKeywords.some(kw => {
+          const lkw = kw.toLowerCase()
+          return branch.includes(lkw) || comments.includes(lkw)
+        })
+
+        return nameMatch || keywordMatch
+      }
 
       return false
     })
@@ -234,28 +261,42 @@ const dispatchedOrders = computed(() => {
 })
 
 const stats = computed(() => {
-  const s = {
-    sanMarino: 0,
-    mallDelSol: 0,
-    centroProduccion: 0,
+  const s: Record<string, number> = {
     delivery: 0
   }
 
+  // Initialize dynamic ones
+  dynamicDestinations.value.forEach(d => {
+    s[d.name] = 0
+  })
+
   // Calculate stats based on orders filtered by DATE.
-  // This ensures that when "Today" is selected, the stats show counts for Today.
   ordersByDate.value.forEach(o => {
     // If delivery, count as delivery
     if (o.deliveryType === 'delivery') {
-      s.delivery++
+      s['delivery'] = (s['delivery'] || 0) + 1
       return
     }
 
-    // If pickup, check branch
+    // If pickup, match with dynamic destinations
     const branch = (o.branch || '').toLowerCase()
-    if (branch.includes('marino')) s.sanMarino++
-    else if (branch.includes('mall') || branch.includes('sol')) s.mallDelSol++
-    else if (branch.includes('centro') || branch.includes('producci')) s.centroProduccion++
-    else s.delivery++ // Fallback
+    const comments = (o.comments || '').toLowerCase()
+
+    // Find matching destination
+    const matched = dynamicDestinations.value.find(d => {
+      const nameMatch = branch === d.name.toLowerCase() || branch.includes(d.name.toLowerCase())
+      const keywordMatch = d.matchKeywords.some(kw => {
+        const lkw = kw.toLowerCase()
+        return branch.includes(lkw) || comments.includes(lkw)
+      })
+      return nameMatch || keywordMatch
+    })
+
+    if (matched) {
+      s[matched.name] = (s[matched.name] || 0) + 1
+    } else {
+      s['delivery'] = (s['delivery'] || 0) + 1 // Fallback if no match
+    }
   })
 
   return s
@@ -390,41 +431,23 @@ const getDispatchBadge = (status?: string) => {
       </div>
     </div>
 
-    <!-- Stats Summary (Clickable Filters) -->
+    <!-- Stats Summary (Dynamic Destination Cards) -->
     <div class="stats-grid" v-if="orders.length > 0">
       <div 
+        v-for="dest in dynamicDestinations"
+        :key="dest.id"
         class="stat-card" 
-        :class="{ active: filterBranch === 'sanMarino' }"
-        @click="toggleBranchFilter('sanMarino')"
+        :class="{ active: filterBranch === dest.name }"
+        @click="toggleBranchFilter(dest.name)"
       >
-        <div class="icon-box sm"><i class="fas fa-store-alt"></i></div>
+        <div class="icon-box cp"><i :class="dest.icon || 'fas fa-industry'"></i></div>
         <div class="info">
-          <span class="count">{{ stats.sanMarino }}</span>
-          <span class="label">San Marino</span>
+          <span class="count">{{ stats[dest.name] || 0 }}</span>
+          <span class="label">{{ dest.name }}</span>
         </div>
       </div>
-      <div 
-        class="stat-card"
-        :class="{ active: filterBranch === 'mallDelSol' }"
-        @click="toggleBranchFilter('mallDelSol')"
-      >
-        <div class="icon-box mds"><i class="fas fa-shopping-bag"></i></div>
-        <div class="info">
-          <span class="count">{{ stats.mallDelSol }}</span>
-          <span class="label">Mall del Sol</span>
-        </div>
-      </div>
-      <div 
-        class="stat-card"
-        :class="{ active: filterBranch === 'centroProduccion' }"
-        @click="toggleBranchFilter('centroProduccion')"
-      >
-        <div class="icon-box cp"><i class="fas fa-industry"></i></div>
-        <div class="info">
-          <span class="count">{{ stats.centroProduccion }}</span>
-          <span class="label">Centro Prod.</span>
-        </div>
-      </div>
+
+      <!-- Delivery Always at the end -->
       <div 
         class="stat-card"
         :class="{ active: filterBranch === 'delivery' }"
@@ -511,6 +534,14 @@ const getDispatchBadge = (status?: string) => {
                         <span>{{ getDestination(order).label }}</span>
                       </div>
                       <small class="dest-detail" v-if="getDestination(order).detail">{{ getDestination(order).detail }}</small>
+                    </div>
+
+                    <div
+                      v-if="order.comments && (order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega')"
+                      class="delivery-round-badge"
+                    >
+                      <i class="fas fa-clock"></i>
+                      {{ order.comments }}
                     </div>
                   </td>
                   <td class="col-items">
@@ -619,6 +650,14 @@ const getDispatchBadge = (status?: string) => {
                       </div>
                       <small class="dest-detail" v-if="getDestination(order).detail">{{ getDestination(order).detail }}</small>
                     </div>
+
+                    <div
+                      v-if="order.comments && (order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega')"
+                      class="delivery-round-badge"
+                    >
+                      <i class="fas fa-clock"></i>
+                      {{ order.comments }}
+                    </div>
                   </td>
                   <td class="col-items">
                     <div class="items-dropdown" :class="{ 'is-expanded': expandedOrders.includes(order._id) }">
@@ -697,6 +736,7 @@ const getDispatchBadge = (status?: string) => {
       :is-open="showGlobalBatchModal"
       @close="showGlobalBatchModal = false"
       @success="handleGlobalBatchSuccess"
+      @settings-updated="fetchOrders"
     />
 
     <HoldToConfirmModal
@@ -1191,6 +1231,26 @@ $color-danger: #e74c3c;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+
+.delivery-round-badge {
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: linear-gradient(135deg, #ede9fe, #f3e8ff);
+  color: #7c3aed;
+  border: 1px solid #ddd6fe;
+
+  i {
+    font-size: 0.65rem;
   }
 }
 

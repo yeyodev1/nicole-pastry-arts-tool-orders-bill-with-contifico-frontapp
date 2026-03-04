@@ -2,6 +2,7 @@
 import type { OrderFormData } from '@/types/order'
 import { computed, ref, onMounted } from 'vue'
 import { deliveryService, type DeliveryPerson } from '@/services/delivery.service'
+import ProductionSettingsService from '@/services/production-settings.service'
 import PaymentFields from './PaymentFields.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 import CustomTimeSelect from '@/components/ui/CustomTimeSelect.vue'
@@ -12,7 +13,7 @@ const props = defineProps<{
   modelValue: OrderFormData
 }>()
 
-const BRANCHES = ['San Marino', 'Mall del Sol', 'Centro de Producción'] as const
+const BRANCHES = ref<string[]>([])
 
 const isDelivery = computed(() => props.modelValue.deliveryType === 'delivery')
 
@@ -28,8 +29,20 @@ const fetchRiders = async () => {
   }
 }
 
+const fetchDynamicDestinations = async () => {
+  try {
+    const settings = await ProductionSettingsService.getSettings()
+    if (settings && settings.destinations) {
+      BRANCHES.value = settings.destinations.map(d => d.name)
+    }
+  } catch (error) {
+    console.error('Error fetching dynamic destinations:', error)
+  }
+}
+
 onMounted(() => {
   fetchRiders()
+  fetchDynamicDestinations()
 })
 
 const handleRiderChange = (e: Event) => {

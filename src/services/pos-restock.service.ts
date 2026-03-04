@@ -45,6 +45,7 @@ export interface RestockEntryItem {
   stockFinal: number; // This is the 'excedente'
   pedidoFinal: number;
   detailedLosses?: DetailedLoss[];
+  deliveryRounds?: Array<{ label: string; quantity: number }>;
 }
 
 export interface RestockEntryPayload {

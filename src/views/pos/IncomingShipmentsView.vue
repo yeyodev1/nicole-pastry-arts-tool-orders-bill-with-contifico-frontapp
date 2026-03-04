@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import POSService, { type POSOrder } from '@/services/pos.service'
 import { useOrderExport } from '@/composables/useOrderExport'
+import ProductionSettingsService from '@/services/production-settings.service'
 import POSPageHeader from './components/POSPageHeader.vue'
 import POSShipmentCard from './components/POSShipmentCard.vue'
 import DeliveryModal from './components/DeliveryModal.vue'
@@ -14,7 +15,7 @@ const isLoading = ref(false)
 const orders = ref<POSOrder[]>([])
 const pendingDispatchesForBulk = ref<any[]>([])
 const selectedBranch = ref('Mall del Sol')
-const branches = ['Todas las sucursales', 'San Marino', 'Mall del Sol', 'Centro de Producción']
+const branches = ref<string[]>(['Todas las sucursales'])
 
 const filterMode = ref<POSFilterMode>('today')
 const customDate = ref('')
@@ -135,7 +136,21 @@ const handleExportDispatch = async () => {
   }
 }
 
-onMounted(fetchData)
+onMounted(async () => {
+  // Fetch dynamic branches
+  try {
+    const settings = await ProductionSettingsService.getSettings()
+    const destinations = (settings.destinations || []).map((d: any) => d.name)
+    branches.value = ['Todas las sucursales', ...destinations]
+    // Set default to first real branch if current isn't in the list
+    if (!destinations.includes(selectedBranch.value) && destinations.length > 0) {
+      selectedBranch.value = destinations[0]
+    }
+  } catch (e) {
+    console.error('Error fetching dynamic branches:', e)
+  }
+  fetchData()
+})
 </script>
 
 <template>
