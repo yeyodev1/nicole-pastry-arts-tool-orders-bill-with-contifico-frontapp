@@ -25,15 +25,6 @@ const displayName = computed(() => (isGlobal.value ? 'Global (Todas)' : props.se
       <span class="branch-name">{{ displayName }}</span>
     </div>
     <div class="banner-tag">{{ isGlobal ? 'REPORTES' : 'ACTIVO' }}</div>
-    <button
-      v-if="!isGlobal"
-      class="btn-restock-inline"
-      :title="'Cerrar caja de ' + selectedBranch"
-      @click="emit('open-restock')"
-    >
-      <i class="fa-solid fa-clipboard-check"></i>
-      <span>Cierre Caja</span>
-    </button>
   </div>
 </template>
 
