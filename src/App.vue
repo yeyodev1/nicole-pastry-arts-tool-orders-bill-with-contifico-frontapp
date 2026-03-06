@@ -4,6 +4,7 @@ import AppSidebar from './components/AppSidebar.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import SessionExpiredModal from './components/SessionExpiredModal.vue'
 import DialogModal from './components/DialogModal.vue'
+import UpdateBanner from './components/UpdateBanner.vue'
 
 const route = useRoute()
 </script>
@@ -17,6 +18,7 @@ const route = useRoute()
     <ToastContainer />
     <DialogModal />
     <SessionExpiredModal />
+    <UpdateBanner />
   </div>
 </template>
 
