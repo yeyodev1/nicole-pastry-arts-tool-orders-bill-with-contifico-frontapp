@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useDialog } from '@/composables/useDialog'
 
 const props = defineProps<{
   isOpen: boolean
@@ -11,11 +12,12 @@ const emit = defineEmits<{
   (e: 'confirm', name: string): void
 }>()
 
+const dialog = useDialog()
 const responsibleName = ref('')
 
-const handleConfirm = () => {
+const handleConfirm = async () => {
   if (!responsibleName.value.trim()) {
-    alert('Por favor ingrese el nombre del responsable')
+    await dialog.alert('Por favor ingrese el nombre del responsable.', { variant: 'warning', title: 'Campo requerido' })
     return
   }
   emit('confirm', responsibleName.value)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue' // Removed reactive, added watch here if not already imported
+import { ref, computed, watch } from 'vue'
 import PaymentFields from './PaymentFields.vue'
+import { useDialog } from '@/composables/useDialog'
 
 const props = defineProps({
   isOpen: {
@@ -23,6 +24,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'submit'])
 
+const dialog = useDialog()
 const isSubmitting = ref(false)
 
 const formData = ref({
@@ -65,21 +67,23 @@ watch(() => props.isOpen, (val) => {
 
 const submitPayment = async () => {
   if (props.defaultAmount > 0 && formData.value.monto <= 0) {
-    alert("El monto debe ser mayor a 0")
+    await dialog.alert("El monto debe ser mayor a 0.", { variant: 'warning', title: 'Monto inválido' })
     return
   }
 
   if (!formData.value.fecha) {
-    alert("Fecha es obligatoria");
-    return;
+    await dialog.alert("La fecha es obligatoria.", { variant: 'warning', title: 'Campo requerido' })
+    return
   }
 
-  // Format date to DD/MM/YYYY for Contífico
   const [year, month, day] = formData.value.fecha.split('-')
   const formattedDate = `${day}/${month}/${year}`
 
   if (formData.value.forma_cobro === 'CR') {
-    const confirmed = confirm("¿Estás seguro que quieres hacer esta transacción a crédito? Tendrás que registrar los cobros en el futuro.")
+    const confirmed = await dialog.confirm(
+      "¿Estás seguro que quieres registrar esta transacción a crédito? Tendrás que registrar los cobros manualmente en el futuro.",
+      { title: 'Confirmar Crédito', confirmLabel: 'Sí, registrar a crédito', variant: 'warning' }
+    )
     if (!confirmed) return
   }
 
@@ -91,7 +95,7 @@ const submitPayment = async () => {
 
   if (formData.value.forma_cobro === 'TC') {
     payload.tipo_ping = formData.value.tipo_ping
-    payload.lote = formData.value.numero_comprobante // Map comprobante to lote/reference for TC
+    payload.lote = formData.value.numero_comprobante
     if (formData.value.numero_tarjeta) {
       payload.numero_tarjeta = formData.value.numero_tarjeta
     }
@@ -103,7 +107,7 @@ const submitPayment = async () => {
 
   if (formData.value.forma_cobro === 'TRA') {
     if (!formData.value.cuenta_bancaria_id) {
-      alert("Debe seleccionar una cuenta bancaria para la transferencia.")
+      await dialog.alert("Debe seleccionar una cuenta bancaria para la transferencia.", { variant: 'warning', title: 'Campo requerido' })
       return
     }
     payload.numero_comprobante = formData.value.numero_comprobante

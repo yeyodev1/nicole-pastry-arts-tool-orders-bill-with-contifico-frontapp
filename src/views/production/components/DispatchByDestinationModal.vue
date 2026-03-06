@@ -2,7 +2,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import ProductionService from '@/services/production.service'
 import ProductionSettingsService, { type ProductionDestination } from '@/services/production-settings.service'
-import { useToast } from '@/composables/useToast' // Added this import
+import { useToast } from '@/composables/useToast'
+import { useDialog } from '@/composables/useDialog'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import DestinationDeleteModal from './DestinationDeleteModal.vue'
 
@@ -20,7 +21,8 @@ const items = ref<{ name: string; pending: number; toSend: number }[]>([])
 const filterMode = ref<'today' | 'tomorrow' | 'all'>('today')
 
 const destinations = ref<ProductionDestination[]>([])
-const toast = useToast() // Added this initialization
+const toast = useToast()
+const dialog = useDialog()
 const isManager = computed(() => {
   const userInfoStr = localStorage.getItem('user_info')
   if (!userInfoStr) return false
@@ -120,7 +122,7 @@ const fetchPendingItems = async () => {
     step.value = 2
   } catch (e) {
     console.error(e)
-    alert('Error cargando ítems pendientes')
+    await dialog.alert('Error cargando ítems pendientes.', { variant: 'error', title: 'Error' })
   } finally {
     isLoading.value = false
   }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { OrderFormData } from '@/types/order'
 import { computed, ref, onMounted } from 'vue'
+import { useDialog } from '@/composables/useDialog'
 import { deliveryService, type DeliveryPerson } from '@/services/delivery.service'
 import ProductionSettingsService from '@/services/production-settings.service'
 import PaymentFields from './PaymentFields.vue'
@@ -13,6 +14,7 @@ const props = defineProps<{
   modelValue: OrderFormData
 }>()
 
+const dialog = useDialog()
 const BRANCHES = ref<string[]>([])
 
 const isDelivery = computed(() => props.modelValue.deliveryType === 'delivery')
@@ -78,7 +80,7 @@ const handleRiderSave = async (personData: Partial<DeliveryPerson>) => {
     props.modelValue.deliveryType = 'delivery'
     isRiderModalOpen.value = false
   } catch (error) {
-    alert('Error al guardar motorizado o transporte.')
+    await dialog.alert('Error al guardar motorizado o transporte.', { variant: 'error', title: 'Error' })
   }
 }
 

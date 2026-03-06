@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import type { ProductionTask } from '@/services/production.service'
 import ProductionService from '@/services/production.service'
+import { useDialog } from '@/composables/useDialog'
 
 const props = defineProps<{
   isOpen: boolean
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   (e: 'update', task: ProductionTask): void
 }>()
 
+const dialog = useDialog()
 const notes = ref('')
 const isSaving = ref(false)
 
@@ -58,7 +60,7 @@ const saveNotes = async () => {
     emit('update', mergedTask)
     emit('close')
   } catch (error) {
-    alert('Error al guardar las notas')
+    await dialog.alert('Error al guardar las notas.', { variant: 'error', title: 'Error' })
     console.error(error)
   } finally {
     isSaving.value = false

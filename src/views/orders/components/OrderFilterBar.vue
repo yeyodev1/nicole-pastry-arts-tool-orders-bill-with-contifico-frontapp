@@ -1,9 +1,6 @@
 <script setup lang="ts">
-
-
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 
-// Types should match composable
 export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError' | 'returns'
 export type DateType = 'deliveryDate' | 'createdAt'
 
@@ -13,7 +10,6 @@ const props = defineProps<{
   customDate: string
   searchQuery: string
   showDatePicker: boolean
-  // For 'Select All' button logic which is entwined with filters
   showSelectAll: boolean
   isSelectAllActive: boolean
 }>()
@@ -31,420 +27,317 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="filter-bar">
-    <div class="filter-upper-row">
-      <!-- Search Input -->
-      <div class="search-wrapper">
-        <i class="fas fa-search"></i>
-        <input 
-          type="text" 
-          :value="searchQuery"
-          @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)"
-          placeholder="Nombre, RUC o email..."
-          @keyup.enter="emit('search')"
+  <nav class="sidebar-nav">
+
+    <!-- TOP group -->
+    <div class="nav-top">
+
+      <!-- Search -->
+      <div class="nav-section">
+        <div class="search-wrapper">
+          <i class="fas fa-search"></i>
+          <input
+            type="text"
+            :value="searchQuery"
+            @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)"
+            placeholder="Buscar por nombre, RUC..."
+            @keyup.enter="emit('search')"
+          />
+        </div>
+      </div>
+
+      <!-- Period -->
+      <div class="nav-section">
+        <span class="section-label">Período</span>
+        <div class="nav-pills">
+          <button class="nav-pill" :class="{ active: filterMode === 'yesterday' }" @click="emit('update:filterMode', 'yesterday')">
+            <i class="fas fa-chevron-left"></i> Ayer
+          </button>
+          <button class="nav-pill" :class="{ active: filterMode === 'today' }" @click="emit('update:filterMode', 'today')">
+            <i class="fas fa-calendar-day"></i> Hoy
+          </button>
+          <button class="nav-pill" :class="{ active: filterMode === 'tomorrow' }" @click="emit('update:filterMode', 'tomorrow')">
+            <i class="fas fa-chevron-right"></i> Mañana
+          </button>
+          <button class="nav-pill" :class="{ active: filterMode === 'all' }" @click="emit('update:filterMode', 'all')">
+            <i class="fas fa-list"></i> Todos
+          </button>
+          <button class="nav-pill" :class="{ active: filterMode === 'custom' }" @click="emit('update:filterMode', 'custom')">
+            <i class="fas fa-calendar-alt"></i> Fecha específica
+          </button>
+        </div>
+      </div>
+
+      <!-- Special Status -->
+      <div class="nav-section">
+        <span class="section-label">Estado especial</span>
+        <div class="nav-pills">
+          <button class="nav-pill pill-error" :class="{ active: filterMode === 'invoiceError' }" @click="emit('update:filterMode', 'invoiceError')">
+            <i class="fas fa-exclamation-triangle"></i> Errores de facturación
+          </button>
+          <button class="nav-pill pill-warning" :class="{ active: filterMode === 'returns' }" @click="emit('update:filterMode', 'returns')">
+            <i class="fas fa-undo"></i> Devoluciones
+          </button>
+        </div>
+      </div>
+
+      <!-- Date Type -->
+      <div class="nav-section">
+        <span class="section-label">Filtrar fechas por</span>
+        <div class="date-type-toggle">
+          <button class="toggle-btn" :class="{ active: dateType === 'deliveryDate' }" @click="emit('update:dateType', 'deliveryDate')">
+            Entrega
+          </button>
+          <button class="toggle-btn" :class="{ active: dateType === 'createdAt' }" @click="emit('update:dateType', 'createdAt')">
+            Registro
+          </button>
+        </div>
+      </div>
+
+      <!-- Specific Date Picker -->
+      <div v-if="showDatePicker" class="nav-section">
+        <span class="section-label">{{ filterMode === 'invoiceError' ? 'Fecha (opcional)' : 'Seleccionar fecha' }}</span>
+        <CustomDatePicker
+          :model-value="customDate"
+          @update:model-value="emit('update:customDate', $event)"
         />
       </div>
 
-      <!-- Date Type Selector -->
-      <div class="date-type-selector">
-        <button 
-          class="type-btn" 
-          :class="{ active: dateType === 'deliveryDate' }" 
-          @click="emit('update:dateType', 'deliveryDate')"
-        >
-          Entrega
-        </button>
-        <button 
-          class="type-btn" 
-          :class="{ active: dateType === 'createdAt' }" 
-          @click="emit('update:dateType', 'createdAt')"
-        >
-          Registro
+      <!-- Batch Select All -->
+      <div v-if="showSelectAll" class="nav-section">
+        <button class="btn-select-all" @click="emit('toggle-select-all')">
+          <i class="fas" :class="isSelectAllActive ? 'fa-square-check' : 'fa-square'"></i>
+          {{ isSelectAllActive ? 'Deseleccionar todo' : 'Seleccionar todo' }}
         </button>
       </div>
 
-      <!-- Export Buttons Removed -->
     </div>
 
-    <div class="filter-lower-row">
-      <div class="quick-filters">
-          <button 
-            class="filter-pill" 
-            :class="{ active: filterMode === 'yesterday' }"
-            @click="emit('update:filterMode', 'yesterday')"
-          >
-            Ayer
-          </button>
-          <button 
-            class="filter-pill" 
-            :class="{ active: filterMode === 'today' }"
-            @click="emit('update:filterMode', 'today')"
-          >
-            Hoy
-          </button>
-          <button 
-            class="filter-pill" 
-            :class="{ active: filterMode === 'tomorrow' }"
-            @click="emit('update:filterMode', 'tomorrow')"
-          >
-            Mañana
-          </button>
-          <button 
-            class="filter-pill" 
-            :class="{ active: filterMode === 'all' }"
-            @click="emit('update:filterMode', 'all')"
-          >
-            Todas
-          </button>
-          <button 
-            class="filter-pill" 
-            :class="{ active: filterMode === 'custom' }"
-            @click="emit('update:filterMode', 'custom')"
-          >
-            Fecha...
-          </button>
-          <button 
-            class="filter-pill error" 
-            :class="{ active: filterMode === 'invoiceError' }"
-            @click="emit('update:filterMode', 'invoiceError')"
-          >
-            Errores Facturación
-          </button>
-          <button 
-            class="filter-pill warning" 
-            :class="{ active: filterMode === 'returns' }"
-            @click="emit('update:filterMode', 'returns')"
-          >
-            Devoluciones
-          </button>
-      </div>
-        
-      <!-- Date Picker -->
-      <div class="date-picker-wrapper" v-if="showDatePicker">
-          <CustomDatePicker 
-            :model-value="customDate" 
-            @update:model-value="emit('update:customDate', $event)"
-            :placeholder="filterMode === 'invoiceError' ? 'Filtrar x Fecha (Opcional)' : 'Seleccionar Fecha'"
-          />
-      </div>
-
-      <!-- Select All Action -->
-      <div v-if="showSelectAll" class="batch-select-actions">
-          <button class="btn-text" @click="emit('toggle-select-all')">
-            {{ isSelectAllActive ? 'Deseleccionar' : 'Todos' }}
-          </button>
-      </div>
-    </div>
-
-    <!-- Export Row (Bottom) -->
-    <div class="filter-export-row">
+    <!-- BOTTOM group: export -->
+    <div class="nav-bottom">
+      <span class="section-label">Exportar</span>
       <button class="btn-export production" @click="emit('export-production')">
-          <i class="fas fa-clipboard-list"></i> 
-          <span>Exportar Orden de Producción</span>
+        <i class="fas fa-clipboard-list"></i>
+        <span>Orden de Producción</span>
       </button>
       <button class="btn-export dispatch" @click="emit('export-dispatch')">
-          <i class="fas fa-truck-loading"></i> 
-          <span>Exportar Orden de Entrega</span>
+        <i class="fas fa-truck-loading"></i>
+        <span>Orden de Entrega</span>
       </button>
     </div>
-  </div>
+
+  </nav>
 </template>
 
 <style lang="scss" scoped>
-/* Filter Bar Styles from OrderListView.vue */
-.filter-bar {
+.sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  margin-bottom: 2.5rem;
-  background: white;
-  padding: 1.25rem;
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);
+  justify-content: space-between;
+  height: 100%;
+  padding: 0.9rem 0.85rem 1rem;
+  overflow-y: auto;
+  overflow-x: visible;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
 
-  .filter-upper-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    align-items: center;
-    width: 100%; // Ensure it takes full width
+.nav-top {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid #f1f5f9;
+  flex-shrink: 0;
+}
+
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.section-label {
+  font-size: 0.63rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #94a3b8;
+  padding: 0 0.2rem;
+  margin-bottom: 0.15rem;
+}
+
+.search-wrapper {
+  position: relative;
+
+  i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #94a3b8;
+    font-size: 0.8rem;
+    pointer-events: none;
   }
 
-  .filter-lower-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    align-items: center;
-    padding-top: 1rem;
-    border-top: 1px solid #f8fafc;
+  input {
     width: 100%;
+    padding: 0.55rem 0.8rem 0.55rem 2rem;
+    border-radius: 9px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 0.88rem;
+    outline: none;
+    transition: all 0.2s;
+    box-sizing: border-box;
+
+    &:focus {
+      background: white;
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+    }
+
+    &::placeholder { color: #94a3b8; }
+  }
+}
+
+.nav-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.nav-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.44rem 0.65rem;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-size: 0.855rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+
+  i {
+    width: 13px;
+    text-align: center;
+    font-size: 0.75rem;
+    color: #94a3b8;
+    flex-shrink: 0;
+    transition: color 0.15s;
   }
 
-  .search-wrapper {
-    position: relative;
-    flex: 2; // Grow to fill space
-    min-width: 200px; // Ensure reasonable minimum
-    width: 100%; // Fallback for small screens
-
-    @media (max-width: 640px) {
-      flex: 1 1 100%; // Full width on mobile
-      order: 1; // Ensure search is first
-    }
-
-
-    i {
-      position: absolute;
-      left: 14px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #94a3b8;
-      font-size: 0.9rem;
-    }
-
-    input {
-      width: 80%;
-      padding: 0.75rem 1rem 0.75rem 2.5rem;
-      border-radius: 12px;
-      border: 1px solid #e2e8f0;
-      background: #f8fafc;
-      font-size: 0.95rem;
-      transition: all 0.2s;
-      outline: none;
-
-      &:focus {
-        background: white;
-        border-color: #8b5cf6;
-        box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.1);
-      }
-
-      &::placeholder {
-        color: #94a3b8;
-      }
-    }
-  }
-
-  .date-type-selector {
-    display: flex;
+  &:hover {
     background: #f1f5f9;
-    padding: 0.3rem;
-    border-radius: 12px;
-    gap: 0.2rem;
-    flex: 0 0 auto;
-    min-width: 160px;
-    white-space: nowrap; // Prevent button text wrapping
-
-    @media (max-width: 640px) {
-      flex: 1 1 100%; // Full width on mobile
-      order: 2;
-    }
-
-
-    .type-btn {
-      flex: 1;
-      border: none;
-      background: transparent;
-      padding: 0.5rem;
-      border-radius: 9px;
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: #64748b;
-      cursor: pointer;
-      transition: all 0.2s;
-
-      &.active {
-        background: white;
-        color: #8b5cf6;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
-      }
-
-      &:hover:not(.active) {
-        color: #1e293b;
-      }
-    }
+    color: #1e293b;
+    i { color: #64748b; }
   }
 
-  .export-actions {
-    display: flex;
-    gap: 0.5rem;
+  &.active {
+    background: #ede9fe;
+    color: #7c3aed;
+    font-weight: 700;
+    i { color: #7c3aed; }
+  }
 
-    @media (max-width: 640px) {
-      flex: 1 1 100%;
-      order: 3;
-      justify-content: space-between;
-    }
+  &.pill-error {
+    &:hover { background: #fef2f2; color: #dc2626; i { color: #dc2626; } }
+    &.active { background: #fef2f2; color: #dc2626; font-weight: 700; i { color: #dc2626; } }
+  }
 
-    .btn-export {
+  &.pill-warning {
+    &:hover { background: #fffbeb; color: #d97706; i { color: #d97706; } }
+    &.active { background: #fffbeb; color: #d97706; font-weight: 700; i { color: #d97706; } }
+  }
+}
+
+.date-type-toggle {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 9px;
+  padding: 0.18rem;
+  gap: 0.12rem;
+
+  .toggle-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 0.38rem;
+    border-radius: 7px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &.active {
       background: white;
-      border: 1px solid #e2e8f0;
-      color: #64748b;
-      padding: 0.6rem 1rem;
-      border-radius: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      transition: all 0.2s;
-      font-size: 0.85rem;
-
-      &:hover {
-        border-color: #8b5cf6;
-        color: #8b5cf6;
-        background: #fdfbff;
-      }
-
-      i {
-        font-size: 1rem;
-      }
-
-      .label {
-        display: none;
-
-        @media (min-width: 450px) {
-          display: inline;
-        }
-      }
+      color: #7c3aed;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     }
+
+    &:hover:not(.active) { color: #1e293b; }
+  }
+}
+
+.btn-select-all {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 7px;
+  border: 1px dashed #c4b5fd;
+  background: #faf5ff;
+  color: #7c3aed;
+  font-size: 0.855rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  box-sizing: border-box;
+
+  &:hover { background: #ede9fe; }
+}
+
+.btn-export {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 7px;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s;
+  box-sizing: border-box;
+
+  i { font-size: 0.88rem; flex-shrink: 0; }
+
+  &.production {
+    background: #f0f9ff;
+    color: #0284c7;
+    border-color: #e0f2fe;
+    &:hover { background: #e0f2fe; border-color: #bae6fd; }
   }
 
-  .quick-filters {
-    display: flex;
-    gap: 0.5rem;
-    overflow-x: auto;
-    padding-bottom: 4px; // Slight padding for scrollbar
-    flex: 1 1 auto; // Flex grow/shrink
-    width: 100%; // Take full width if needed to scroll
-    -webkit-overflow-scrolling: touch; // Smooth scroll iOS
-    scrollbar-width: none; // Hides scrollbar Firefox
-
-    &::-webkit-scrollbar {
-      display: none;
-    }
-
-    // Hides scrollbar Chrome/Safari
-
-    .filter-pill {
-      flex: 0 0 auto; // Prevent shrinking
-
-      padding: 0.5rem 1.25rem;
-      border-radius: 20px;
-      border: 1px solid #e2e8f0;
-      background: white;
-      color: #64748b;
-      font-weight: 700;
-      font-size: 0.85rem;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.2s;
-
-      &:hover {
-        background: #f8fafc;
-        color: #1e293b;
-      }
-
-      &.active {
-        background: #8b5cf6;
-        color: white;
-        border-color: #8b5cf6;
-        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
-      }
-    }
-  }
-
-  .date-picker-wrapper {
-    min-width: 180px;
-    max-width: 100%;
-
-    @media (max-width: 640px) {
-      width: 100%; // Full width on mobile
-      flex: 1 1 100%;
-    }
-  }
-
-  .batch-select-actions {
-    margin-left: auto;
-
-    @media (max-width: 640px) {
-      width: 100%;
-      margin-left: 0;
-      text-align: center;
-      padding-top: 0.5rem;
-    }
-
-
-    .btn-text {
-      background: none;
-      border: none;
-      color: #8b5cf6;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 0.9rem;
-
-      &:hover {
-        text-decoration: underline;
-      }
-    }
-  }
-
-  .filter-export-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid #f8fafc;
-    width: 100%;
-    justify-content: flex-end;
-
-    @media (max-width: 640px) {
-      flex-direction: column;
-
-      .btn-export {
-        width: 100%;
-        justify-content: center;
-      }
-    }
-
-    .btn-export {
-      padding: 0.75rem 1.5rem;
-      border-radius: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      transition: all 0.2s;
-      font-size: 0.9rem;
-      border: 1px solid transparent;
-
-      i {
-        font-size: 1.1rem;
-      }
-
-      &.production {
-        background: #f0f9ff; // Light Blue
-        color: #0284c7;
-        border-color: #e0f2fe;
-
-        &:hover {
-          background: #e0f2fe;
-          border-color: #bae6fd;
-          transform: translateY(-1px);
-        }
-      }
-
-      &.dispatch {
-        background: #f0fdf4; // Light Green
-        color: #16a34a;
-        border-color: #dcfce7;
-
-        &:hover {
-          background: #dcfce7;
-          border-color: #bbf7d0;
-          transform: translateY(-1px);
-        }
-      }
-    }
+  &.dispatch {
+    background: #f0fdf4;
+    color: #16a34a;
+    border-color: #dcfce7;
+    &:hover { background: #dcfce7; border-color: #bbf7d0; }
   }
 }
 </style>

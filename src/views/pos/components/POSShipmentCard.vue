@@ -19,12 +19,6 @@ const { getEffectivePaymentMethod, getStatusLabel, getStatusColorClass, calculat
 
 <template>
   <div class="shipment-card" :class="[getStatusColorClass(order), { 'is-selected': isSelected }]">
-    <div class="card-selection" @click.stop="emit('toggle-selection', order._id)">
-       <div class="custom-checkbox">
-          <i v-if="isSelected" class="fa-solid fa-square-check"></i>
-          <i v-else class="fa-regular fa-square"></i>
-       </div>
-    </div>
     <div class="card-header">
       <div class="header-left">
         <div class="order-id-track">
@@ -44,6 +38,15 @@ const { getEffectivePaymentMethod, getStatusLabel, getStatusColorClass, calculat
         </div>
       </div>
       <div class="header-right">
+        <button
+          class="btn-select-card"
+          :class="{ selected: isSelected }"
+          @click.stop="emit('toggle-selection', order._id)"
+          :title="isSelected ? 'Quitar de exportación' : 'Incluir en exportación'"
+        >
+          <i :class="isSelected ? 'fa-solid fa-square-check' : 'fa-regular fa-square'"></i>
+          <span>{{ isSelected ? 'Seleccionado' : 'Exportar' }}</span>
+        </button>
         <div class="delivery-time-badge">
           <i class="fa-regular fa-clock"></i><span>{{ order.deliveryTime }}</span>
         </div>
@@ -127,27 +130,37 @@ const { getEffectivePaymentMethod, getStatusLabel, getStatusColorClass, calculat
   background: rgba($NICOLE-PURPLE, 0.02);
 }
 
-.card-selection {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 10;
+.btn-select-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 20px;
+  border: 1.5px solid #cbd5e1;
+  background: white;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 700;
   cursor: pointer;
-  padding: 4px;
-}
+  transition: all 0.18s;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
 
-.custom-checkbox {
-  font-size: 1.4rem;
-  color: #CBD5E1;
-  transition: all 0.2s;
+  i { font-size: 0.85rem; transition: color 0.18s; }
 
-  &:hover {
-    transform: scale(1.1);
+  &:hover:not(.selected) {
+    border-color: $NICOLE-PURPLE;
     color: $NICOLE-PURPLE;
+    background: rgba($NICOLE-PURPLE, 0.05);
+    i { color: $NICOLE-PURPLE; }
   }
 
-  .fa-square-check {
-    color: $NICOLE-PURPLE;
+  &.selected {
+    border-color: $NICOLE-PURPLE;
+    background: $NICOLE-PURPLE;
+    color: white;
+    box-shadow: 0 2px 8px rgba($NICOLE-PURPLE, 0.3);
+    i { color: white; }
   }
 }
 
@@ -195,7 +208,8 @@ const { getEffectivePaymentMethod, getStatusLabel, getStatusColorClass, calculat
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  flex-shrink: 0;
 }
 
 .order-id-track {

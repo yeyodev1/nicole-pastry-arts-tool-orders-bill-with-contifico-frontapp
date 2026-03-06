@@ -35,42 +35,43 @@ export function useOrderFilters() {
         filters.search = searchQuery.value
       }
 
-      // 2. Date filters logic
+      // 2. Date filters logic — skip date filters when searching globally
       const today = getECTNow()
       const todayStr = getECTTodayString()
 
-      if (filterMode.value === 'today') {
-        filters.startDate = todayStr
-        filters.endDate = todayStr
-      } else if (filterMode.value === 'yesterday') {
-        const target = new Date(today)
-        target.setDate(target.getDate() - 1)
-        filters.startDate = formatDate(target)
-        filters.endDate = filters.startDate
-      } else if (filterMode.value === 'tomorrow') {
-        const target = new Date(today)
-        target.setDate(target.getDate() + 1)
-        filters.startDate = formatDate(target)
-        filters.endDate = filters.startDate
-      } else if (filterMode.value === 'custom' && customDate.value) {
-        filters.startDate = customDate.value
-        filters.endDate = customDate.value
-      } else if (filterMode.value === 'invoiceError') {
+      if (filterMode.value === 'invoiceError') {
         filters.invoiceStatus = 'ERROR'
-        // Optional date filter for errors
-        if (customDate.value) {
+        if (!searchQuery.value && customDate.value) {
           filters.startDate = customDate.value
           filters.endDate = customDate.value
         }
       } else if (filterMode.value === 'returns') {
         filters.dispatchStatus = 'RETURNED'
-        // Optional: we might want to see all returns regardless of date
-        if (customDate.value) {
+        if (!searchQuery.value && customDate.value) {
+          filters.startDate = customDate.value
+          filters.endDate = customDate.value
+        }
+      } else if (!searchQuery.value) {
+        // Only apply date filters when not searching
+        if (filterMode.value === 'today') {
+          filters.startDate = todayStr
+          filters.endDate = todayStr
+        } else if (filterMode.value === 'yesterday') {
+          const target = new Date(today)
+          target.setDate(target.getDate() - 1)
+          filters.startDate = formatDate(target)
+          filters.endDate = filters.startDate
+        } else if (filterMode.value === 'tomorrow') {
+          const target = new Date(today)
+          target.setDate(target.getDate() + 1)
+          filters.startDate = formatDate(target)
+          filters.endDate = filters.startDate
+        } else if (filterMode.value === 'custom' && customDate.value) {
           filters.startDate = customDate.value
           filters.endDate = customDate.value
         }
       }
-      // 'all' mode does not add any date filters by default (unless search is present)
+      // When searchQuery is set in non-status modes, no date filter is applied (global search)
 
       const data = await OrderService.getOrders(filters)
       orders.value = data
