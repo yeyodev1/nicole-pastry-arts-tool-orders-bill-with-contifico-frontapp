@@ -18,8 +18,8 @@ const dismiss = () => { needRefresh.value = false }
         <i class="fa-solid fa-rotate"></i>
       </div>
       <div class="banner-text">
-        <strong>Nueva versión disponible</strong>
-        <span>Hay mejoras listas para ti. Recarga para aplicarlas.</span>
+        <strong>¡Nueva versión disponible!</strong>
+        <span>Se publicaron mejoras. Recarga para verlas.</span>
       </div>
       <div class="banner-actions">
         <button class="btn-update" @click="update">
