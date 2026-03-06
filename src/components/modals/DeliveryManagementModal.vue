@@ -4,6 +4,7 @@ import { deliveryService, type DeliveryPerson } from '@/services/delivery.servic
 import OrderService from '@/services/order.service'
 import DeliveryPersonFormModal from '@/components/modals/DeliveryPersonFormModal.vue'
 import DeliveryPersonDeleteModal from '@/components/modals/DeliveryPersonDeleteModal.vue'
+import { useDialog } from '@/composables/useDialog'
 
 const props = defineProps<{
   isOpen: boolean
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
+const dialog = useDialog()
 const riders = ref<DeliveryPerson[]>([])
 const loading = ref(false)
 
@@ -57,7 +59,7 @@ const handleSave = async (personData: Partial<DeliveryPerson>) => {
     await fetchRiders()
     isFormModalOpen.value = false
   } catch (error) {
-    alert('Error al guardar motorizado o transporte.')
+    await dialog.alert('Error al guardar motorizado o transporte.', { variant: 'error', title: 'Error' })
   }
 }
 
@@ -80,9 +82,9 @@ const handleDelete = async (payload?: { action: 'unassign' | 'reassign', newPers
     await deliveryService.deletePerson(selectedPerson.value._id)
     await fetchRiders()
     isDeleteModalOpen.value = false
-    alert('Motorizado eliminado correctamente.')
+    await dialog.alert('Motorizado eliminado correctamente.', { variant: 'success', title: 'Listo' })
   } catch (error) {
-    alert('Error al eliminar motorizado o transporte.')
+    await dialog.alert('Error al eliminar motorizado o transporte.', { variant: 'error', title: 'Error' })
   }
 }
 

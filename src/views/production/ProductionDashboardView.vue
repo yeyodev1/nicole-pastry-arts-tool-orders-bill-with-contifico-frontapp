@@ -3,7 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import ProductionService, { type ProductionTask } from '@/services/production.service'
 import Draggable from 'vuedraggable'
 import ProductionDetailModal from './components/ProductionDetailModal.vue'
+import { useDialog } from '@/composables/useDialog'
 
+const dialog = useDialog()
 const tasks = ref<ProductionTask[]>([])
 const isLoading = ref(true)
 const error = ref('')
@@ -86,7 +88,7 @@ const updateStage = async (task: ProductionTask, newStage: 'PENDING' | 'IN_PROCE
     if (taskIndex !== -1 && tasks.value[taskIndex]) {
       tasks.value[taskIndex].productionStage = originalStage
     }
-    alert('Error al actualizar el estado')
+    await dialog.alert('Error al actualizar el estado.', { variant: 'error', title: 'Error' })
   }
 }
 

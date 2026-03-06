@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 
 const props = defineProps<{
   modelValue: string // YYYY-MM-DD
@@ -14,6 +14,8 @@ const emit = defineEmits(['update:modelValue'])
 
 const isOpen = ref(false)
 const wrapperRef = ref<HTMLElement | null>(null)
+const triggerRef = ref<HTMLElement | null>(null)
+const dropdownStyle = ref<Record<string, string>>({})
 
 // Calendar State
 const currentMonth = ref(new Date().getMonth())
@@ -106,7 +108,26 @@ const selectDate = (dateVal: string) => {
 }
 
 const toggleDropdown = () => {
-  if (!props.disabled) isOpen.value = !isOpen.value
+  if (props.disabled) return
+  isOpen.value = !isOpen.value
+  if (isOpen.value) {
+    nextTick(() => {
+      if (!triggerRef.value) return
+      const rect = triggerRef.value.getBoundingClientRect()
+      const dropW = Math.min(280, window.innerWidth - 16)
+      const spaceBelow = window.innerHeight - rect.bottom
+
+      const top = spaceBelow < 320
+        ? `${Math.max(8, rect.top - 328)}px`
+        : `${rect.bottom + 6}px`
+
+      let left = rect.left
+      if (left + dropW > window.innerWidth - 8) left = window.innerWidth - dropW - 8
+      if (left < 8) left = 8
+
+      dropdownStyle.value = { top, left: `${left}px`, width: `${dropW}px` }
+    })
+  }
 }
 
 const handleClickOutside = (event: MouseEvent) => {
@@ -138,7 +159,8 @@ const displayValue = computed(() => {
   <div class="custom-date-picker" ref="wrapperRef">
     <label v-if="label" class="label" :class="{ required }">{{ label }}</label>
     
-    <div 
+    <div
+      ref="triggerRef"
       class="picker-trigger"
       :class="{ 'is-open': isOpen, disabled, 'has-value': !!modelValue }"
       @click="toggleDropdown"
@@ -148,7 +170,7 @@ const displayValue = computed(() => {
     </div>
 
     <transition name="fade">
-      <div v-if="isOpen" class="calendar-dropdown">
+      <div v-if="isOpen" class="calendar-dropdown" :style="dropdownStyle">
         <div class="calendar-header">
            <button @click.stop="prevMonth" type="button"><i class="fa-solid fa-chevron-left"></i></button>
            <span class="curr-month">{{ monthName }}</span>
@@ -246,29 +268,14 @@ const displayValue = computed(() => {
 }
 
 .calendar-dropdown {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  left: 0;
-  width: 320px;
+  position: fixed;
   background: white;
   border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.14);
   border: 1px solid $border-light;
-  z-index: 50;
+  z-index: 9999;
   padding: 1rem;
-  animation: slideDown 0.2s ease;
-
-  @media(max-width: 500px) {
-    width: 300px;
-    left: 50%;
-    transform: translateX(-50%);
-    position: fixed; // Fixed position to avoid parent clipping
-    top: 50%;
-    transform: translate(-50%, -50%); // Center exactly
-    z-index: 9999;
-    box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.4); // Poor man's backdrop
-  }
-
+  animation: slideDown 0.18s ease;
 }
 
 .calendar-header {

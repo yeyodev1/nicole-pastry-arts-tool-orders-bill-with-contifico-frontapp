@@ -56,14 +56,21 @@ const handleRetry = () => emit('retry-invoice')
 </script>
 
 <template>
-  <article 
+  <article
     class="order-card"
     :class="{
       'selecting': isSelected,
-      'invoice-processed': order.invoiceStatus === 'PROCESSED'
+      'invoice-processed': order.invoiceStatus === 'PROCESSED',
+      'invoice-error': order.invoiceStatus === 'ERROR'
     }"
     @click="emit('click')"
   >
+
+    <!-- Invoice Error Banner -->
+    <div v-if="order.invoiceStatus === 'ERROR'" class="error-banner">
+      <i class="fas fa-exclamation-triangle"></i>
+      <span>Error de Facturación — Requiere atención</span>
+    </div>
 
     <!-- Batch Checkbox -->
     <div v-if="batchMode" class="batch-checkbox">
@@ -219,23 +226,28 @@ const handleRetry = () => emit('retry-invoice')
 /* Copied and adapted from OrderListView */
 .order-card {
   background: white;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid #e2e8f0;
-  padding: 1.25rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
-  transition: all 0.2s ease;
+  padding: 1.35rem 1.4rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   position: relative;
-  gap: 1rem;
+  gap: 1.1rem;
   overflow: hidden;
 
 
   /* Styles for processed invoice */
   &.invoice-processed {
-    background: #f0fdf4; // Very light green background
-    border-left: 4px solid #22c55e; // Green left border indicator
+    background: #f0fdf4;
+    border-left: 4px solid #22c55e;
+  }
+
+  /* Styles for invoice error */
+  &.invoice-error {
+    border-left: 4px solid #ef4444;
   }
 
   &.selecting {
@@ -497,9 +509,58 @@ const handleRetry = () => emit('retry-invoice')
           border-color: #ef4444;
           background: #fef2f2;
         }
+
+        &.btn-retry-invoice {
+          color: #ef4444;
+          border-color: #fecaca;
+          background: #fef2f2;
+          animation: pulse-red 2s infinite;
+
+          &:hover {
+            background: #ef4444;
+            color: white;
+            border-color: #ef4444;
+          }
+        }
+
+        &.btn-return:hover {
+          color: #f59e0b;
+          border-color: #f59e0b;
+          background: #fffbeb;
+        }
+
+        &.btn-settle:hover {
+          color: #8b5cf6;
+          border-color: #8b5cf6;
+          background: #fdf4ff;
+        }
       }
     }
   }
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  margin: -0.25rem 0;
+
+  i {
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.3); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
 }
 
 .batch-checkbox {

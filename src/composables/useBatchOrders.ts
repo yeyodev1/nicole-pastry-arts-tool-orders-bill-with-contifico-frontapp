@@ -95,26 +95,33 @@ export function useBatchOrders(orders: any, fetchOrders: () => void) {
     const chunks = chunkArray(validOrders, BATCH_SIZE)
 
     let successCount = 0
-    let failCount = 0
+    const failedErrors: string[] = []
 
     for (const chunk of chunks) {
       const promises = chunk.map((order: any) => OrderService.generateInvoice(order._id))
       const results = await Promise.allSettled(promises)
 
       successCount += results.filter(r => r.status === 'fulfilled').length
-      failCount += results.filter(r => r.status === 'rejected').length
+
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          const data = r.reason?.data
+          const msg = data?.contificoMessage || data?.message || r.reason?.message || 'Error desconocido'
+          const orderName = chunk[i]?.customerName || chunk[i]?._id
+          failedErrors.push(`<b>${orderName}:</b> ${msg}`)
+        }
+      })
     }
 
     isBatchProcessing.value = false
 
-    // Clear selection ONLY on success (or partial success)
-    if (failCount === 0) {
+    if (failedErrors.length === 0) {
       success(`Proceso finalizado. ${successCount} facturas exitosas.`)
       selectedOrderIds.value.clear()
     } else {
-      showError(`Finalizado: ${successCount} exitosas, ${failCount} fallidas.`)
-      // Optional: Don't clear selection so user can retry failed ones?
-      // For now, clear to reset state.
+      const summary = failedErrors.slice(0, 3).join('<br>')
+      const extra = failedErrors.length > 3 ? `<br>... y ${failedErrors.length - 3} más` : ''
+      showError(`${successCount} exitosas, ${failedErrors.length} fallidas:<br>${summary}${extra}`, 12000)
       selectedOrderIds.value.clear()
     }
     fetchOrders()

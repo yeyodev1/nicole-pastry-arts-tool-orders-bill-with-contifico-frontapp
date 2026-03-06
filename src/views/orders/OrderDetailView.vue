@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import OrderService from '@/services/order.service'
 import { useToast } from '@/composables/useToast'
+import { useDialog } from '@/composables/useDialog'
 
 // Components
 import InvoiceEditModal from './components/InvoiceEditModal.vue'
@@ -60,6 +61,7 @@ const handleOrderUpdated = (updatedOrder: any) => {
 }
 
 const { success, error: showError } = useToast()
+const dialog = useDialog()
 
 const registerCollection = async (payload: any) => {
   if (!order.value) return;
@@ -72,7 +74,7 @@ const registerCollection = async (payload: any) => {
     fetchOrder();
   } catch (error: any) {
     console.error("Error registering collection:", error);
-    showError(error.response?.data?.message || "Error al registrar el cobro.");
+    showError(error.data?.message || error.message || "Error al registrar el cobro.");
   } finally {
     isLoading.value = false;
   }
@@ -91,12 +93,12 @@ const executeInvoiceGeneration = async () => {
     success("Factura generada y autorizada exitosamente.")
     fetchOrder()
   } catch (e: any) {
-    const data = e.response?.data
+    const data = e.data
     const contificoMsg = data?.contificoMessage
     if (contificoMsg) {
       showError(`⚠️ Contífico rechazó la factura:<br><small>${contificoMsg}</small>`, 10000)
     } else {
-      showError(data?.message || "Error al generar factura")
+      showError(data?.message || e.message || "Error al generar factura")
     }
   } finally {
     isLoading.value = false
@@ -134,7 +136,7 @@ const executeDeleteOrder = async () => {
     success("La orden ha sido eliminada permanentemente.")
     router.push('/orders')
   } catch (e: any) {
-    showError(e.response?.data?.message || "Error al eliminar la orden")
+    showError(e.data?.message || e.message || "Error al eliminar la orden")
   } finally {
     isLoading.value = false
   }
@@ -146,21 +148,22 @@ const executeDeleteOrder = async () => {
 const handleReturnOrder = async () => {
   if (!order.value) return
 
-  const notes = prompt(`Motivo de la devolución para "${order.value.customerName}":\n(El pedido saldrá de producción y quedará marcado como devuelto)`)
-  if (notes === null) return // Cancel
-  if (!notes.trim()) {
-    alert("Debes ingresar un motivo.")
-    return
-  }
+  const notes = await dialog.prompt(`Motivo de la devolución para "${order.value.customerName}":`, {
+    title: 'Devolución de Pedido',
+    placeholder: 'El pedido saldrá de producción y quedará marcado como devuelto...',
+    confirmLabel: 'Confirmar devolución',
+    variant: 'warning'
+  })
+  if (notes === null) return
 
   isLoading.value = true
   try {
     await OrderService.returnOrder(order.value._id, notes)
     success('Pedido marcado como devuelto.')
-    fetchOrder() // Refresh to update status
+    fetchOrder()
   } catch (err: any) {
     console.error('Return error', err)
-    showError(err.response?.data?.message || 'Error al devolver el pedido')
+    showError(err.data?.message || err.message || 'Error al devolver el pedido')
   } finally {
     isLoading.value = false
   }

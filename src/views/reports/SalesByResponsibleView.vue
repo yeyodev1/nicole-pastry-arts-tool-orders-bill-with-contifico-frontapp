@@ -18,6 +18,7 @@ const commissionTiers = ref<{ threshold: number; rate: number }[]>([])
 
 const showGoalEditor = ref(false)
 const isSavingGoals = ref(false)
+const sidebarOpen = ref(false)
 const goalSaveStatus = ref<'idle' | 'success' | 'error'>('idle')
 
 const totalSales = ref(0)
@@ -145,40 +146,121 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="report-page">
-    <main class="container">
-      <div class="page-header">
-        <h1 class="page-title">Ventas & Comisiones</h1>
-        <router-link v-if="isManager" to="/admin/users" class="btn-config">
-          <i class="fa-solid fa-users-gear"></i>
-          Gestionar Equipo
-        </router-link>
-      </div>
-      
-      <div class="filters-card">
-        <div class="date-group">
-          <div class="form-group custom-datepicker-group">
-            <CustomDatePicker
-              v-model="dateRange.from"
-              label="Desde"
-              @update:modelValue="fetchStats"
-            />
-          </div>
-          <div class="form-group custom-datepicker-group">
-            <CustomDatePicker
-              v-model="dateRange.to"
-              label="Hasta"
-              @update:modelValue="fetchStats"
-            />
-          </div>
+  <div class="page-layout">
+
+    <!-- Mobile overlay -->
+    <Transition name="fade">
+      <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
+    </Transition>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" :class="{ 'sidebar-open': sidebarOpen }">
+      <div class="sidebar-head">
+        <div class="sidebar-brand">
+          <i class="fas fa-chart-line"></i>
+          <span>Ventas</span>
         </div>
-        <button @click="fetchStats" class="btn-primary">Actualizar</button>
+        <button class="btn-close-sidebar" @click="sidebarOpen = false">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-top">
+
+          <div class="nav-section">
+            <span class="section-label">Período</span>
+            <div class="date-field">
+              <span class="date-label">Desde</span>
+              <CustomDatePicker v-model="dateRange.from" @update:modelValue="fetchStats" />
+            </div>
+            <div class="date-field">
+              <span class="date-label">Hasta</span>
+              <CustomDatePicker v-model="dateRange.to" @update:modelValue="fetchStats" />
+            </div>
+            <button @click="fetchStats; sidebarOpen = false" class="btn-update" :disabled="isLoading">
+              <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
+              Actualizar
+            </button>
+          </div>
+
+          <div class="nav-section">
+            <span class="section-label">Herramientas</span>
+            <button
+              class="nav-pill"
+              :class="{ active: showGoalEditor }"
+              @click="showGoalEditor ? showGoalEditor = false : openEditor()"
+            >
+              <i class="fas fa-sliders-h"></i> Configurar Metas
+            </button>
+          </div>
+
+        </div>
+
+        <div class="nav-bottom">
+          <router-link v-if="isManager" to="/admin/users" class="btn-nav-link">
+            <i class="fa-solid fa-users-gear"></i>
+            <span>Gestionar Equipo</span>
+          </router-link>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content">
+
+      <!-- Topbar -->
+      <div class="topbar">
+        <button class="btn-menu" @click="sidebarOpen = true" title="Filtros">
+          <i class="fas fa-sliders-h"></i>
+        </button>
+        <div class="topbar-title">
+          <h1>Ventas & Comisiones</h1>
+          <p v-if="!isLoading && stats.length > 0">
+            {{ stats.length }} vendedores · {{ dateRange.from }} → {{ dateRange.to }}
+          </p>
+        </div>
+        <button @click="fetchStats" class="btn-refresh" :disabled="isLoading" title="Actualizar">
+          <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
+        </button>
+      </div>
+
+      <!-- Desktop inline filter bar -->
+      <div class="desktop-filters">
+        <div class="filter-group">
+          <span class="filter-label">Desde</span>
+          <CustomDatePicker v-model="dateRange.from" @update:modelValue="fetchStats" />
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Hasta</span>
+          <CustomDatePicker v-model="dateRange.to" @update:modelValue="fetchStats" />
+        </div>
+        <div class="filter-actions">
+          <button @click="fetchStats" class="btn-update-inline" :disabled="isLoading">
+            <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
+            Actualizar
+          </button>
+          <button
+            class="btn-goal-inline"
+            :class="{ active: showGoalEditor }"
+            @click="showGoalEditor ? showGoalEditor = false : openEditor()"
+          >
+            <i class="fas fa-sliders-h"></i>
+            Configurar Metas
+          </button>
+          <router-link v-if="isManager" to="/admin/users" class="btn-manage-inline">
+            <i class="fa-solid fa-users-gear"></i>
+            Gestionar Equipo
+          </router-link>
+        </div>
       </div>
 
       <div v-if="isLoading" class="loading-state">
         <div class="spinner"></div>
         <span>Calculando estadísticas...</span>
       </div>
+
+      <template v-else>
 
       <!-- Goal Editor Panel -->
       <div v-if="showGoalEditor" class="goal-editor-panel">
@@ -292,7 +374,8 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-else class="results-grid">
+      <div v-else class="content-body">
+      <div class="results-grid">
         <!-- Goal Progress Card -->
         <div class="summary-card goal-card">
           <div class="goal-header">
@@ -361,7 +444,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-if="!isLoading" class="table-container">
+      <div v-if="!isLoading" class="table-container" style="margin-top: 0">
         <table>
           <thead>
             <tr>
@@ -415,97 +498,375 @@ onMounted(async () => {
           </tbody>
         </table>
       </div>
-    </main>
-  </div>
+      </div> <!-- /content-body -->
+
+      </template>
+    </div> <!-- /main-content -->
+  </div> <!-- /page-layout -->
 </template>
 
 <style lang="scss" scoped>
-.app-header {
-  background-color: white;
-  border-bottom: 1px solid $border-light;
-  padding: 1rem 0;
-  margin-bottom: 2rem;
-
-  .container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  h1 {
-    margin: 0;
-    font-family: $font-principal;
-    color: $NICOLE-PURPLE;
-    font-size: 1.5rem;
-  }
-}
-
-.page-header {
+// ── Two-panel layout ────────────────────────────────────
+.page-layout {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
+  min-height: 100vh;
+  background: $NICOLE-CREAM;
+  position: relative;
 }
 
-.btn-config {
+// ── Sidebar (mobile-only) ────────────────────────────────
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: white;
+  border-right: 1px solid $border-light;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+
+  @media (min-width: 768px) { display: none; }
+
+  @media (max-width: 767px) {
+    position: fixed;
+    left: 0;
+    top: 52px;
+    height: calc(100% - 52px);
+    z-index: 300;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
+    &.sidebar-open { transform: translateX(0); }
+  }
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 299;
+  @media (min-width: 768px) { display: none; }
+  backdrop-filter: blur(2px);
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1rem 0.9rem;
+  border-bottom: 1px solid $border-light;
+  flex-shrink: 0;
+
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: $NICOLE-PURPLE;
+    font-weight: 800;
+    font-size: 0.95rem;
+    i { font-size: 0.95rem; }
+  }
+
+  .btn-close-sidebar {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: $gray-100;
+    border-radius: 6px;
+    color: $text-light;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+    &:hover { background: $gray-200; color: $text-dark; }
+    @media (min-width: 1024px) { display: none; }
+  }
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 1rem 0.85rem 1.1rem;
+  overflow-y: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+.nav-top { display: flex; flex-direction: column; }
+
+.nav-bottom {
+  padding-top: 0.9rem;
+  border-top: 1px solid $border-light;
+}
+
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.2rem;
+}
+
+.section-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: $gray-500;
+  padding: 0 0.2rem;
+  margin-bottom: 0.1rem;
+}
+
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+
+  .date-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: $text-light;
+    padding: 0 0.1rem;
+  }
+}
+
+.btn-update {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: $NICOLE-PURPLE;
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  margin-top: 0.25rem;
+  transition: opacity 0.2s;
+  &:hover:not(:disabled) { opacity: 0.88; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.nav-pill {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background-color: white;
-  color: $NICOLE-PURPLE;
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  border: 1px solid rgba($NICOLE-PURPLE, 0.2);
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: $text-light;
+  font-size: 0.87rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+  i { width: 13px; text-align: center; font-size: 0.78rem; }
+  &:hover { background: $gray-100; color: $text-dark; }
+  &.active { background: rgba($NICOLE-PURPLE, 0.08); color: $NICOLE-PURPLE; font-weight: 700; }
+}
+
+.btn-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 0.65rem;
+  border-radius: 7px;
+  border: 1px solid $border-light;
+  background: $gray-50;
+  color: $text-dark;
+  font-size: 0.86rem;
   font-weight: 600;
   text-decoration: none;
-  font-size: 0.9rem;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: all 0.15s;
+  box-sizing: border-box;
+  &:hover { border-color: $NICOLE-PURPLE; color: $NICOLE-PURPLE; background: rgba($NICOLE-PURPLE, 0.04); }
+  i { font-size: 0.88rem; }
+}
 
-  &:hover {
-    background-color: rgba($NICOLE-PURPLE, 0.03);
-    border-color: $NICOLE-PURPLE;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
+// ── Desktop filter bar ───────────────────────────────────
+.desktop-filters {
+  display: none;
 
-  i {
-    font-size: 1rem;
+  @media (min-width: 768px) {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    background: white;
+    border: 1px solid $border-light;
+    border-radius: 14px;
+    padding: 1rem 1.5rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
   }
 }
 
-.filters-card {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  border: 1px solid $border-light;
-  margin-bottom: 2rem;
+.filter-group {
   display: flex;
-  justify-content: space-between;
-  align-items: end;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 0 0 210px;
+}
 
-  .date-group {
-    display: flex;
-    gap: 1.5rem;
-    align-items: flex-end;
+.filter-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: $gray-500;
+}
 
-    .form-group.custom-datepicker-group {
-      // CustomDatePicker controls its own width nicely
-      width: 200px;
+.filter-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-left: auto;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  padding-left: 1.25rem;
+  border-left: 1px solid $border-light;
+}
 
-      @media(max-width: 500px) {
-        width: 100%;
-      }
-    }
+.btn-update-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem;
+  height: 42px;
+  border-radius: 8px;
+  background: $NICOLE-PURPLE;
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 0.87rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+  &:hover:not(:disabled) { opacity: 0.88; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.btn-goal-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem;
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid $border-light;
+  background: $gray-50;
+  color: $text-dark;
+  font-size: 0.87rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  &:hover { border-color: $NICOLE-PURPLE; color: $NICOLE-PURPLE; background: rgba($NICOLE-PURPLE, 0.04); }
+  &.active { background: rgba($NICOLE-PURPLE, 0.09); color: $NICOLE-PURPLE; border-color: rgba($NICOLE-PURPLE, 0.3); }
+}
+
+.btn-manage-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem;
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid $border-light;
+  background: $gray-50;
+  color: $text-dark;
+  font-size: 0.87rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: all 0.15s;
+  &:hover { border-color: $NICOLE-PURPLE; color: $NICOLE-PURPLE; background: rgba($NICOLE-PURPLE, 0.04); }
+}
+
+// ── Main content ─────────────────────────────────────────
+.main-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  gap: 1.25rem;
+  @media (min-width: 1024px) { padding: 2rem; }
+}
+
+// ── Topbar ───────────────────────────────────────────────
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: white;
+  border: 1px solid $border-light;
+  border-radius: 14px;
+  padding: 0.9rem 1.25rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+
+  .btn-menu {
+    width: 38px; height: 38px;
+    border: 1px solid $border-light;
+    background: white;
+    border-radius: 9px;
+    color: $NICOLE-PURPLE;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    &:hover { background: rgba($NICOLE-PURPLE, 0.06); border-color: rgba($NICOLE-PURPLE, 0.3); }
+    @media (min-width: 768px) { display: none; }
   }
+
+  .topbar-title {
+    flex: 1;
+    h1 { margin: 0; font-size: 1.2rem; font-weight: 800; color: $NICOLE-PURPLE; }
+    p { margin: 0; font-size: 0.78rem; color: $gray-500; font-weight: 500; }
+  }
+
+  .btn-refresh {
+    width: 38px; height: 38px;
+    border-radius: 9px;
+    border: 1px solid $border-light;
+    background: white;
+    color: $text-light;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    &:hover { color: $NICOLE-PURPLE; border-color: rgba($NICOLE-PURPLE, 0.3); }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+}
+
+// ── Content body ─────────────────────────────────────────
+.content-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .results-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); // Wider cards
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
 }
 
 .commission-info-bar {
@@ -805,61 +1166,27 @@ onMounted(async () => {
   }
 }
 
-.btn-primary {
-  background-color: $NICOLE-PURPLE;
-  color: white;
-  padding: 0.75rem 1.5rem;
-  border-radius: 8px;
-  border: none;
-  font-weight: 600;
-  cursor: pointer;
-
-  &:hover {
-    background-color: $purple-hover;
-  }
-}
-
-.btn-secondary {
-  color: $NICOLE-PURPLE;
-  text-decoration: none;
-  font-weight: 500;
-
-  &:hover {
-    text-decoration: underline;
-  }
-}
-
 .loading-state {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4rem;
+  padding: 5rem 1rem;
   gap: 1rem;
   color: $text-light;
 
   .spinner {
-    width: 30px;
-    height: 30px;
-    border: 3px solid rgba($NICOLE-PURPLE, 0.3);
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba($NICOLE-PURPLE, 0.2);
     border-radius: 50%;
     border-top-color: $NICOLE-PURPLE;
-    animation: spin 1s ease-in-out infinite;
+    animation: spin 0.8s linear infinite;
   }
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.container {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .empty-cell {
   text-align: center;

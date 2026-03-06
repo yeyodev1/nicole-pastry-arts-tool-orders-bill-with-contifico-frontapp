@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
 import OrderService from '@/services/order.service'
+import { useDialog } from '@/composables/useDialog'
 
 const props = defineProps<{
   isOpen: boolean
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   (e: 'saved', updatedOrder: any): void
 }>()
 
+const dialog = useDialog()
 const isSubmitting = ref(false)
 const form = reactive({
   invoiceNeeded: false,
@@ -41,23 +43,22 @@ watch(() => props.isOpen, (newVal) => {
   }
 })
 
-const validate = () => {
+const validate = async () => {
   if (!form.invoiceNeeded) return true
 
-  // RUC/Cedula validation
   const rucClean = form.ruc.trim()
   if (rucClean.length !== 10 && rucClean.length !== 13) {
-    alert("El RUC/Cédula debe tener 10 o 13 dígitos.")
+    await dialog.alert("El RUC/Cédula debe tener 10 o 13 dígitos.", { variant: 'warning', title: 'Campo inválido' })
     return false
   }
 
   if (!form.businessName) {
-    alert("La Razón Social es obligatoria.")
+    await dialog.alert("La Razón Social es obligatoria.", { variant: 'warning', title: 'Campo requerido' })
     return false
   }
 
   if (!form.email || !form.email.includes('@')) {
-    alert("Ingrese un email válido.")
+    await dialog.alert("Ingrese un email válido.", { variant: 'warning', title: 'Campo inválido' })
     return false
   }
 
@@ -65,7 +66,7 @@ const validate = () => {
 }
 
 const save = async () => {
-  if (!validate()) return
+  if (!(await validate())) return
 
   isSubmitting.value = true
   try {
@@ -83,8 +84,8 @@ const save = async () => {
     emit('saved', response.order)
     emit('close')
   } catch (e: any) {
-    const msg = e.response?.data?.message || e.message
-    alert('Error actualizando factura: ' + msg)
+    const msg = e.data?.message || e.message
+    await dialog.alert('Error actualizando factura: ' + msg, { variant: 'error', title: 'Error' })
   } finally {
     isSubmitting.value = false
   }

@@ -38,6 +38,7 @@ const assigneeRiderId = ref('')
 const assigneeRiderName = ref('')
 const isAssigning = ref(false)
 const isDropdownOpen = ref(false)
+const sidebarOpen = ref(false)
 const selectedOrderIds = ref<string[]>([])
 const isBulkAssignModalOpen = ref(false)
 
@@ -203,48 +204,113 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="delivery-report-view">
-    <header class="view-header">
-      <div class="header-content">
-        <h1>Reporte de Motorizados / Transporte</h1>
-        <p>Consulta y liquida los valores de envío acumulados.</p>
-      </div>
-      <button class="btn-secondary manage-btn" @click="isManagementModalOpen = true">
-        <i class="fa-solid fa-users-gear"></i> Gestionar Motorizados
-      </button>
-    </header>
+  <div class="page-layout">
 
-    <div class="filter-card card">
-      <div class="filter-grid">
-        <div class="form-group">
-          <CustomDatePicker
-            label="Fecha Inicio"
-            v-model="filters.startDate"
-          />
+    <!-- Mobile overlay -->
+    <Transition name="fade">
+      <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false"></div>
+    </Transition>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" :class="{ 'sidebar-open': sidebarOpen }">
+      <div class="sidebar-head">
+        <div class="sidebar-brand">
+          <i class="fas fa-truck-fast"></i>
+          <span>Motorizados</span>
         </div>
-        <div class="form-group">
-          <CustomDatePicker
-            label="Fecha Fin"
-            v-model="filters.endDate"
-          />
-        </div>
-        <div class="form-group">
-          <label>Motorizado / Transporte</label>
-          <select v-model="filters.personId">
-            <option value="">Todos</option>
-            <option v-for="rider in riders" :key="rider._id" :value="rider._id">
-              {{ rider.name }}
-            </option>
-          </select>
-        </div>
-        <div class="filter-actions">
-          <button @click="generateReport(false)" class="btn-primary" :disabled="loading">
+        <button class="btn-close-sidebar" @click="sidebarOpen = false">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <div class="nav-top">
+
+          <div class="nav-section">
+            <span class="section-label">Período</span>
+            <div class="date-field">
+              <span class="date-label">Desde</span>
+              <CustomDatePicker label="" v-model="filters.startDate" />
+            </div>
+            <div class="date-field">
+              <span class="date-label">Hasta</span>
+              <CustomDatePicker label="" v-model="filters.endDate" />
+            </div>
+          </div>
+
+          <div class="nav-section">
+            <span class="section-label">Transporte</span>
+            <select class="sidebar-select" v-model="filters.personId">
+              <option value="">Todos los motorizados</option>
+              <option v-for="rider in riders" :key="rider._id" :value="rider._id">
+                {{ rider.name }}
+              </option>
+            </select>
+          </div>
+
+          <button @click="generateReport(false); sidebarOpen = false" class="btn-update" :disabled="loading">
             <i class="fa-solid fa-sync" :class="{ 'fa-spin': loading }"></i>
             Actualizar Reporte
           </button>
+
+        </div>
+
+        <div class="nav-bottom">
+          <button class="btn-nav-action" @click="isManagementModalOpen = true; sidebarOpen = false">
+            <i class="fa-solid fa-users-gear"></i>
+            <span>Gestionar Motorizados</span>
+          </button>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content">
+
+      <!-- Topbar -->
+      <div class="topbar">
+        <button class="btn-menu" @click="sidebarOpen = true" title="Filtros">
+          <i class="fas fa-sliders-h"></i>
+        </button>
+        <div class="topbar-title">
+          <h1>Motorizados / Transporte</h1>
+          <p v-if="report">{{ report.count }} entregas · ${{ report.total.toFixed(2) }} total</p>
+          <p v-else-if="loading">Cargando...</p>
+          <p v-else>Consulta y liquida valores de envío</p>
+        </div>
+        <button @click="generateReport(false)" class="btn-refresh" :disabled="loading" title="Actualizar">
+          <i class="fa-solid fa-sync" :class="{ 'fa-spin': loading }"></i>
+        </button>
+      </div>
+
+      <!-- Desktop inline filter bar -->
+      <div class="desktop-filters">
+        <div class="filter-group">
+          <span class="filter-label">Desde</span>
+          <CustomDatePicker v-model="filters.startDate" />
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Hasta</span>
+          <CustomDatePicker v-model="filters.endDate" />
+        </div>
+        <div class="filter-group filter-group--wide">
+          <span class="filter-label">Transporte</span>
+          <select class="filter-select" v-model="filters.personId">
+            <option value="">Todos los motorizados</option>
+            <option v-for="rider in riders" :key="rider._id" :value="rider._id">{{ rider.name }}</option>
+          </select>
+        </div>
+        <div class="filter-actions">
+          <button @click="generateReport(false)" class="btn-update-inline" :disabled="loading">
+            <i class="fa-solid fa-sync" :class="{ 'fa-spin': loading }"></i>
+            Actualizar Reporte
+          </button>
+          <button class="btn-manage-inline" @click="isManagementModalOpen = true">
+            <i class="fa-solid fa-users-gear"></i>
+            Gestionar Motorizados
+          </button>
         </div>
       </div>
-    </div>
 
     <div v-if="report" class="report-content">
       <div class="summary-cards">
@@ -465,188 +531,459 @@ onMounted(() => {
     </div>
 
     <!-- Management Modal -->
-    <DeliveryManagementModal 
+    <DeliveryManagementModal
       :is-open="isManagementModalOpen"
       @close="isManagementModalOpen = false; fetchRiders()"
     />
-  </div>
+
+    </div> <!-- /main-content -->
+  </div> <!-- /page-layout -->
 </template>
 
 <style lang="scss" scoped>
-.delivery-report-view {
-  padding: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
+// ── Two-panel layout ────────────────────────────────────
+.page-layout {
+  display: flex;
+  min-height: 100vh;
+  background: $NICOLE-CREAM;
+  position: relative;
 }
 
-.view-header {
-  margin-bottom: 2rem;
+// ── Sidebar (phone-only, < 768px) ───────────────────────
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: white;
+  border-right: 1px solid $border-light;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+
+  @media (min-width: 768px) { display: none; }
+
+  @media (max-width: 767px) {
+    position: fixed;
+    left: 0;
+    top: 52px;
+    height: calc(100% - 52px);
+    z-index: 300;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
+    &.sidebar-open { transform: translateX(0); }
+  }
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 299;
+  backdrop-filter: blur(2px);
+  @media (min-width: 768px) { display: none; }
+}
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.sidebar-head {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1rem 0.9rem;
+  border-bottom: 1px solid $border-light;
+  flex-shrink: 0;
 
-  h1 {
-    color: $text-dark;
-    margin: 0;
-  }
-
-  p {
-    color: $text-light;
-    margin: 0.5rem 0 0;
-  }
-
-  .manage-btn {
-    background: white;
-    border: 1px solid $border-light;
-    color: $text-dark;
-    padding: 0.75rem 1.25rem;
-    border-radius: 12px;
-    font-weight: 600;
-    cursor: pointer;
+  .sidebar-brand {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    transition: all 0.2s;
-
-    &:hover {
-      border-color: $NICOLE-PURPLE;
-      color: $NICOLE-PURPLE;
-      background: rgba($NICOLE-PURPLE, 0.05);
-    }
+    gap: 0.55rem;
+    color: $NICOLE-PURPLE;
+    font-weight: 800;
+    font-size: 0.95rem;
+    i { font-size: 0.95rem; }
   }
 
-  @media(max-width: 600px) {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
+  .btn-close-sidebar {
+    width: 28px; height: 28px;
+    border: none;
+    background: $gray-100;
+    border-radius: 6px;
+    color: $text-light;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+    &:hover { background: $gray-200; color: $text-dark; }
+    @media (min-width: 1024px) { display: none; }
+  }
+}
 
-    .manage-btn {
-      width: 100%;
-      justify-content: center;
-    }
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  padding: 1rem 0.85rem 1.1rem;
+  overflow-y: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+.nav-top { display: flex; flex-direction: column; }
+
+.nav-bottom {
+  padding-top: 0.9rem;
+  border-top: 1px solid $border-light;
+}
+
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.section-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: $gray-500;
+  padding: 0 0.2rem;
+  margin-bottom: 0.1rem;
+}
+
+.date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  .date-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: $text-light;
+    padding: 0 0.1rem;
+  }
+}
+
+.sidebar-select {
+  width: 100%;
+  padding: 0.58rem 0.7rem;
+  border-radius: 9px;
+  border: 1px solid $border-light;
+  background: $gray-50;
+  font-size: 0.87rem;
+  color: $text-dark;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+  &:focus { border-color: $NICOLE-PURPLE; box-shadow: 0 0 0 3px rgba($NICOLE-PURPLE, 0.1); }
+}
+
+.btn-update {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: $NICOLE-PURPLE;
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  margin-top: 0.15rem;
+  transition: opacity 0.2s;
+  &:hover:not(:disabled) { opacity: 0.88; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.btn-nav-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 0.65rem;
+  border-radius: 7px;
+  border: 1px solid $border-light;
+  background: $gray-50;
+  color: $text-dark;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-sizing: border-box;
+  &:hover { border-color: $NICOLE-PURPLE; color: $NICOLE-PURPLE; background: rgba($NICOLE-PURPLE, 0.04); }
+  i { font-size: 0.88rem; }
+}
+
+// ── Inline filter bar (tablet + desktop) ─────────────────
+.desktop-filters {
+  display: none;
+
+  @media (min-width: 768px) {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    background: white;
+    border: 1px solid $border-light;
+    border-radius: 14px;
+    padding: 1rem 1.5rem;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  flex: 0 0 210px;
+
+  &--wide { flex: 1; min-width: 180px; }
+}
+
+.filter-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: $gray-500;
+}
+
+.filter-select {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 9px;
+  border: 1px solid $border-light;
+  background: #f8fafc;
+  font-size: 0.87rem;
+  color: $text-dark;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+  height: 42px;
+  &:focus { border-color: $NICOLE-PURPLE; box-shadow: 0 0 0 3px rgba($NICOLE-PURPLE, 0.1); }
+}
+
+.filter-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding-left: 1.25rem;
+  border-left: 1px solid $border-light;
+}
+
+.btn-update-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  background: $NICOLE-PURPLE;
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 0.87rem;
+  cursor: pointer;
+  white-space: nowrap;
+  height: 42px;
+  transition: opacity 0.2s;
+  &:hover:not(:disabled) { opacity: 0.88; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.btn-manage-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid $border-light;
+  background: $gray-50;
+  color: $text-dark;
+  font-size: 0.87rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  height: 42px;
+  transition: all 0.15s;
+  &:hover { border-color: $NICOLE-PURPLE; color: $NICOLE-PURPLE; background: rgba($NICOLE-PURPLE, 0.04); }
+}
+
+// ── Main content ─────────────────────────────────────────
+.main-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  gap: 1.25rem;
+  @media (min-width: 1024px) { padding: 2rem; }
+}
+
+// ── Topbar ───────────────────────────────────────────────
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: white;
+  border: 1px solid $border-light;
+  border-radius: 14px;
+  padding: 0.9rem 1.25rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+
+  .btn-menu {
+    width: 38px; height: 38px;
+    border: 1px solid $border-light;
+    background: white;
+    border-radius: 9px;
+    color: $NICOLE-PURPLE;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    &:hover { background: rgba($NICOLE-PURPLE, 0.06); border-color: rgba($NICOLE-PURPLE, 0.3); }
+    @media (min-width: 768px) { display: none; }
+  }
+
+  .topbar-title {
+    flex: 1;
+    h1 { margin: 0; font-size: 1.2rem; font-weight: 800; color: $NICOLE-PURPLE; }
+    p { margin: 0; font-size: 0.78rem; color: $gray-500; font-weight: 500; }
+  }
+
+  .btn-refresh {
+    width: 38px; height: 38px;
+    border-radius: 9px;
+    border: 1px solid $border-light;
+    background: white;
+    color: $text-light;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    &:hover { color: $NICOLE-PURPLE; border-color: rgba($NICOLE-PURPLE, 0.3); }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+}
+
+// ── Report content ───────────────────────────────────────
+.report-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+
+  @media (max-width: 600px) { grid-template-columns: 1fr; }
+}
+
+.summary-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 14px;
+  border-left: 4px solid $NICOLE-PURPLE;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 1px solid $border-light;
+  border-left: 4px solid $NICOLE-PURPLE;
+
+  .label {
+    color: $text-light;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .value {
+    color: $text-dark;
+    font-size: 2rem;
+    font-weight: 800;
+    margin-top: 0.4rem;
+  }
+
+  &.total {
+    border-left-color: $success;
+    .value { color: $success; }
   }
 }
 
 .card {
   background: white;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 1.5rem;
   border: 1px solid $border-light;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
-  margin-bottom: 2rem;
-}
-
-.filter-actions {
-  display: flex;
-  gap: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .btn-bulk-assign {
-  background: #0ea5e9;
+  background: $NICOLE-PURPLE;
   color: white;
   border: none;
-  padding: 0.75rem 1.5rem;
+  padding: 0.6rem 1.25rem;
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  transition: all 0.2s;
-
-  &:hover {
-    background: darken(#0ea5e9, 5%);
-  }
-}
-
-.filter-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-  align-items: flex-end;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 90%;
-
-  label {
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: $text-dark;
-  }
-
-  input,
-  select {
-    padding: 0.75rem;
-    border-radius: 8px;
-    border: 1px solid $border-light;
-    background: $gray-50;
-  }
+  font-size: 0.9rem;
+  transition: opacity 0.2s;
+  &:hover { opacity: 0.88; }
 }
 
 .btn-primary {
   background: $NICOLE-PURPLE;
   color: white;
   border: none;
-  padding: 0.75rem 1.5rem;
+  padding: 0.7rem 1.5rem;
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-
-  &:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
 }
 
-.summary-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  margin-bottom: 2rem;
+.btn-secondary {
+  background: $gray-100;
+  color: $text-dark;
+  border: 1px solid $border-light;
+  padding: 0.7rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.summary-card {
-  background: white;
-  padding: 2rem;
-  border-radius: 16px;
-  border-left: 5px solid $NICOLE-PURPLE;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-
-  .label {
-    color: $text-light;
-    font-size: 1rem;
-    font-weight: 500;
-  }
-
-  .value {
+.details-section, .orders-section {
+  h3 {
+    margin: 0 0 1rem;
     color: $text-dark;
-    font-size: 2.5rem;
-    font-weight: 800;
-    margin-top: 0.5rem;
-  }
-
-  &.total {
-    border-left-color: $success;
-
-    .value {
-      color: $success;
-    }
+    font-size: 1rem;
+    font-weight: 700;
   }
 }
 
 .report-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 1rem;
+  margin-top: 0;
 
   th {
     text-align: left;
@@ -1022,12 +1359,6 @@ onMounted(() => {
 }
 
 @media (max-width: 600px) {
-  .summary-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .delivery-report-view {
-    padding: 1rem;
-  }
+  .summary-cards { grid-template-columns: 1fr; }
 }
 </style>

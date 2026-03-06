@@ -2,12 +2,15 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import ProductionService from '@/services/production.service'
+import { useDialog } from '@/composables/useDialog'
 import ProductionCategoryGroup from './components/ProductionCategoryGroup.vue'
 import ProductionHistoryPanel from './components/ProductionHistoryPanel.vue'
 import ExportProductionModal from '../orders/components/ExportProductionModal.vue'
 import { useProductionSummary } from '@/composables/useProductionSummary'
 import { useOrderExport } from '@/composables/useOrderExport'
 import type { SummaryItem } from '@/types/production'
+
+const dialog = useDialog()
 
 const {
   isLoading,
@@ -127,12 +130,12 @@ const confirmVoidAction = async () => {
 const handleRegisterItem = async (item: SummaryItem) => {
   const qty = item.currentInput
   if (!qty || qty <= 0) {
-    alert('Ingrese una cantidad válida')
+    await dialog.alert('Ingrese una cantidad válida.', { variant: 'warning', title: 'Cantidad inválida' })
     return
   }
 
   if (qty > item.totalQuantity) {
-    alert(`La cantidad no puede exceder ${item.totalQuantity}`)
+    await dialog.alert(`La cantidad no puede exceder ${item.totalQuantity}.`, { variant: 'warning', title: 'Cantidad excedida' })
     item.currentInput = item.totalQuantity
     return
   }
@@ -143,7 +146,7 @@ const handleRegisterItem = async (item: SummaryItem) => {
     await fetchSummary()
   } catch (err) {
     console.error(err)
-    alert('Error al registrar progreso')
+    await dialog.alert('Error al registrar progreso.', { variant: 'error', title: 'Error' })
     isLoading.value = false
   }
 }
