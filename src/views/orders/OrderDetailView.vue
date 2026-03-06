@@ -91,7 +91,13 @@ const executeInvoiceGeneration = async () => {
     success("Factura generada y autorizada exitosamente.")
     fetchOrder()
   } catch (e: any) {
-    showError(e.response?.data?.message || "Error al generar factura")
+    const data = e.response?.data
+    const contificoMsg = data?.contificoMessage
+    if (contificoMsg) {
+      showError(`⚠️ Contífico rechazó la factura:<br><small>${contificoMsg}</small>`, 10000)
+    } else {
+      showError(data?.message || "Error al generar factura")
+    }
   } finally {
     isLoading.value = false
   }

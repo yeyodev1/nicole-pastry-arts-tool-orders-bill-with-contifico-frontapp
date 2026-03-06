@@ -166,7 +166,13 @@ const handleSingleRetry = async (order: any) => {
     fetchOrders()
   } catch (error: any) {
     console.error("Retry Invoice error", error)
-    showError(error.response?.data?.message || 'Error al reintentar facturación')
+    const data = error.response?.data
+    const contificoMsg = data?.contificoMessage
+    if (contificoMsg) {
+      showError(`⚠️ Contífico rechazó la factura:<br><small>${contificoMsg}</small>`, 10000)
+    } else {
+      showError(data?.message || 'Error al reintentar facturación')
+    }
   } finally {
     isLoading.value = false
   }
