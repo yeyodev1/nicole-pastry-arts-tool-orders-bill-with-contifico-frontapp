@@ -532,8 +532,6 @@ watch(() => props.isOpen, (newVal) => {
 </template>
 
 <style lang="scss" scoped>
-@import '@/styles/colorVariables.module.scss';
-
 $font-stack: 'Inter', system-ui, sans-serif;
 
 .modal-overlay {

@@ -36,10 +36,10 @@ export function useDialog() {
   }
 
   const respond = (value: any) => {
-    if (queue.value.length === 0) return
-    const item = queue.value[0]
-    queue.value.splice(0, 1)
-    item.resolve(value)
+    const item = queue.value.shift()
+    if (item) {
+      item.resolve(value)
+    }
   }
 
   return {

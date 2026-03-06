@@ -17,19 +17,19 @@ watch(current, (val) => {
 
 const variantConfig = computed(() => {
   const variant = current.value?.options.variant
-    ?? (current.value?.type === 'error' ? 'error' : current.value?.type === 'confirm' ? 'warning' : 'info')
+    ?? (current.value?.type === 'prompt' ? 'info' : current.value?.type === 'confirm' ? 'warning' : 'error')
 
   return {
-    info:    { icon: 'fa-circle-info',       color: '#0284c7', bg: '#e0f2fe' },
+    info: { icon: 'fa-circle-info', color: '#0284c7', bg: '#e0f2fe' },
     warning: { icon: 'fa-triangle-exclamation', color: '#d97706', bg: '#fef3c7' },
-    error:   { icon: 'fa-circle-xmark',      color: '#dc2626', bg: '#fee2e2' },
-    success: { icon: 'fa-circle-check',      color: '#16a34a', bg: '#dcfce7' },
+    error: { icon: 'fa-circle-xmark', color: '#dc2626', bg: '#fee2e2' },
+    success: { icon: 'fa-circle-check', color: '#16a34a', bg: '#dcfce7' },
   }[variant as string] ?? { icon: 'fa-circle-info', color: '#0284c7', bg: '#e0f2fe' }
 })
 
 const confirmLabel = computed(() => current.value?.options.confirmLabel ?? 'Aceptar')
-const cancelLabel  = computed(() => current.value?.options.cancelLabel  ?? 'Cancelar')
-const title        = computed(() => current.value?.options.title ?? null)
+const cancelLabel = computed(() => current.value?.options.cancelLabel ?? 'Cancelar')
+const title = computed(() => current.value?.options.title ?? null)
 
 const handleConfirm = () => {
   if (!current.value) return
@@ -257,6 +257,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .dialog-fade-leave-active {
   transition: opacity 0.2s ease;
 }
+
 .dialog-fade-enter-from,
 .dialog-fade-leave-to {
   opacity: 0;
@@ -265,13 +266,16 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .dialog-scale-enter-active {
   transition: all 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
+
 .dialog-scale-leave-active {
   transition: all 0.18s ease;
 }
+
 .dialog-scale-enter-from {
   opacity: 0;
   transform: scale(0.88);
 }
+
 .dialog-scale-leave-to {
   opacity: 0;
   transform: scale(0.92);
