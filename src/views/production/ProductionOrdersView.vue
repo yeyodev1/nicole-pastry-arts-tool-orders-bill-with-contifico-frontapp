@@ -271,7 +271,7 @@ const filteredOrders = computed(() => {
       }
 
       // Fallback: destinations not loaded yet — match by raw string
-      const fbLower = filterBranch.value.toLowerCase().trim()
+      const fbLower = filterBranch.value?.toLowerCase().trim() || ''
       return branch.includes(fbLower) || fbLower.includes(branch)
     })
   }

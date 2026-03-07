@@ -102,19 +102,23 @@ const calculatePendingItems = () => {
       const unproducedQty = Math.max(0, totalRemaining - producedAvailable) // Ordered but not produced
 
       if (totalRemaining > 0) {
-        if (!agg[p.name]) agg[p.name] = { produced: 0, unproduced: 0 }
-        agg[p.name].produced += producedAvailable
-        agg[p.name].unproduced += unproducedQty
+        if (!agg[p.name]) {
+          agg[p.name] = { produced: 0, unproduced: 0 }
+        }
+
+        const currentAgg = agg[p.name]!
+        currentAgg.produced += producedAvailable
+        currentAgg.unproduced += unproducedQty
       }
     })
   })
 
   // Convert to Array
-  const resultItems: { name: string; pending: number; unproduced: number; toSend: number }[] = Object.keys(agg).map(key => ({
-    name: key,
-    pending: agg[key].produced,
-    unproduced: agg[key].unproduced,
-    toSend: agg[key].produced // Default: send what's ready
+  const resultItems: { name: string; pending: number; unproduced: number; toSend: number }[] = Object.entries(agg).map(([name, data]) => ({
+    name,
+    pending: data.produced,
+    unproduced: data.unproduced,
+    toSend: data.produced // Default: send what's ready
   }))
 
   items.value = resultItems.sort((a, b) => b.pending - a.pending)
@@ -827,8 +831,13 @@ header {
     top: 0;
     background: $white;
 
-    &.cols-4 { grid-template-columns: 2fr 1fr 1fr 1.5fr; }
-    &.cols-3 { grid-template-columns: 2fr 1fr 1.5fr; }
+    &.cols-4 {
+      grid-template-columns: 2fr 1fr 1fr 1.5fr;
+    }
+
+    &.cols-3 {
+      grid-template-columns: 2fr 1fr 1.5fr;
+    }
   }
 
   .item-row {
@@ -838,8 +847,13 @@ header {
     align-items: center;
     border-bottom: 1px solid $gray-50;
 
-    &.cols-4 { grid-template-columns: 2fr 1fr 1fr 1.5fr; }
-    &.cols-3 { grid-template-columns: 2fr 1fr 1.5fr; }
+    &.cols-4 {
+      grid-template-columns: 2fr 1fr 1fr 1.5fr;
+    }
+
+    &.cols-3 {
+      grid-template-columns: 2fr 1fr 1.5fr;
+    }
 
     .prod-name {
       font-weight: 600;
@@ -945,7 +959,9 @@ header {
     color: #92400e;
     font-weight: 600;
 
-    i { color: #f59e0b; }
+    i {
+      color: #f59e0b;
+    }
   }
 
   .alert-actions {
@@ -976,7 +992,9 @@ header {
     align-items: center;
     gap: 0.4rem;
 
-    &:hover { background: #d97706; }
+    &:hover {
+      background: #d97706;
+    }
   }
 }
 
@@ -988,7 +1006,9 @@ header {
   background: #fff8e1;
   border-left: 3px solid #f59e0b;
 
-  .prod-name { color: #92400e; }
+  .prod-name {
+    color: #92400e;
+  }
 }
 
 .row-partial {
@@ -1078,7 +1098,9 @@ header {
       justify-content: center;
       gap: 0.5rem;
 
-      &:hover { background: $gray-200; }
+      &:hover {
+        background: $gray-200;
+      }
     }
 
     .btn-force-send {
@@ -1094,7 +1116,9 @@ header {
       justify-content: center;
       gap: 0.5rem;
 
-      &:hover { background: #d97706; }
+      &:hover {
+        background: #d97706;
+      }
     }
   }
 }
