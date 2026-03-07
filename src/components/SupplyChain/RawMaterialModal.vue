@@ -238,15 +238,6 @@ const categoryOptions = computed(() => {
 
             <div class="section-divider"></div>
             <div class="section-title">Definición de Costo</div>
-            
-            <div class="form-group">
-              <label>Proveedor Principal</label>
-              <SearchableSelect
-                v-model="form.provider"
-                :options="providerOptions"
-                placeholder="Buscar proveedor..."
-              />
-            </div>
 
             <div class="form-row highlight">
               <div class="form-group flex-2">

@@ -40,6 +40,23 @@ const isSavingItem = ref(false)
 
 const isEditing = computed(() => !!props.providerToEdit)
 
+const isFormValid = computed(() =>
+  !!form.value.name?.trim() &&
+  !!form.value.ruc?.trim() &&
+  !!form.value.phone?.trim() &&
+  !!form.value.address?.trim() &&
+  !!form.value.email?.trim()
+)
+
+const missingFields = computed(() => {
+  const missing = []
+  if (!form.value.ruc?.trim()) missing.push('RUC')
+  if (!form.value.phone?.trim()) missing.push('Teléfono')
+  if (!form.value.address?.trim()) missing.push('Dirección')
+  if (!form.value.email?.trim()) missing.push('Email')
+  return missing
+})
+
 // Derived categories for the Item Modal (unique strings from materials)
 const categories = computed(() => {
   const uniqueCats = new Set<string>()
@@ -173,6 +190,12 @@ const handleConfirmDelete = () => {
       </div>
 
       <div class="modal-body">
+        <!-- Required fields warning -->
+        <div v-if="!isEditing && missingFields.length > 0" class="required-warning">
+          <i class="fas fa-exclamation-circle"></i>
+          Faltan campos obligatorios: <strong>{{ missingFields.join(', ') }}</strong>
+        </div>
+
         <div class="form-group">
           <label>Nombre Empresa *</label>
           <input v-model="form.name" type="text" placeholder="Ej. Distribuidora ABC" required />
@@ -180,23 +203,23 @@ const handleConfirmDelete = () => {
 
         <div class="form-row">
           <div class="form-group">
-            <label>RUC</label>
-            <input v-model="form.ruc" type="text" placeholder="1234567890001" />
+            <label>RUC *</label>
+            <input v-model="form.ruc" type="text" placeholder="1234567890001" :class="{ 'field-required': !isEditing && !form.ruc?.trim() }" />
           </div>
           <div class="form-group">
-            <label>Teléfono General</label>
-            <input v-model="form.phone" type="text" placeholder="099..." />
+            <label>Teléfono *</label>
+            <input v-model="form.phone" type="text" placeholder="099..." :class="{ 'field-required': !isEditing && !form.phone?.trim() }" />
           </div>
         </div>
 
         <div class="form-group">
-          <label>Email General</label>
-          <input v-model="form.email" type="email" placeholder="contacto@proveedor.com" />
+          <label>Email *</label>
+          <input v-model="form.email" type="email" placeholder="contacto@proveedor.com" :class="{ 'field-required': !isEditing && !form.email?.trim() }" />
         </div>
 
         <div class="form-group">
-          <label>Dirección</label>
-          <input v-model="form.address" type="text" placeholder="Av. Principal 123" />
+          <label>Dirección *</label>
+          <input v-model="form.address" type="text" placeholder="Av. Principal 123" :class="{ 'field-required': !isEditing && !form.address?.trim() }" />
         </div>
 
         <!-- Agents Section -->
@@ -276,9 +299,9 @@ const handleConfirmDelete = () => {
         
         <div class="footer-actions">
           <button class="btn-cancel" @click="$emit('close')">Cancelar</button>
-          <HoldConfirmButton 
+          <HoldConfirmButton
             :label="isEditing ? 'MANTÉN PARA ACTUALIZAR' : 'MANTÉN PARA GUARDAR'"
-            :disabled="!form.name || isLoading"
+            :disabled="!isFormValid || isLoading"
             :hold-time="1200"
             @confirmed="handleSubmit"
           />
@@ -425,6 +448,31 @@ const handleConfirmDelete = () => {
 
 .modal-body {
   padding: 1.5rem;
+}
+
+.required-warning {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: #9a3412;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+
+  i { color: #ea580c; flex-shrink: 0; }
+}
+
+.field-required {
+  border-color: #fca5a5 !important;
+  background: #fef2f2 !important;
+
+  &:focus {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1) !important;
+  }
 }
 
 .form-group {

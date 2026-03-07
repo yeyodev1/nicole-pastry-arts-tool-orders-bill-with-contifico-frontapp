@@ -2,29 +2,48 @@
 import { ref, onMounted, computed } from 'vue'
 import RawMaterialService from '@/services/raw-material.service'
 import ProviderService from '@/services/provider.service'
+import ProviderCategoryService from '@/services/provider-category.service'
+import type { IProviderCategory } from '@/services/provider-category.service'
 import { useToast } from '@/composables/useToast'
 import RawMaterialModal from '@/components/SupplyChain/RawMaterialModal.vue'
+import CategoryDeleteModal from './components/CategoryDeleteModal.vue'
 
 const { success, error: showError } = useToast()
 
 const materials = ref<any[]>([])
 const providers = ref<any[]>([])
+const categories = ref<IProviderCategory[]>([])
 const isLoading = ref(false)
 const isSaving = ref(false)
 const showModal = ref(false)
 const materialToEdit = ref<any>(null)
 const searchQuery = ref('')
+const filterProvider = ref('')
+const filterCategory = ref('')
 let searchTimeout: any = null
+
+// Category management
+const showCategoryDeleteModal = ref(false)
+const newCategoryName = ref('')
+const isAddingCategory = ref(false)
+const editingCategoryId = ref<string | null>(null)
+const editingCategoryName = ref('')
 
 const fetchData = async () => {
   isLoading.value = true
   try {
-    const [materialsData, providersData] = await Promise.all([
-      RawMaterialService.getRawMaterials(searchQuery.value),
-      ProviderService.getProviders()
+    const [materialsData, providersData, categoriesData] = await Promise.all([
+      RawMaterialService.getRawMaterials(
+        searchQuery.value || undefined,
+        filterProvider.value || undefined,
+        filterCategory.value || undefined
+      ),
+      ProviderService.getProviders(),
+      ProviderCategoryService.getCategories()
     ])
     materials.value = materialsData
     providers.value = providersData
+    categories.value = categoriesData
   } catch (err) {
     showError('Error al cargar datos')
   } finally {
@@ -32,21 +51,24 @@ const fetchData = async () => {
   }
 }
 
-const handleSearch = () => {
-  if (searchTimeout) clearTimeout(searchTimeout)
-  searchTimeout = setTimeout(() => {
-    fetchData()
-  }, 400)
+const fetchMaterials = async () => {
+  try {
+    materials.value = await RawMaterialService.getRawMaterials(
+      searchQuery.value || undefined,
+      filterProvider.value || undefined,
+      filterCategory.value || undefined
+    )
+  } catch (err) {
+    showError('Error al cargar materiales')
+  }
 }
 
-// Derived categories from materials
-const categories = computed(() => {
-  const uniqueCats = new Set<string>()
-  materials.value.forEach(m => {
-    if (m.category) uniqueCats.add(m.category)
-  })
-  return Array.from(uniqueCats).map(name => ({ _id: name, name }))
-})
+const handleSearch = () => {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(fetchMaterials, 400)
+}
+
+const applyFilters = () => fetchMaterials()
 
 const groupedMaterials = computed(() => {
   const groups: Record<string, any[]> = {}
@@ -69,7 +91,7 @@ const getDisplayQuantity = (quantity: number, unit: string) => {
   return quantity
 }
 
-const openModal = (material: any = null) => {
+const openModal = (material: any) => {
   materialToEdit.value = material
   showModal.value = true
 }
@@ -77,13 +99,8 @@ const openModal = (material: any = null) => {
 const handleSave = async (payload: any) => {
   isSaving.value = true
   try {
-    if (materialToEdit.value) {
-      await RawMaterialService.updateRawMaterial(materialToEdit.value._id, payload)
-      success('Registro actualizado')
-    } else {
-      await RawMaterialService.createRawMaterial(payload)
-      success('Registro creado')
-    }
+    await RawMaterialService.updateRawMaterial(materialToEdit.value._id, payload)
+    success('Registro actualizado')
     showModal.value = false
     fetchData()
   } catch (err: any) {
@@ -104,6 +121,50 @@ const handleDeleteItem = async (id: string) => {
   }
 }
 
+// Category management
+const handleAddCategory = async () => {
+  if (!newCategoryName.value.trim()) return
+  isAddingCategory.value = true
+  try {
+    await ProviderCategoryService.createCategory(newCategoryName.value.trim())
+    newCategoryName.value = ''
+    success('Categoría creada')
+    categories.value = await ProviderCategoryService.getCategories()
+  } catch (err: any) {
+    showError(err.response?.data?.message || 'Error al crear categoría')
+  } finally {
+    isAddingCategory.value = false
+  }
+}
+
+const startEditCategory = (cat: IProviderCategory) => {
+  editingCategoryId.value = cat._id
+  editingCategoryName.value = cat.name
+}
+
+const handleEditCategory = async () => {
+  if (!editingCategoryId.value || !editingCategoryName.value.trim()) return
+  try {
+    await ProviderCategoryService.updateCategory(editingCategoryId.value, editingCategoryName.value.trim())
+    success('Categoría actualizada')
+    editingCategoryId.value = null
+    fetchData()
+  } catch (err: any) {
+    showError(err.response?.data?.message || 'Error al actualizar categoría')
+  }
+}
+
+const handleDeleteCategory = async (payload: { categoryId: string; categoryName: string; targetCategory?: string }) => {
+  try {
+    await ProviderCategoryService.deleteCategory(payload.categoryId, payload.targetCategory)
+    success('Categoría eliminada' + (payload.targetCategory ? ` — ítems reasignados a "${payload.targetCategory}"` : ''))
+    showCategoryDeleteModal.value = false
+    fetchData()
+  } catch (err: any) {
+    showError(err.response?.data?.message || 'Error al eliminar categoría')
+  }
+}
+
 const formatDate = (dateString?: string) => {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: '2-digit' })
@@ -118,22 +179,79 @@ onMounted(() => {
   <div class="materials-view">
     <div class="header">
       <div class="title">
-        <h1>Centro de Suministros</h1>
-        <p>Gestión profesional de materia prima y adquisiciones</p>
+        <h1>Materia Prima</h1>
+        <p>Consulta, busca y edita el inventario de materias primas</p>
       </div>
       <div class="header-controls">
         <div class="search-container">
           <i class="fas fa-search"></i>
-          <input 
-            v-model="searchQuery" 
+          <input
+            v-model="searchQuery"
             @input="handleSearch"
-            placeholder="Buscar material..." 
+            placeholder="Buscar por nombre o código..."
             type="text"
           />
         </div>
-        <div class="header-actions">
-          <button class="btn-primary" @click="openModal()">
-            <i class="fas fa-plus"></i> Ingreso / Nuevo
+      </div>
+    </div>
+
+    <!-- Filters bar -->
+    <div class="filters-bar">
+      <div class="filter-group">
+        <label><i class="fas fa-truck"></i> Proveedor</label>
+        <select v-model="filterProvider" @change="applyFilters">
+          <option value="">Todos</option>
+          <option v-for="p in providers" :key="p._id" :value="p._id">{{ p.name }}</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label><i class="fas fa-tag"></i> Categoría</label>
+        <select v-model="filterCategory" @change="applyFilters">
+          <option value="">Todas</option>
+          <option v-for="c in categories" :key="c._id" :value="c.name">{{ c.name }}</option>
+        </select>
+      </div>
+      <button v-if="filterProvider || filterCategory || searchQuery" class="btn-clear-filters" @click="filterProvider = ''; filterCategory = ''; searchQuery = ''; fetchData()">
+        <i class="fas fa-times"></i> Limpiar filtros
+      </button>
+    </div>
+
+    <!-- Category management -->
+    <div class="category-manager">
+      <div class="cat-manager-header">
+        <span class="cat-manager-title"><i class="fas fa-tags"></i> Gestión de Categorías</span>
+        <button class="btn-delete-cat" @click="showCategoryDeleteModal = true" :disabled="categories.length === 0">
+          <i class="fas fa-trash-alt"></i> Eliminar
+        </button>
+      </div>
+      <div class="cat-list">
+        <div v-for="cat in categories" :key="cat._id" class="cat-chip">
+          <template v-if="editingCategoryId === cat._id">
+            <input
+              v-model="editingCategoryName"
+              class="cat-edit-input"
+              @keyup.enter="handleEditCategory"
+              @keyup.escape="editingCategoryId = null"
+              @blur="handleEditCategory"
+              autofocus
+            />
+          </template>
+          <template v-else>
+            <span>{{ cat.name }}</span>
+            <button class="btn-edit-chip" @click="startEditCategory(cat)" title="Editar">
+              <i class="fas fa-pen"></i>
+            </button>
+          </template>
+        </div>
+        <div class="cat-add">
+          <input
+            v-model="newCategoryName"
+            placeholder="Nueva categoría..."
+            class="cat-add-input"
+            @keyup.enter="handleAddCategory"
+          />
+          <button class="btn-add-cat" @click="handleAddCategory" :disabled="!newCategoryName.trim() || isAddingCategory">
+            <i class="fas fa-plus"></i>
           </button>
         </div>
       </div>
@@ -233,7 +351,7 @@ onMounted(() => {
       </template>
     </div>
 
-    <!-- Professional Entry Modal -->
+    <!-- Edit Material Modal (edit only — create is from provider) -->
     <RawMaterialModal
       :is-open="showModal"
       :material-to-edit="materialToEdit"
@@ -243,6 +361,15 @@ onMounted(() => {
       @close="showModal = false"
       @save="handleSave"
       @delete="handleDeleteItem"
+    />
+
+    <!-- Category Delete Modal -->
+    <CategoryDeleteModal
+      :is-open="showCategoryDeleteModal"
+      :categories="categories"
+      :materials="materials"
+      @close="showCategoryDeleteModal = false"
+      @delete="handleDeleteCategory"
     />
   </div>
 </template>
@@ -657,6 +784,240 @@ onMounted(() => {
         font-weight: 600;
       }
     }
+  }
+}
+
+/* Filters Bar */
+.filters-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  background: white;
+  border-radius: 20px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    flex: 1;
+    min-width: 180px;
+
+    label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    select {
+      padding: 0.65rem 0.9rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #334155;
+      background: #f8fafc;
+      cursor: pointer;
+      transition: border-color 0.2s;
+
+      &:focus {
+        outline: none;
+        border-color: $NICOLE-PURPLE;
+      }
+    }
+  }
+}
+
+.btn-clear-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.1rem;
+  border: 2px solid #fecaca;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #dc2626;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  align-self: flex-end;
+
+  &:hover {
+    background: #fee2e2;
+    border-color: #ef4444;
+  }
+}
+
+/* Category Manager */
+.category-manager {
+  background: white;
+  border-radius: 20px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.cat-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+
+  .cat-manager-title {
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    i { color: $NICOLE-PURPLE; }
+  }
+}
+
+.btn-delete-cat {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  border: 1.5px solid #fecaca;
+  border-radius: 10px;
+  background: #fff1f2;
+  color: #dc2626;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover:not(:disabled) {
+    background: #fee2e2;
+    border-color: #ef4444;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.cat-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.cat-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  background: #f1f5f9;
+  border-radius: 99px;
+  border: 1.5px solid #e2e8f0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #334155;
+
+  span { line-height: 1; }
+}
+
+.btn-edit-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.7rem;
+  transition: all 0.15s;
+
+  &:hover {
+    background: #e2e8f0;
+    color: #475569;
+  }
+}
+
+.cat-edit-input {
+  border: 1.5px solid $NICOLE-PURPLE;
+  border-radius: 8px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e293b;
+  background: white;
+  width: 130px;
+  outline: none;
+}
+
+.cat-add {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.25rem;
+}
+
+.cat-add-input {
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 99px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  background: #f8fafc;
+  width: 160px;
+  outline: none;
+  transition: border-color 0.2s;
+
+  &:focus {
+    border-color: $NICOLE-PURPLE;
+    border-style: solid;
+  }
+
+  &::placeholder { color: #cbd5e1; }
+}
+
+.btn-add-cat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: $NICOLE-PURPLE;
+  color: white;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    transform: scale(1.1);
+    box-shadow: 0 4px 10px rgba($NICOLE-PURPLE, 0.3);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
   }
 }
 
