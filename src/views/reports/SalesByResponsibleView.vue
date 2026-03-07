@@ -903,8 +903,12 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   padding: 1.5rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 1.5rem));
   gap: 1.25rem;
-  @media (min-width: 1024px) { padding: 2rem; }
+  @media (min-width: 1024px) {
+    padding: 2rem;
+    padding-bottom: max(2rem, env(safe-area-inset-bottom, 2rem));
+  }
 }
 
 // ── Topbar ───────────────────────────────────────────────
@@ -1150,10 +1154,12 @@ onMounted(async () => {
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   border: 1px solid $border-light;
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 
   table {
     width: 100%;
+    min-width: 620px;
     border-collapse: collapse;
 
     thead {
