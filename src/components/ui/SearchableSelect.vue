@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 
 interface Option {
   value: string
@@ -21,7 +21,8 @@ const emit = defineEmits(['update:modelValue'])
 
 const isOpen = ref(false)
 const searchQuery = ref('')
-const dropdownRef = ref<HTMLElement | null>(null)
+const triggerRef = ref<HTMLElement | null>(null)
+const dropdownStyle = ref<Record<string, string>>({})
 
 const selectedOption = computed(() => {
   return props.options.find(opt => opt.value === props.modelValue)
@@ -29,7 +30,6 @@ const selectedOption = computed(() => {
 
 const filteredOptions = computed(() => {
   if (!searchQuery.value) return props.options
-
   const query = searchQuery.value.toLowerCase()
   return props.options.filter(opt =>
     opt.label.toLowerCase().includes(query) ||
@@ -37,11 +37,34 @@ const filteredOptions = computed(() => {
   )
 })
 
+const updateDropdownPosition = () => {
+  if (!triggerRef.value) return
+  const rect = triggerRef.value.getBoundingClientRect()
+  const spaceBelow = window.innerHeight - rect.bottom
+  const spaceAbove = rect.top
+  const dropdownHeight = Math.min(360, props.options.length * 56 + 80)
+
+  if (spaceBelow >= dropdownHeight || spaceBelow >= spaceAbove) {
+    dropdownStyle.value = {
+      top: `${rect.bottom + 6}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+    }
+  } else {
+    dropdownStyle.value = {
+      bottom: `${window.innerHeight - rect.top + 6}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+    }
+  }
+}
+
 const toggleDropdown = () => {
   if (props.disabled) return
   isOpen.value = !isOpen.value
   if (isOpen.value) {
     searchQuery.value = ''
+    nextTick(updateDropdownPosition)
   }
 }
 
@@ -52,7 +75,12 @@ const selectOption = (value: string) => {
 }
 
 const handleClickOutside = (event: MouseEvent) => {
-  if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
+  const target = event.target as Node
+  const teleportedMenu = document.querySelector('.searchable-select-teleport')
+  if (
+    triggerRef.value && !triggerRef.value.contains(target) &&
+    !(teleportedMenu && teleportedMenu.contains(target))
+  ) {
     isOpen.value = false
     searchQuery.value = ''
   }
@@ -61,16 +89,26 @@ const handleClickOutside = (event: MouseEvent) => {
 watch(isOpen, (newVal) => {
   if (newVal) {
     document.addEventListener('click', handleClickOutside)
+    window.addEventListener('scroll', updateDropdownPosition, true)
+    window.addEventListener('resize', updateDropdownPosition)
   } else {
     document.removeEventListener('click', handleClickOutside)
+    window.removeEventListener('scroll', updateDropdownPosition, true)
+    window.removeEventListener('resize', updateDropdownPosition)
   }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('scroll', updateDropdownPosition, true)
+  window.removeEventListener('resize', updateDropdownPosition)
 })
 </script>
 
 <template>
-  <div class="searchable-select" ref="dropdownRef">
-    <div 
-      class="select-trigger" 
+  <div class="searchable-select" ref="triggerRef">
+    <div
+      class="select-trigger"
       :class="{ open: isOpen, disabled: disabled }"
       @click="toggleDropdown"
     >
@@ -84,45 +122,153 @@ watch(isOpen, (newVal) => {
       <i class="fa-solid fa-chevron-down arrow" :class="{ rotate: isOpen }"></i>
     </div>
 
-    <transition name="dropdown">
-      <div v-if="isOpen" class="dropdown-menu">
-        <div class="search-box">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input 
-            v-model="searchQuery" 
-            type="text" 
-            :placeholder="searchPlaceholder"
-            @click.stop
-          />
-        </div>
-        
-        <div class="options-list">
-          <div 
-            v-for="option in filteredOptions" 
-            :key="option.value"
-            class="option-item"
-            :class="{ selected: option.value === modelValue }"
-            @click="selectOption(option.value)"
-          >
-            <div class="option-content">
-              <div class="option-label-wrapper">
-                <i v-if="option.icon" :class="option.icon" class="option-icon"></i>
-                <span class="option-label">{{ option.label }}</span>
+    <Teleport to="body">
+      <transition name="dropdown">
+        <div v-if="isOpen" class="searchable-select-teleport dropdown-menu" :style="dropdownStyle">
+          <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input
+              v-model="searchQuery"
+              type="text"
+              :placeholder="searchPlaceholder"
+              @click.stop
+            />
+          </div>
+
+          <div class="options-list">
+            <div
+              v-for="option in filteredOptions"
+              :key="option.value"
+              class="option-item"
+              :class="{ selected: option.value === modelValue }"
+              @click="selectOption(option.value)"
+            >
+              <div class="option-content">
+                <div class="option-label-wrapper">
+                  <i v-if="option.icon" :class="option.icon" class="option-icon"></i>
+                  <span class="option-label">{{ option.label }}</span>
+                </div>
+                <span v-if="option.subtitle" class="option-subtitle">{{ option.subtitle }}</span>
               </div>
-              <span v-if="option.subtitle" class="option-subtitle">{{ option.subtitle }}</span>
+              <i v-if="option.value === modelValue" class="fa-solid fa-check check-icon"></i>
             </div>
-            <i v-if="option.value === modelValue" class="fa-solid fa-check check-icon"></i>
-          </div>
-          
-          <div v-if="filteredOptions.length === 0" class="no-results">
-            <i class="fas fa-search"></i>
-            <span>No se encontraron resultados</span>
+
+            <div v-if="filteredOptions.length === 0" class="no-results">
+              <i class="fas fa-search"></i>
+              <span>No se encontraron resultados</span>
+            </div>
           </div>
         </div>
-      </div>
-    </transition>
+      </transition>
+    </Teleport>
   </div>
 </template>
+
+<style lang="scss">
+// ── Teleported dropdown (global — outside component scope) ──────────────────
+.searchable-select-teleport.dropdown-menu {
+  position: fixed;
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  z-index: 9999;
+  overflow: hidden;
+
+  .search-box {
+    position: relative;
+    padding: 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+
+    i {
+      position: absolute;
+      left: 1.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #94a3b8;
+      font-size: 0.85rem;
+    }
+
+    input {
+      width: 100%;
+      padding: 0.65rem 0.75rem 0.65rem 2.25rem;
+      border: 2px solid #f1f5f9;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      background: #f8fafc;
+      box-sizing: border-box;
+      font-family: inherit;
+      transition: all 0.2s;
+
+      &:focus {
+        outline: none;
+        border-color: #7C3AED;
+        background: white;
+      }
+    }
+  }
+
+  .options-list {
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 0.5rem;
+
+    &::-webkit-scrollbar { width: 6px; }
+    &::-webkit-scrollbar-track { background: #f8fafc; border-radius: 10px; }
+    &::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; &:hover { background: #94a3b8; } }
+  }
+
+  .option-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+
+    &:hover { background: #f8fafc; }
+    &.selected {
+      background: rgba(#7C3AED, 0.1);
+      .option-label { color: #7C3AED; font-weight: 700; }
+    }
+
+    .option-content {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      flex: 1;
+    }
+
+    .option-label-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .option-icon { color: #7C3AED; width: 20px; text-align: center; font-size: 1.05rem; }
+    .option-label { font-size: 0.93rem; font-weight: 600; color: #1e293b; }
+    .option-subtitle { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+    .check-icon { color: #7C3AED; font-size: 0.9rem; }
+  }
+
+  .no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2rem;
+    color: #94a3b8;
+    font-weight: 500;
+    i { font-size: 2rem; opacity: 0.3; }
+  }
+}
+
+.dropdown-enter-active,
+.dropdown-leave-active { transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.dropdown-enter-from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+.dropdown-leave-to { opacity: 0; transform: translateY(-4px); }
+</style>
 
 <style lang="scss" scoped>
 .searchable-select {
@@ -191,177 +337,4 @@ watch(isOpen, (newVal) => {
   }
 }
 
-.dropdown-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  background: white;
-  border-radius: 18px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e2e8f0;
-  z-index: 1000;
-  overflow: hidden;
-  animation: dropdownSlide 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes dropdownSlide {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.98);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.search-box {
-  position: relative;
-  padding: 0.75rem;
-  border-bottom: 1px solid #f1f5f9;
-
-  i {
-    position: absolute;
-    left: 1.5rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #94a3b8;
-    font-size: 0.85rem;
-  }
-
-  input {
-    width: 100%;
-    padding: 0.65rem 0.75rem 0.65rem 2.25rem;
-    border: 2px solid #f1f5f9;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    background: #f8fafc;
-    transition: all 0.2s;
-
-    &:focus {
-      outline: none;
-      border-color: $NICOLE-PURPLE;
-      background: white;
-    }
-  }
-}
-
-.options-list {
-  max-height: 300px;
-  overflow-y: auto;
-  padding: 0.5rem;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: #f8fafc;
-    border-radius: 10px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 10px;
-
-    &:hover {
-      background: #94a3b8;
-    }
-  }
-}
-
-.option-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.85rem 1rem;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    background: #f8fafc;
-  }
-
-  &.selected {
-    background: rgba($NICOLE-PURPLE, 0.1);
-
-    .option-label {
-      color: $NICOLE-PURPLE;
-      font-weight: 700;
-    }
-  }
-
-  .option-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    flex: 1;
-
-    .option-label-wrapper {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .option-icon {
-      color: $NICOLE-PURPLE;
-      width: 20px;
-      text-align: center;
-      font-size: 1.05rem;
-    }
-  }
-
-  .option-label {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: #1e293b;
-  }
-
-  .option-subtitle {
-    font-size: 0.75rem;
-    color: $gray-400;
-    /* Made slightly lighter */
-    margin-top: 2px;
-    font-weight: 400;
-  }
-
-  .check-icon {
-    color: $NICOLE-PURPLE;
-    font-size: 0.9rem;
-  }
-}
-
-.no-results {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 2rem;
-  color: #94a3b8;
-  font-weight: 500;
-
-  i {
-    font-size: 2rem;
-    opacity: 0.3;
-  }
-}
-
-// Transition
-.dropdown-enter-active,
-.dropdown-leave-active {
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.dropdown-enter-from {
-  opacity: 0;
-  transform: translateY(-10px) scale(0.95);
-}
-
-.dropdown-leave-to {
-  opacity: 0;
-  transform: translateY(-5px);
-}
 </style>
