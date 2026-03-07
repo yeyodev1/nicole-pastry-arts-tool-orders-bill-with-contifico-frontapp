@@ -128,6 +128,37 @@ const openEditor = () => {
   showGoalEditor.value = true
 }
 
+// Live commission example for the editor: picks a value just above the last tier
+const commissionExampleSales = computed(() => {
+  if (!commissionTiers.value.length) return 0
+  const sorted = [...commissionTiers.value].sort((a, b) => a.threshold - b.threshold)
+  return sorted[sorted.length - 1]!.threshold + 1000
+})
+
+const commissionExampleBreakdown = computed(() => {
+  if (!commissionTiers.value.length) return []
+  const sorted = [...commissionTiers.value].sort((a, b) => a.threshold - b.threshold)
+  const sales = commissionExampleSales.value
+  return sorted.reduce((acc: any[], tier, i) => {
+    if (sales > tier.threshold) {
+      const next = sorted[i + 1]
+      const inTier = Math.min(sales - tier.threshold, next ? next.threshold - tier.threshold : Infinity)
+      acc.push({
+        from: tier.threshold,
+        to: next ? next.threshold : sales,
+        rate: tier.rate,
+        salesInTier: inTier,
+        amount: Math.round(inTier * (tier.rate / 100) * 100) / 100
+      })
+    }
+    return acc
+  }, [])
+})
+
+const commissionExampleTotal = computed(() =>
+  commissionExampleBreakdown.value.reduce((acc, b) => acc + b.amount, 0)
+)
+
 onMounted(async () => {
   initDates()
   try {
@@ -274,8 +305,39 @@ onMounted(async () => {
           </button>
         </div>
 
+        <!-- How it works -->
+        <div class="how-it-works">
+          <div class="how-steps">
+            <div class="how-step">
+              <div class="step-icon step-lock"><i class="fas fa-lock"></i></div>
+              <div class="step-content">
+                <strong>Sin comisión</strong>
+                <span>Si el vendedor no alcanza su meta, gana $0 de comisión.</span>
+              </div>
+            </div>
+            <div class="step-arrow"><i class="fas fa-arrow-right"></i></div>
+            <div class="how-step">
+              <div class="step-icon step-unlock"><i class="fas fa-unlock"></i></div>
+              <div class="step-content">
+                <strong>Al alcanzar la meta</strong>
+                <span>Las escalas se activan y se aplican desde $0 sobre el total.</span>
+              </div>
+            </div>
+            <div class="step-arrow"><i class="fas fa-arrow-right"></i></div>
+            <div class="how-step">
+              <div class="step-icon step-money"><i class="fas fa-coins"></i></div>
+              <div class="step-content">
+                <strong>Comisión progresiva</strong>
+                <span>Cada tramo se calcula por separado y se suman al total.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Role defaults -->
-        <div class="editor-section-label">Metas por defecto (por rol)</div>
+        <div class="editor-section-label">Metas por defecto (por rol)
+          <span class="section-hint">· Monto mínimo para desbloquear comisión</span>
+        </div>
         <div class="goal-editor-fields">
           <div class="goal-field">
             <label><i class="fas fa-user-tie"></i> Jefe de Ventas (default)</label>
@@ -302,20 +364,34 @@ onMounted(async () => {
           <div v-for="stat in stats" :key="stat._id" class="person-goal-row">
             <div class="person-info">
               <span class="person-avatar">{{ stat._id.charAt(0) }}</span>
-              <div>
+              <div class="person-details">
                 <span class="person-name">{{ stat._id }}</span>
                 <span class="person-role-chip" :class="stat.role.toLowerCase()">{{ stat.role }}</span>
+                <span class="person-current-sales">
+                  <i class="fas fa-dollar-sign"></i>
+                  {{ stat.totalSales.toLocaleString(undefined, { minimumFractionDigits: 2 }) }} vendidos
+                  <span
+                    v-if="stat.goalReached"
+                    class="goal-status-badge reached"
+                  ><i class="fas fa-check-circle"></i> Meta alcanzada</span>
+                  <span v-else class="goal-status-badge pending">
+                    Falta ${{ (getIndividualGoal(stat) - stat.totalSales).toLocaleString(undefined, { maximumFractionDigits: 0 }) }}
+                  </span>
+                </span>
               </div>
             </div>
-            <div class="input-prefix person-input">
-              <span>$</span>
-              <input
-                type="number"
-                :value="individualGoals[stat._id]"
-                @input="individualGoals[stat._id] = Number(($event.target as HTMLInputElement).value)"
-                min="0"
-                step="500"
-              />
+            <div class="person-right">
+              <label class="person-goal-label">Meta</label>
+              <div class="input-prefix person-input">
+                <span>$</span>
+                <input
+                  type="number"
+                  :value="individualGoals[stat._id]"
+                  @input="individualGoals[stat._id] = Number(($event.target as HTMLInputElement).value)"
+                  min="0"
+                  step="500"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -348,6 +424,25 @@ onMounted(async () => {
           <button class="btn-add-tier" @click="addTier">
             <i class="fas fa-plus"></i> Añadir Escala
           </button>
+        </div>
+
+        <!-- Live commission example -->
+        <div v-if="commissionExampleBreakdown.length" class="commission-example">
+          <div class="example-header">
+            <i class="fas fa-calculator"></i>
+            <span>Ejemplo con <strong>${{ commissionExampleSales.toLocaleString() }}</strong> en ventas (meta = <strong>${{ sellerGoal.toLocaleString() }}</strong>):</span>
+          </div>
+          <div class="example-rows">
+            <div v-for="(bracket, i) in commissionExampleBreakdown" :key="i" class="example-row">
+              <span class="example-range">${{ bracket.from.toLocaleString() }} → ${{ bracket.to.toLocaleString() }}</span>
+              <span class="example-calc">${{ bracket.salesInTier.toLocaleString() }} × {{ bracket.rate }}%</span>
+              <span class="example-result">= <strong>${{ bracket.amount.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong></span>
+            </div>
+            <div class="example-total">
+              <span>Comisión total estimada:</span>
+              <strong>${{ commissionExampleTotal.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong>
+            </div>
+          </div>
         </div>
 
         <!-- Footer: computed total + save -->
@@ -428,17 +523,17 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Tiers Explanation (New UX) -->
+      <!-- Tiers Explanation -->
       <div v-if="commissionTiers.length" class="commission-info-bar">
         <div class="info-item">
-          <i class="fas fa-info-circle"></i>
-          <span><strong>REGLAS DE COMISIÓN:</strong></span>
+          <i class="fas fa-lock"></i>
+          <span class="info-rule-label">Se desbloquea al alcanzar la meta individual:</span>
           <span v-for="(tier, index) in commissionTiers" :key="index" class="tier">
             <template v-if="index < commissionTiers.length - 1">
-              ${{ (tier.threshold / 1000).toFixed(0) }}k-${{ ((commissionTiers[index + 1]?.threshold ?? 0) / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
+              ${{ (tier.threshold / 1000).toFixed(0) }}k–${{ ((commissionTiers[index + 1]?.threshold ?? 0) / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
             </template>
             <template v-else>
-              >${{ (tier.threshold / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
+              &gt;${{ (tier.threshold / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
             </template>
           </span>
         </div>
@@ -489,7 +584,11 @@ onMounted(async () => {
                 <span v-if="stat.commission > 0" class="commission-value">
                   ${{ stat.commission.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}
                 </span>
-                <span v-else class="no-commission">-</span>
+                <span v-else-if="!stat.goalReached" class="commission-locked" :title="`Falta $${(getIndividualGoal(stat) - stat.totalSales).toLocaleString(undefined, { maximumFractionDigits: 2 })} para desbloquear`">
+                  <i class="fas fa-lock"></i>
+                  Falta ${{ (getIndividualGoal(stat) - stat.totalSales).toLocaleString(undefined, { maximumFractionDigits: 0 }) }}
+                </span>
+                <span v-else class="no-commission">—</span>
               </td>
             </tr>
             <tr v-if="stats.length === 0">
@@ -1113,6 +1212,20 @@ onMounted(async () => {
             color: $text-light;
             font-weight: 400;
           }
+
+          .commission-locked {
+            color: #92400e;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+
+            i {
+              font-size: 0.75rem;
+              color: #d97706;
+            }
+          }
         }
 
         &:last-child {
@@ -1515,6 +1628,180 @@ onMounted(async () => {
         background: rgba($NICOLE-PURPLE, 0.05);
         border-color: $NICOLE-PURPLE;
         color: $NICOLE-PURPLE;
+      }
+    }
+  }
+
+  // How it works box
+  .how-it-works {
+    background: #f5f3ff;
+    border: 1px solid rgba($NICOLE-PURPLE, 0.2);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1.25rem;
+
+    .how-steps {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .how-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      flex: 1;
+      min-width: 140px;
+
+      .step-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+        flex-shrink: 0;
+
+        &.step-lock { background: #fee2e2; color: #dc2626; }
+        &.step-unlock { background: #dcfce7; color: #16a34a; }
+        &.step-money { background: #fef3c7; color: #d97706; }
+      }
+
+      .step-content {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+
+        strong {
+          font-size: 0.8rem;
+          color: $text-dark;
+        }
+
+        span {
+          font-size: 0.75rem;
+          color: $text-light;
+          line-height: 1.3;
+        }
+      }
+    }
+
+    .step-arrow {
+      color: rgba($NICOLE-PURPLE, 0.4);
+      font-size: 0.75rem;
+      padding-top: 0.45rem;
+      flex-shrink: 0;
+    }
+  }
+
+  // Per-person detail in editor rows
+  .person-goal-row {
+    .person-details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .person-current-sales {
+      font-size: 0.75rem;
+      color: $text-light;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+
+      i { font-size: 0.65rem; }
+    }
+
+    .goal-status-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.1rem 0.45rem;
+      border-radius: 100px;
+
+      &.reached {
+        background: #dcfce7;
+        color: #15803d;
+        i { margin-right: 0.2rem; }
+      }
+
+      &.pending {
+        background: #fff7ed;
+        color: #c2410c;
+      }
+    }
+
+    .person-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.25rem;
+    }
+
+    .person-goal-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: $text-light;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+  }
+
+  // Live commission example
+  .commission-example {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 1.5rem;
+
+    .example-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      color: #92400e;
+      margin-bottom: 0.75rem;
+
+      i { color: #d97706; }
+    }
+
+    .example-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .example-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: $text-dark;
+      padding: 0.3rem 0.5rem;
+      background: rgba(255,255,255,0.6);
+      border-radius: 6px;
+
+      .example-range { color: $text-light; }
+      .example-calc { text-align: center; color: #b45309; }
+      .example-result { text-align: right; }
+    }
+
+    .example-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.5rem;
+      padding-top: 0.5rem;
+      border-top: 1px dashed #fbbf24;
+      font-size: 0.85rem;
+      color: #92400e;
+      font-weight: 600;
+
+      strong {
+        font-size: 1rem;
+        color: #d97706;
       }
     }
   }
