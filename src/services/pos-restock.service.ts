@@ -12,7 +12,7 @@ export interface RestockItem {
     stockFinal: number;
     bajas: number;
     pedidoSugerido: number;
-    pedidoFinal: number;
+    pedidoFinal?: number;
     date: string;
     detailedLosses?: DetailedLoss[];
   };

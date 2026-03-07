@@ -2,6 +2,7 @@ import { ref } from 'vue'
 // @ts-ignore
 import XLSX from 'xlsx-js-style'
 import { formatECT } from '@/utils/dateUtils'
+import type { DailyFormData } from '@/services/pos-restock.service'
 
 export function useOrderExport() {
   const isExporting = ref(false)
@@ -356,9 +357,147 @@ export function useOrderExport() {
     }
   }
 
+  // --- Restock Production Order Export ---
+  const exportRestockProductionOrder = async (formData: DailyFormData, branch: string) => {
+    isExporting.value = true
+    try {
+      const wsData: any[][] = []
+      const wsStyle: Record<string, any> = {}
+
+      const setStyle = (row: number, col: number, style: any) => {
+        wsStyle[XLSX.utils.encode_cell({ r: row, c: col })] = style
+      }
+
+      const PURPLE = '812A73'
+      const PURPLE_LIGHT = 'F5EBF3'
+      const GRAY_HEADER = '2C3E50'
+      const CAT_PROD = 'E8F5E9'  // green tint for Producción
+      const CAT_BOD  = 'E3F2FD'  // blue tint for Bodega
+
+      // ── Row 0: Title ──────────────────────────────────────
+      wsData.push([`ORDEN DE PRODUCCIÓN — ${branch.toUpperCase()}`, '', '', '', '', ''])
+      for (let c = 0; c <= 5; c++) {
+        setStyle(0, c, {
+          font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: PURPLE } },
+          alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center' }
+        })
+      }
+
+      // ── Row 1: Meta info ──────────────────────────────────
+      const lastEntryDate = formData.items.find(i => i.lastEntry)?.lastEntry?.date ?? formData.formDate
+      const isTodayEntry  = lastEntryDate === formData.formDate
+      wsData.push([
+        `Cierre del: ${lastEntryDate}${isTodayEntry ? ' (hoy)' : ' ⚠ cierre anterior'}`,
+        '',
+        `Para mañana: ${formData.targetDate}`,
+        '', '', ''
+      ])
+      for (let c = 0; c <= 5; c++) {
+        setStyle(1, c, {
+          font: { italic: true, sz: 10, color: { rgb: '64748B' } },
+          fill: { fgColor: { rgb: PURPLE_LIGHT } }
+        })
+      }
+
+      // ── Row 2: Empty spacer ───────────────────────────────
+      wsData.push(['', '', '', '', '', ''])
+
+      // ── Row 3: Column headers ─────────────────────────────
+      const headers = ['PRODUCTO', 'UNIDAD', 'CANT. PEDIDA', 'STOCK HOY', 'OBJ. MAÑANA', '✓ ENTREGADO']
+      wsData.push(headers)
+      for (let c = 0; c < headers.length; c++) {
+        setStyle(3, c, {
+          font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: GRAY_HEADER } },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: { bottom: { style: 'thin', color: { rgb: '000000' } } }
+        })
+      }
+
+      // ── Items grouped by category ─────────────────────────
+      const itemsWithPedido = formData.items.filter(i => (i.lastEntry?.pedidoFinal ?? i.lastEntry?.pedidoSugerido ?? 0) > 0)
+      const produccion = itemsWithPedido.filter(i => (i.category ?? 'Producción') === 'Producción')
+      const bodega     = itemsWithPedido.filter(i => i.category === 'Bodega')
+
+      let currentRow = 4
+
+      const addCategoryBlock = (label: string, items: typeof itemsWithPedido, bgColor: string) => {
+        if (items.length === 0) return
+
+        // Category header
+        wsData.push([label.toUpperCase(), '', '', '', '', ''])
+        for (let c = 0; c <= 5; c++) {
+          setStyle(currentRow, c, {
+            font: { bold: true, sz: 11 },
+            fill: { fgColor: { rgb: bgColor === CAT_PROD ? 'A5D6A7' : '90CAF9' } },
+            alignment: { horizontal: 'left' }
+          })
+        }
+        currentRow++
+
+        items.forEach(item => {
+          const pedido    = item.lastEntry?.pedidoFinal ?? item.lastEntry?.pedidoSugerido ?? 0
+          const stockHoy  = item.lastEntry?.stockFinal  ?? '—'
+          const objMañana = item.stockObjectiveTomorrow  ?? '—'
+
+          wsData.push([item.productName, item.unit, pedido, stockHoy, objMañana, ''])
+
+          for (let c = 0; c <= 5; c++) {
+            setStyle(currentRow, c, {
+              fill: { fgColor: { rgb: bgColor === CAT_PROD ? CAT_PROD.replace('#','') : CAT_BOD.replace('#','') } },
+              border: {
+                top:    { style: 'thin', color: { rgb: 'DDDDDD' } },
+                bottom: { style: 'thin', color: { rgb: 'DDDDDD' } },
+                left:   { style: 'thin', color: { rgb: 'DDDDDD' } },
+                right:  { style: 'thin', color: { rgb: 'DDDDDD' } }
+              },
+              alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center' },
+              ...(c === 2 ? { font: { bold: true, sz: 12 } } : {})
+            })
+          }
+          currentRow++
+        })
+
+        // Spacer
+        wsData.push(['', '', '', '', '', ''])
+        currentRow++
+      }
+
+      addCategoryBlock('Producción', produccion, CAT_PROD)
+      addCategoryBlock('Bodega',     bodega,     CAT_BOD)
+
+      if (itemsWithPedido.length === 0) {
+        wsData.push(['Sin pedidos para mañana', '', '', '', '', ''])
+        setStyle(currentRow, 0, { font: { italic: true, color: { rgb: '94A3B8' } } })
+      }
+
+      // ── Build workbook ────────────────────────────────────
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.aoa_to_sheet(wsData)
+
+      ws['!cols'] = [{ wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 14 }]
+      ws['!rows'] = [{ hpt: 28 }, { hpt: 18 }]
+
+      Object.keys(wsStyle).forEach(ref => {
+        if (ws[ref]) ws[ref].s = wsStyle[ref]
+      })
+
+      XLSX.utils.book_append_sheet(wb, ws, 'Orden de Producción')
+      saveExcelFile(wb, `Orden_Produccion_${branch.replace(/\s+/g, '_')}_${formData.targetDate}`)
+
+    } catch (error) {
+      console.error('Export restock production error:', error)
+      throw error
+    } finally {
+      isExporting.value = false
+    }
+  }
+
   return {
     isExporting,
     exportProductionOrder,
-    exportDispatchOrder
+    exportDispatchOrder,
+    exportRestockProductionOrder
   }
 }

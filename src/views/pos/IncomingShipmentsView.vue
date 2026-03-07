@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import POSService, { type POSOrder } from '@/services/pos.service'
 import { useOrderExport } from '@/composables/useOrderExport'
+import { posRestockService } from '@/services/pos-restock.service'
 import ProductionSettingsService from '@/services/production-settings.service'
 import POSShipmentCard from './components/POSShipmentCard.vue'
 import POSLocationBanner from './components/POSLocationBanner.vue'
@@ -143,7 +144,9 @@ const handleNotification = (n: { message: string; type: 'success' | 'error' | 'i
   else info(n.message)
 }
 
-const { isExporting, exportDispatchOrder } = useOrderExport()
+const { isExporting, exportDispatchOrder, exportRestockProductionOrder } = useOrderExport()
+const isExportingProduction = ref(false)
+
 const handleExportDispatch = async () => {
   const exportOrders = selectedOrderIds.value.size > 0
     ? orders.value.filter(o => selectedOrderIds.value.has(o._id))
@@ -157,6 +160,29 @@ const handleExportDispatch = async () => {
     success('Reporte de Entregas exportado')
   } catch {
     showError('Error al exportar reporte')
+  }
+}
+
+const handleExportProductionOrder = async () => {
+  const branch = selectedBranch.value === 'Todas las sucursales' ? 'San Marino' : selectedBranch.value
+  isExportingProduction.value = true
+  try {
+    const formData = await posRestockService.getDailyForm(branch)
+    const hasItems = formData.items.some(i => (i.lastEntry?.pedidoFinal ?? i.lastEntry?.pedidoSugerido ?? 0) > 0)
+    if (!hasItems) {
+      info('No hay orden de producción para exportar. Primero haz el Cierre de Producción.')
+      return
+    }
+    const lastEntryDate = formData.items.find(i => i.lastEntry)?.lastEntry?.date
+    if (lastEntryDate && lastEntryDate !== formData.formDate) {
+      info(`Usando cierre del ${lastEntryDate} (no hay cierre de hoy)`)
+    }
+    await exportRestockProductionOrder(formData, branch)
+    success('Orden de Producción exportada')
+  } catch {
+    showError('Error al exportar la orden de producción')
+  } finally {
+    isExportingProduction.value = false
   }
 }
 
@@ -271,7 +297,11 @@ onMounted(async () => {
           </button>
           <button class="btn-action export" @click="handleExportDispatch">
             <i :class="isExporting ? 'fas fa-spinner fa-spin' : 'fas fa-file-excel'"></i>
-            <span>{{ selectedOrderIds.size > 0 ? `Exportar (${selectedOrderIds.size})` : 'Exportar Reporte' }}</span>
+            <span>{{ selectedOrderIds.size > 0 ? `Entregas (${selectedOrderIds.size} sel.)` : 'Reporte de Entregas' }}</span>
+          </button>
+          <button class="btn-action production-order" @click="handleExportProductionOrder" :disabled="isExportingProduction">
+            <i :class="isExportingProduction ? 'fas fa-spinner fa-spin' : 'fa-solid fa-kitchen-set'"></i>
+            <span>Orden de Producción</span>
           </button>
         </div>
       </nav>
@@ -635,6 +665,14 @@ onMounted(async () => {
     color: #16a34a;
     border-color: #dcfce7;
     &:hover { background: #dcfce7; border-color: #bbf7d0; }
+  }
+
+  &.production-order {
+    background: #fff7ed;
+    color: #c2410c;
+    border-color: #fed7aa;
+    &:hover { background: #fed7aa; border-color: #fdba74; }
+    &:disabled { opacity: 0.6; cursor: not-allowed; }
   }
 }
 
