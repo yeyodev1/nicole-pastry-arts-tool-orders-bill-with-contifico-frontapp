@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ProductionService from '@/services/production.service'
 import ProductionSettingsService, { type ProductionDestination } from '@/services/production-settings.service'
-import { parseECTDate, getECTNow, isSameDayECT } from '@/utils/dateUtils'
+import { parseECTDate, getECTNow, getECTTodayString, isSameDayECT } from '@/utils/dateUtils'
 import DispatchReportModal from './components/DispatchReportModal.vue'
 import DispatchByDestinationModal from './components/DispatchByDestinationModal.vue'
 import HoldToConfirmModal from './components/HoldToConfirmModal.vue'
@@ -102,12 +102,31 @@ const fetchDynamicDestinations = async () => {
   }
 }
 
+const getDateParam = (mode: string): string => {
+  const ecNow = getECTNow()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+  if (mode === 'today') return getECTTodayString()
+  if (mode === 'yesterday') {
+    const d = new Date(ecNow)
+    d.setDate(d.getDate() - 1)
+    return fmt(d)
+  }
+  if (mode === 'tomorrow') {
+    const d = new Date(ecNow)
+    d.setDate(d.getDate() + 1)
+    return fmt(d)
+  }
+  return 'all' // future, overdue, all
+}
+
 const fetchOrders = async () => {
   try {
     isLoading.value = true
-    // Parallel fetch
+    const dateParam = getDateParam(filterMode.value)
     const [ordersRes] = await Promise.all([
-      ProductionService.getAllOrders(),
+      ProductionService.getAllOrders(dateParam),
       fetchDynamicDestinations()
     ])
     orders.value = ordersRes as any
@@ -118,6 +137,12 @@ const fetchOrders = async () => {
     isLoading.value = false
   }
 }
+
+watch(filterMode, () => {
+  selectedIds.value = []
+  filterBranch.value = null
+  fetchOrders()
+})
 
 const handleBatchDispatch = () => {
   if (selectedIds.value.length === 0) return
@@ -230,22 +255,24 @@ const filteredOrders = computed(() => {
         return o.deliveryType === 'delivery'
       }
 
-      const branch = (o.branch || '').toLowerCase()
-      const comments = (o.comments || '').toLowerCase()
+      const branch = (o.branch || '').toLowerCase().trim()
+      const comments = (o.comments || '').toLowerCase().trim()
 
-      // Dynamic match
+      // Dynamic match via destination settings
       const matchedDest = dynamicDestinations.value.find(d => d.name === filterBranch.value)
       if (matchedDest) {
-        const nameMatch = branch === matchedDest.name.toLowerCase() || branch.includes(matchedDest.name.toLowerCase())
+        const destName = matchedDest.name.toLowerCase().trim()
+        const nameMatch = branch === destName || branch.includes(destName) || destName.includes(branch)
         const keywordMatch = matchedDest.matchKeywords.some(kw => {
-          const lkw = kw.toLowerCase()
-          return branch.includes(lkw) || comments.includes(lkw)
+          const lkw = kw.toLowerCase().trim()
+          return lkw && (branch.includes(lkw) || comments.includes(lkw))
         })
-
         return nameMatch || keywordMatch
       }
 
-      return false
+      // Fallback: destinations not loaded yet — match by raw string
+      const fbLower = filterBranch.value?.toLowerCase().trim() || ''
+      return branch.includes(fbLower) || fbLower.includes(branch)
     })
   }
 
@@ -714,6 +741,13 @@ const getDispatchBadge = (status?: string) => {
         </div>
       </div>
 
+    </div>
+
+    <div v-else-if="filterBranch && orders.length > 0" class="empty-state">
+      <i class="fas fa-filter"></i>
+      <p>No hay órdenes para <strong>{{ filterBranch }}</strong> en este período.</p>
+      <small>Verifica que las órdenes tengan la sucursal correcta o ajusta las palabras clave en la configuración de destinos.</small>
+      <button class="btn-clear-filter" @click="filterBranch = null">Ver todas las órdenes</button>
     </div>
 
     <div v-else class="empty-state">
@@ -1509,6 +1543,22 @@ $color-danger: #e74c3c;
 }
 
 .loading,
+.btn-clear-filter {
+  margin-top: 1rem;
+  padding: 0.5rem 1.25rem;
+  border: 1px solid $color-primary;
+  background: transparent;
+  color: $color-primary;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+
+  &:hover {
+    background: $color-primary;
+    color: white;
+  }
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -1516,6 +1566,13 @@ $color-danger: #e74c3c;
   justify-content: center;
   padding: 6rem 2rem;
   color: #bdc3c7;
+
+  small {
+    font-size: 0.8rem;
+    text-align: center;
+    max-width: 400px;
+    margin-top: 0.5rem;
+  }
 
   i {
     font-size: 4rem;
