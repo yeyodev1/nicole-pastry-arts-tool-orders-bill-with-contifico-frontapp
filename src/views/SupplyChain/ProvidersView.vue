@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import ProviderService from '@/services/provider.service'
 import { useToast } from '@/composables/useToast'
 import ProviderModal from '@/components/SupplyChain/ProviderModal.vue'
 
+const router = useRouter()
 const { success, error: showError } = useToast()
 
 const providers = ref<any[]>([])
@@ -39,8 +41,7 @@ const openNewProviderModal = () => {
 }
 
 const openEditModal = (provider: any) => {
-  providerToEdit.value = provider
-  showModal.value = true
+  router.push(`/supply-chain/providers/${provider._id}`)
 }
 
 const handleSave = async (formData: any) => {

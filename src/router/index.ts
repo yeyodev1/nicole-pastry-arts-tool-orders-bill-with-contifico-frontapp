@@ -111,6 +111,12 @@ const router = createRouter({
       meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Proveedores' }
     },
     {
+      path: '/supply-chain/providers/:id',
+      name: 'provider-detail',
+      component: () => import('../views/SupplyChain/ProviderDetailView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Detalle de Proveedor' }
+    },
+    {
       path: '/supply-chain/materials',
       name: 'materials-list',
       component: () => import('../views/SupplyChain/RawMaterialsView.vue'),
