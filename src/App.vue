@@ -26,6 +26,7 @@ const route = useRoute()
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: var(--color-background);
 }
@@ -34,7 +35,9 @@ const route = useRoute()
   flex: 1;
   min-width: 0;
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .content-area.full-width {
