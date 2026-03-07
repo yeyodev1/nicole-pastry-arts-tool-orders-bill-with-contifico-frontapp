@@ -7,6 +7,11 @@ class ProviderService extends APIBase {
     return response.data.data
   }
 
+  async getProviderById(id: string) {
+    const response = await this.get<any>(`providers/${id}`)
+    return response.data.data
+  }
+
   async createProvider(providerData: any) {
     const response = await this.post<any>('providers', providerData)
     return response.data.data
