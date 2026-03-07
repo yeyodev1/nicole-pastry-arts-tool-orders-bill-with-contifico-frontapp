@@ -3,21 +3,23 @@ import { ref, watch, onUnmounted, computed } from 'vue'
 
 const props = defineProps<{
   isOpen: boolean
-  categories: string[]
-  materials: any[] // Needed to show count
+  categories: { _id: string; name: string }[]
+  materials: any[]
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'delete', category: string): void
+  (e: 'delete', payload: { categoryId: string; categoryName: string; targetCategory?: string }): void
 }>()
 
-const selectedCategory = ref('')
+const selectedCategoryId = ref('')
+const targetCategory = ref('')
 
 // Initialize or Reset
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
-    selectedCategory.value = ''
+    selectedCategoryId.value = ''
+    targetCategory.value = ''
     cancelHold()
     isSuccessfullyDestroyed.value = false
   }
@@ -31,8 +33,11 @@ let animationFrameId: number | null = null
 let startTime: number | null = null
 const DURATION = 1200 // 1.2 seconds as requested
 
+const selectedCategory = computed(() => props.categories.find(c => c._id === selectedCategoryId.value))
+
 const startHold = () => {
-  if (isHolding.value || !selectedCategory.value) return
+  if (isHolding.value || !selectedCategoryId.value) return
+  if (affectedCount.value > 0 && !targetCategory.value) return
   isHolding.value = true
   startTime = performance.now()
 
@@ -65,17 +70,30 @@ const completeHold = () => {
   cancelHold()
   isSuccessfullyDestroyed.value = true
 
-  // Wait for vanish animation
   setTimeout(() => {
-    emit('delete', selectedCategory.value)
+    emit('delete', {
+      categoryId: selectedCategoryId.value,
+      categoryName: selectedCategory.value?.name ?? '',
+      targetCategory: targetCategory.value || undefined
+    })
   }, 800)
 }
 
 // Helper to count affected items
 const affectedCount = computed(() => {
   if (!selectedCategory.value) return 0
-  return props.materials.filter(m => m.category === selectedCategory.value).length
+  return props.materials.filter(m => m.category === selectedCategory.value!.name).length
 })
+
+const canDelete = computed(() => {
+  if (!selectedCategoryId.value) return false
+  if (affectedCount.value > 0 && !targetCategory.value) return false
+  return true
+})
+
+const targetOptions = computed(() =>
+  props.categories.filter(c => c._id !== selectedCategoryId.value)
+)
 
 // Visual Disintegration Styles
 const disintegrationStyles = computed(() => {
@@ -113,27 +131,42 @@ onUnmounted(() => {
 
       <div class="modal-body">
         <div class="form-group">
-             <label>Categoría a eliminar</label>
-             <select v-model="selectedCategory" class="styled-select">
-                <option value="">-- Seleccionar --</option>
-                <option v-for="cat in categories.filter(c => c !== 'Sin Categoría' && c !== '')" :key="cat" :value="cat">{{ cat }}</option>
-             </select>
+          <label>Categoría a eliminar</label>
+          <select v-model="selectedCategoryId" class="styled-select">
+            <option value="">-- Seleccionar --</option>
+            <option v-for="cat in categories" :key="cat._id" :value="cat._id">{{ cat.name }}</option>
+          </select>
         </div>
 
-        <div v-if="selectedCategory" class="danger-box">
-            <ul>
-            <li><i class="fas fa-exclamation-triangle"></i> Se eliminará la categoría <strong>"{{ selectedCategory }}"</strong>.</li>
-            <li><i class="fas fa-info-circle"></i> Afectará a <strong>{{ affectedCount }}</strong> insumos.</li>
+        <div v-if="selectedCategoryId" class="danger-box">
+          <ul>
+            <li><i class="fas fa-exclamation-triangle"></i> Se eliminará la categoría <strong>"{{ selectedCategory?.name }}"</strong>.</li>
+            <li><i class="fas fa-info-circle"></i> Tiene <strong>{{ affectedCount }}</strong> ítem(s) asignado(s).</li>
             <li><i class="fas fa-undo"></i> Esta acción es irreversible.</li>
-            </ul>
+          </ul>
+        </div>
+
+        <!-- Mandatory reassignment when items exist -->
+        <div v-if="affectedCount > 0" class="reassign-block">
+          <div class="reassign-alert">
+            <i class="fas fa-exclamation-circle"></i>
+            <span>Existen ítems asociados. Debe seleccionar una nueva categoría para reasignarlos antes de eliminarla.</span>
+          </div>
+          <div class="form-group" style="margin-top: 1rem; margin-bottom: 0">
+            <label>Reasignar ítems a *</label>
+            <select v-model="targetCategory" class="styled-select" :class="{ 'select-required': !targetCategory }">
+              <option value="">-- Seleccionar categoría destino --</option>
+              <option v-for="cat in targetOptions" :key="cat._id" :value="cat.name">{{ cat.name }}</option>
+            </select>
+          </div>
         </div>
       </div>
 
       <div class="actions">
         <button class="btn-cancel" @click="emit('close')">Cancelar</button>
 
-        <div class="hold-button-wrapper danger" :class="{ disabled: !selectedCategory }">
-          <button 
+        <div class="hold-button-wrapper danger" :class="{ disabled: !canDelete }">
+          <button
             class="btn-hold-delete"
             @mousedown="startHold"
             @mouseleave="cancelHold"
@@ -141,7 +174,7 @@ onUnmounted(() => {
             @touchstart.prevent="startHold"
             @touchend.prevent="cancelHold"
             @contextmenu.prevent
-            :disabled="!selectedCategory"
+            :disabled="!canDelete"
           >
             <div class="progress-bar-danger" :style="{ width: progress + '%' }"></div>
             <span class="label">
@@ -235,6 +268,30 @@ onUnmounted(() => {
   border: 1px solid $border-light;
   border-radius: 8px;
   font-size: 1rem;
+
+  &.select-required {
+    border-color: #fca5a5;
+    background: #fef2f2;
+  }
+}
+
+.reassign-block {
+  background: #fff7ed;
+  border: 1.5px solid #fed7aa;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+
+  .reassign-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: #9a3412;
+    font-weight: 600;
+
+    i { color: #ea580c; flex-shrink: 0; margin-top: 2px; }
+  }
 }
 
 .danger-box {
