@@ -267,6 +267,10 @@ const handleConfirm = async () => {
           <p v-if="filterMode === 'today'">No hay ítems para <strong>HOY</strong>.</p>
           <p v-else-if="filterMode === 'yesterday'">No hay ítems para <strong>AYER</strong>.</p>
           <p v-else>No hay ítems para <strong>MAÑANA</strong>.</p>
+          <div v-if="filterMode === 'today'" class="empty-hint">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Puede que producción aún no haya marcado ningún envío como <strong>enviado</strong> hacia esta sucursal, o que todo ya fue recibido.</span>
+          </div>
           <button v-if="filterMode === 'today'" class="btn-restock-empty" @click="emit('open-restock')">
             <i class="fa-solid fa-clipboard-check"></i>
             Hacer Cierre de Producción (Reposición)
@@ -967,6 +971,22 @@ const handleConfirm = async () => {
 
   i { font-size: 3rem; color: $success; }
   p { font-size: 1.05rem; margin: 0; }
+
+  .empty-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.83rem;
+    color: #0369a1;
+    text-align: left;
+    max-width: 420px;
+
+    i { font-size: 0.9rem; color: #0284c7; flex-shrink: 0; margin-top: 1px; }
+  }
 
   .btn-restock-empty {
     background: white;
