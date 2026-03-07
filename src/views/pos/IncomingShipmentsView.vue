@@ -18,7 +18,8 @@ type POSFilterMode = 'yesterday' | 'today' | 'tomorrow' | 'all' | 'custom'
 const isLoading = ref(false)
 const orders = ref<POSOrder[]>([])
 const pendingDispatchesForBulk = ref<any[]>([])
-const selectedBranch = ref('Mall del Sol')
+const BRANCH_STORAGE_KEY = 'pos_selected_branch'
+const selectedBranch = ref(localStorage.getItem(BRANCH_STORAGE_KEY) || '')
 const branches = ref<string[]>(['Todas las sucursales'])
 const sidebarOpen = ref(false)
 
@@ -99,6 +100,7 @@ const fetchData = async () => {
 
 let searchTimeout: any = null
 watch(searchQuery, () => { if (searchTimeout) clearTimeout(searchTimeout); searchTimeout = setTimeout(fetchData, 500) })
+watch(selectedBranch, (v) => { if (v) localStorage.setItem(BRANCH_STORAGE_KEY, v) })
 watch([selectedBranch, filterMode], fetchData)
 watch(customDate, (val) => { if (val && filterMode.value === 'custom') fetchData() })
 
@@ -213,7 +215,10 @@ onMounted(async () => {
     const settings = await ProductionSettingsService.getSettings()
     const destinations = (settings.destinations || []).map((d: any) => d.name)
     branches.value = ['Todas las sucursales', ...destinations]
-    if (!destinations.includes(selectedBranch.value) && destinations.length > 0) {
+    const stored = localStorage.getItem(BRANCH_STORAGE_KEY)
+    if (stored && destinations.includes(stored)) {
+      selectedBranch.value = stored
+    } else if (destinations.length > 0) {
       selectedBranch.value = destinations[0]
     }
   } catch (e) {
