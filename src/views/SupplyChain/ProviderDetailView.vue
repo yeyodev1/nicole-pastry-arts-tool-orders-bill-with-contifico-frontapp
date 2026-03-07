@@ -96,6 +96,10 @@ const handleMaterialSave = async (payload: any) => {
   }
 }
 
+const handleCategoryCreated = (newCat: IProviderCategory) => {
+  categories.value = [...categories.value, newCat].sort((a, b) => a.name.localeCompare(b.name))
+}
+
 const handleMaterialDelete = async (id: string) => {
   try {
     await RawMaterialService.deleteRawMaterial(id)
@@ -109,7 +113,7 @@ const handleMaterialDelete = async (id: string) => {
 
 const getDisplayUnit = (unit: string) => {
   if (unit === 'g') return 'kg'
-  if (unit === 'ml') return 'L'
+  if (unit === 'ml') return 'lt'
   return unit
 }
 
@@ -259,6 +263,7 @@ onMounted(() => {
       @close="showMaterialModal = false"
       @save="handleMaterialSave"
       @delete="handleMaterialDelete"
+      @category-created="handleCategoryCreated"
     />
   </div>
 </template>

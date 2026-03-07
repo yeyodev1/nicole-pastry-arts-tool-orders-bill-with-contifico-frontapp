@@ -191,8 +191,6 @@ onMounted(() => {
 <style lang="scss" scoped>
 .providers-view {
   padding: 1rem;
-  max-width: 1200px;
-  margin: 0 auto;
 
   @media (min-width: 768px) {
     padding: 2rem;

@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import RawMaterialService from '@/services/raw-material.service'
 import ProviderService from '@/services/provider.service'
 import ProviderCategoryService from '@/services/provider-category.service'
 import type { IProviderCategory } from '@/services/provider-category.service'
 import { useToast } from '@/composables/useToast'
 import RawMaterialModal from '@/components/SupplyChain/RawMaterialModal.vue'
-import CategoryDeleteModal from './components/CategoryDeleteModal.vue'
 
+const route = useRoute()
 const { success, error: showError } = useToast()
 
 const materials = ref<any[]>([])
@@ -21,13 +22,6 @@ const searchQuery = ref('')
 const filterProvider = ref('')
 const filterCategory = ref('')
 let searchTimeout: any = null
-
-// Category management
-const showCategoryDeleteModal = ref(false)
-const newCategoryName = ref('')
-const isAddingCategory = ref(false)
-const editingCategoryId = ref<string | null>(null)
-const editingCategoryName = ref('')
 
 const fetchData = async () => {
   isLoading.value = true
@@ -82,7 +76,7 @@ const groupedMaterials = computed(() => {
 
 const getDisplayUnit = (unit: string) => {
   if (unit === 'g') return 'kg'
-  if (unit === 'ml') return 'L'
+  if (unit === 'ml') return 'lt'
   return unit
 }
 
@@ -121,48 +115,8 @@ const handleDeleteItem = async (id: string) => {
   }
 }
 
-// Category management
-const handleAddCategory = async () => {
-  if (!newCategoryName.value.trim()) return
-  isAddingCategory.value = true
-  try {
-    await ProviderCategoryService.createCategory(newCategoryName.value.trim())
-    newCategoryName.value = ''
-    success('Categoría creada')
-    categories.value = await ProviderCategoryService.getCategories()
-  } catch (err: any) {
-    showError(err.response?.data?.message || 'Error al crear categoría')
-  } finally {
-    isAddingCategory.value = false
-  }
-}
-
-const startEditCategory = (cat: IProviderCategory) => {
-  editingCategoryId.value = cat._id
-  editingCategoryName.value = cat.name
-}
-
-const handleEditCategory = async () => {
-  if (!editingCategoryId.value || !editingCategoryName.value.trim()) return
-  try {
-    await ProviderCategoryService.updateCategory(editingCategoryId.value, editingCategoryName.value.trim())
-    success('Categoría actualizada')
-    editingCategoryId.value = null
-    fetchData()
-  } catch (err: any) {
-    showError(err.response?.data?.message || 'Error al actualizar categoría')
-  }
-}
-
-const handleDeleteCategory = async (payload: { categoryId: string; categoryName: string; targetCategory?: string }) => {
-  try {
-    await ProviderCategoryService.deleteCategory(payload.categoryId, payload.targetCategory)
-    success('Categoría eliminada' + (payload.targetCategory ? ` — ítems reasignados a "${payload.targetCategory}"` : ''))
-    showCategoryDeleteModal.value = false
-    fetchData()
-  } catch (err: any) {
-    showError(err.response?.data?.message || 'Error al eliminar categoría')
-  }
+const handleCategoryCreated = (newCat: IProviderCategory) => {
+  categories.value = [...categories.value, newCat].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 const formatDate = (dateString?: string) => {
@@ -171,6 +125,9 @@ const formatDate = (dateString?: string) => {
 }
 
 onMounted(() => {
+  if (route.query.category) {
+    filterCategory.value = String(route.query.category)
+  }
   fetchData()
 })
 </script>
@@ -214,47 +171,6 @@ onMounted(() => {
       <button v-if="filterProvider || filterCategory || searchQuery" class="btn-clear-filters" @click="filterProvider = ''; filterCategory = ''; searchQuery = ''; fetchData()">
         <i class="fas fa-times"></i> Limpiar filtros
       </button>
-    </div>
-
-    <!-- Category management -->
-    <div class="category-manager">
-      <div class="cat-manager-header">
-        <span class="cat-manager-title"><i class="fas fa-tags"></i> Gestión de Categorías</span>
-        <button class="btn-delete-cat" @click="showCategoryDeleteModal = true" :disabled="categories.length === 0">
-          <i class="fas fa-trash-alt"></i> Eliminar
-        </button>
-      </div>
-      <div class="cat-list">
-        <div v-for="cat in categories" :key="cat._id" class="cat-chip">
-          <template v-if="editingCategoryId === cat._id">
-            <input
-              v-model="editingCategoryName"
-              class="cat-edit-input"
-              @keyup.enter="handleEditCategory"
-              @keyup.escape="editingCategoryId = null"
-              @blur="handleEditCategory"
-              autofocus
-            />
-          </template>
-          <template v-else>
-            <span>{{ cat.name }}</span>
-            <button class="btn-edit-chip" @click="startEditCategory(cat)" title="Editar">
-              <i class="fas fa-pen"></i>
-            </button>
-          </template>
-        </div>
-        <div class="cat-add">
-          <input
-            v-model="newCategoryName"
-            placeholder="Nueva categoría..."
-            class="cat-add-input"
-            @keyup.enter="handleAddCategory"
-          />
-          <button class="btn-add-cat" @click="handleAddCategory" :disabled="!newCategoryName.trim() || isAddingCategory">
-            <i class="fas fa-plus"></i>
-          </button>
-        </div>
-      </div>
     </div>
 
     <!-- Loading -->
@@ -361,15 +277,7 @@ onMounted(() => {
       @close="showModal = false"
       @save="handleSave"
       @delete="handleDeleteItem"
-    />
-
-    <!-- Category Delete Modal -->
-    <CategoryDeleteModal
-      :is-open="showCategoryDeleteModal"
-      :categories="categories"
-      :materials="materials"
-      @close="showCategoryDeleteModal = false"
-      @delete="handleDeleteCategory"
+      @category-created="handleCategoryCreated"
     />
   </div>
 </template>

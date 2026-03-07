@@ -106,8 +106,17 @@ const closePanel = () => { mobileOpen.value = false }
       <!-- Supply Chain -->
       <template v-else-if="isSupplyChain">
         <span class="nav-group-label">Supply Chain</span>
+        <router-link to="/supply-chain/summary" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-chart-bar"></i> Inventario
+        </router-link>
         <router-link to="/supply-chain/providers" active-class="active" @click="closePanel">
           <i class="fa-solid fa-truck"></i> Proveedores
+        </router-link>
+        <router-link to="/supply-chain/materials" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-box-open"></i> Materia Prima
+        </router-link>
+        <router-link to="/supply-chain/categories" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-tags"></i> Categorías
         </router-link>
         <router-link to="/supply-chain/warehouse" active-class="active" @click="closePanel">
           <i class="fa-solid fa-warehouse"></i> Bodega

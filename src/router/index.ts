@@ -123,6 +123,12 @@ const router = createRouter({
       meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Materia Prima' }
     },
     {
+      path: '/supply-chain/categories',
+      name: 'supply-categories',
+      component: () => import('../views/SupplyChain/CategoriesView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Categorías' }
+    },
+    {
       path: '/supply-chain/warehouse',
       name: 'warehouse',
       component: () => import('../views/SupplyChain/WarehouseView.vue'),

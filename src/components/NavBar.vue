@@ -76,7 +76,10 @@ const isSales = computed(() => {
 
           <!-- Supply Chain Links -->
           <template v-else-if="isSupplyChain">
+            <router-link to="/supply-chain/summary" active-class="active">Inventario</router-link>
             <router-link to="/supply-chain/providers" active-class="active">Proveedores</router-link>
+            <router-link to="/supply-chain/materials" active-class="active">Materia Prima</router-link>
+            <router-link to="/supply-chain/categories" active-class="active">Categorías</router-link>
             <router-link to="/supply-chain/warehouse" active-class="active">Bodega</router-link>
           </template>
 

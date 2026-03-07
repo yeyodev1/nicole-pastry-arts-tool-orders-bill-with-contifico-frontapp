@@ -38,10 +38,9 @@ const emit = defineEmits(['submit', 'update:form', 'start-hold', 'cancel-hold'])
 
 const showOutModal = ref(false)
 
-// Utils
 const getDisplayUnit = (unit: string) => {
   if (unit === 'g') return 'kg'
-  if (unit === 'ml') return 'L'
+  if (unit === 'ml') return 'lt'
   return unit
 }
 
@@ -65,22 +64,28 @@ const totalValue = computed(() => {
   return props.form.quantity * displayCost
 })
 
+const stockAfterDispatch = computed(() => {
+  if (!selectedMaterial.value || !props.form.quantity || props.form.quantity <= 0) return null
+  const m = selectedMaterial.value
+  const backendQty = toBackendQuantity(props.form.quantity, m.unit)
+  const remaining = m.quantity - backendQty
+  const displayRemaining = (m.unit === 'g' || m.unit === 'ml') ? (remaining / 1000).toFixed(2) : remaining.toFixed(2)
+  return { remaining: parseFloat(displayRemaining), unit: getDisplayUnit(m.unit), isNegative: remaining < 0 }
+})
+
 const showRentabilityAlert = computed(() => {
   if (!props.form.expectedSaleValue || props.form.expectedSaleValue <= 0) return false
   return totalValue.value >= props.form.expectedSaleValue
 })
 
+const insufficientStock = computed(() => {
+  if (!selectedMaterial.value || !props.form.quantity || props.form.quantity <= 0) return false
+  return selectedMaterial.value.quantity < toBackendQuantity(props.form.quantity, selectedMaterial.value.unit)
+})
+
 const handleSubmit = () => {
   if (!props.form.rawMaterial || props.form.quantity <= 0 || !props.form.entity) return
-
-  // Validation
-  if (selectedMaterial.value) {
-    const requestQtyBackend = toBackendQuantity(props.form.quantity, selectedMaterial.value.unit)
-    if (selectedMaterial.value.quantity < requestQtyBackend) {
-      return emit('submit', 'error_stock')
-    }
-  }
-
+  if (insufficientStock.value) return emit('submit', 'error_stock')
   showOutModal.value = true
 }
 
@@ -91,416 +96,599 @@ const cancelHold = () => {
 </script>
 
 <template>
-  <div class="form-tab out-tab">
-    <div class="form-card">
-      <h2>Registrar Despacho</h2>
-      <div class="form-row">
-        <div class="form-group half">
-          <label>Fecha</label>
-          <div class="readonly-display">
-            <i class="fas fa-calendar-day"></i>
-            <span>{{ form.date }}</span>
-          </div>
-        </div>
-        <div class="form-group half">
-          <label>Hora</label>
-           <div class="readonly-display">
-            <i class="fas fa-clock"></i>
-            <span>{{ form.time }}</span>
-          </div>
+  <div class="dispatch-layout">
+
+    <!-- Left: Form -->
+    <div class="form-panel">
+      <div class="panel-header panel-header--out">
+        <div class="panel-icon"><i class="fas fa-truck-loading"></i></div>
+        <div>
+          <h2>Registrar Despacho</h2>
+          <p>Registra la salida de materia prima a destino</p>
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Materia Prima</label>
-        <SearchableSelect
-          :modelValue="form.rawMaterial"
-          @update:modelValue="val => emit('update:form', { ...form, rawMaterial: val })"
-          :options="materialOptions"
-          placeholder="Buscar materia prima..."
-        />
-      </div>
-
-      <div class="form-group">
-        <label>Cantidad ({{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : 'Unidad' }})</label>
-        <input 
-          type="number" 
-          :value="form.quantity" 
-          @input="e => emit('update:form', { ...form, quantity: Number((e.target as HTMLInputElement).value) })"
-          min="0" 
-          step="0.01" 
-        />
-        <span v-if="selectedMaterial && selectedMaterial.quantity < toBackendQuantity(form.quantity, selectedMaterial.unit)" class="error-text">
-           Stock insuficiente
-        </span>
-      </div>
-
-      <div v-if="selectedMaterial && form.quantity > 0" class="value-calculator value-calculator--out">
-        <div class="value-calculator__header">
-          <i class="fas fa-boxes"></i>
-          <span>Valor del despacho</span>
+      <div class="datetime-row">
+        <div class="datetime-chip">
+          <i class="fas fa-calendar-day"></i>
+          <span>{{ form.date }}</span>
         </div>
-        <div class="value-calculator__amount">USD ${{ totalValue.toFixed(2) }}</div>
-        <p class="value-calculator__hint">
-          Costo catálogo: ${{ getDisplayCost(selectedMaterial.cost || 0, selectedMaterial.unit).toFixed(4) }} / {{ getDisplayUnit(selectedMaterial.unit) }}
-        </p>
+        <div class="datetime-chip">
+          <i class="fas fa-clock"></i>
+          <span>{{ form.time }}</span>
+        </div>
       </div>
 
-      <div class="form-group">
-        <label>Venta esperada <span class="label-optional">(Opcional)</span></label>
-        <div class="input-prefix-wrapper">
-          <span class="input-prefix">$</span>
-          <input 
-            type="number" 
-            :value="form.expectedSaleValue" 
-            @input="e => emit('update:form', { ...form, expectedSaleValue: Number((e.target as HTMLInputElement).value) })"
-            min="0" 
-            step="0.01" 
+      <div class="field-grid">
+        <div class="field full">
+          <label>Materia Prima</label>
+          <SearchableSelect
+            :modelValue="form.rawMaterial"
+            @update:modelValue="val => emit('update:form', { ...form, rawMaterial: val })"
+            :options="materialOptions"
+            placeholder="Buscar materia prima..."
           />
         </div>
-      </div>
 
-      <div v-if="showRentabilityAlert" class="rentability-alert">
-        <div class="rentability-alert__icon">⚠️</div>
-        <div class="rentability-alert__body">
-          <strong>ALERTA DE RENTABILIDAD</strong>
-          <p>El costo supera o iguala la venta esperada proyectada.</p>
+        <div class="field half">
+          <label>Cantidad <span class="unit-hint">{{ selectedMaterial ? `(${getDisplayUnit(selectedMaterial.unit)})` : '' }}</span></label>
+          <input
+            type="number"
+            :value="form.quantity"
+            @input="e => emit('update:form', { ...form, quantity: Number((e.target as HTMLInputElement).value) })"
+            min="0" step="0.01" placeholder="0.00"
+            :class="{ 'input-error': insufficientStock }"
+          />
+          <span v-if="insufficientStock" class="error-text">
+            <i class="fas fa-exclamation-triangle"></i> Stock insuficiente
+          </span>
+        </div>
+
+        <div class="field half">
+          <label>Venta esperada <span class="optional">(Opcional)</span></label>
+          <div class="input-with-prefix">
+            <span class="prefix">$</span>
+            <input
+              type="number"
+              :value="form.expectedSaleValue"
+              @input="e => emit('update:form', { ...form, expectedSaleValue: Number((e.target as HTMLInputElement).value) })"
+              min="0" step="0.01" placeholder="0.00"
+            />
+          </div>
+        </div>
+
+        <div class="field full">
+          <label>Destino (Entidad)</label>
+          <SearchableSelect
+            :modelValue="form.entity"
+            @update:modelValue="val => emit('update:form', { ...form, entity: val })"
+            :options="entityOptions"
+            placeholder="Buscar destino..."
+          />
+        </div>
+
+        <div class="field full">
+          <label>Recibido por</label>
+          <input
+            type="text"
+            :value="form.responsible"
+            @input="e => emit('update:form', { ...form, responsible: (e.target as HTMLInputElement).value })"
+            placeholder="Nombre de quien recibe..."
+          />
+          <div class="name-tags">
+            <span v-for="name in ['Bryan', 'Danny', 'Saraí']" :key="name" class="name-tag"
+              @click="emit('update:form', { ...form, responsible: name })">
+              {{ name }}
+            </span>
+          </div>
+        </div>
+
+        <div class="field full">
+          <label>Observación <span class="optional">(Opcional)</span></label>
+          <textarea
+            :value="form.observation"
+            @input="e => emit('update:form', { ...form, observation: (e.target as HTMLInputElement).value })"
+            rows="2" placeholder="Notas adicionales..."
+          ></textarea>
         </div>
       </div>
 
-      <div class="form-group">
-        <label>Destino (Entidad)</label>
-        <SearchableSelect
-          :modelValue="form.entity"
-          @update:modelValue="val => emit('update:form', { ...form, entity: val })"
-          :options="entityOptions"
-          placeholder="Buscar destino..."
-        />
-      </div>
-
-      <div class="form-group">
-        <label>Recibido por</label>
-        <input 
-          type="text" 
-          :value="form.responsible" 
-          @input="e => emit('update:form', { ...form, responsible: (e.target as HTMLInputElement).value })"
-          placeholder="Nombre..." 
-        />
-        <div class="suggested-tags">
-           <span v-for="name in ['Bryan', 'Danny', 'Saraí']" :key="name" class="tag" @click="emit('update:form', { ...form, responsible: name })">
-             {{ name }}
-           </span>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Observación</label>
-        <textarea 
-          :value="form.observation" 
-          @input="e => emit('update:form', { ...form, observation: (e.target as HTMLInputElement).value })"
-          rows="2"
-        ></textarea>
-      </div>
-
-      <div class="actions">
-         <button class="btn-primary" @click="handleSubmit" :disabled="isSubmitting || !form.rawMaterial || form.quantity <= 0 || !form.entity">
-           Registrar Salida
-         </button>
+      <div class="form-actions">
+        <button
+          class="btn-submit btn-submit--out"
+          @click="handleSubmit"
+          :disabled="isSubmitting || !form.rawMaterial || form.quantity <= 0 || !form.entity || insufficientStock"
+        >
+          <i class="fas fa-truck-loading"></i>
+          Registrar Salida
+        </button>
       </div>
     </div>
 
-    <!-- Custom Modal for Out (Touch/Hold) -->
-    <div v-if="showOutModal" class="modal-overlay">
-      <div class="modal-content">
-        <h3>Confirmar Despacho</h3>
-        <p>Confirmar registro de <strong>SALIDA</strong>:</p>
-         <ul class="modal-list">
-           <li><strong>Material:</strong> {{ selectedMaterial?.name }}</li>
-           <li><strong>Cantidad:</strong> {{ form.quantity }} {{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : '' }}</li>
-           <li><strong>Destino:</strong> {{ form.entity }}</li>
-         </ul>
-        
-        <div class="hold-button-container">
-          <button 
-            class="hold-btn" 
-            @mousedown="emit('start-hold')" 
-            @mouseleave="emit('cancel-hold')" 
-            @mouseup="emit('cancel-hold')"
-            @touchstart.prevent="emit('start-hold')"
-            @touchend.prevent="emit('cancel-hold')"
-          >
-            <span class="btn-text">Mantén para confirmar</span>
-            <div class="progress-bar" :style="{ width: holdProgress + '%' }"></div>
-          </button>
-          <button class="btn-cancel" @click="cancelHold">Cancelar</button>
+    <!-- Right: Summary -->
+    <div class="summary-panel">
+
+      <!-- Stock actual -->
+      <div v-if="selectedMaterial" class="info-card info-card--stock">
+        <div class="info-card__header">
+          <i class="fas fa-layer-group"></i>
+          <span>Stock Actual</span>
         </div>
+        <div class="info-card__value">
+          {{ selectedMaterial.unit === 'g' || selectedMaterial.unit === 'ml'
+              ? (selectedMaterial.quantity / 1000).toFixed(2)
+              : selectedMaterial.quantity.toFixed(2) }}
+          <span class="info-card__unit">{{ getDisplayUnit(selectedMaterial.unit) }}</span>
+        </div>
+        <div class="info-card__sub">{{ selectedMaterial.name }}</div>
+      </div>
+
+      <!-- Valor despacho -->
+      <div v-if="selectedMaterial && form.quantity > 0" class="info-card info-card--total-out">
+        <div class="info-card__header">
+          <i class="fas fa-boxes"></i>
+          <span>Valor del despacho</span>
+        </div>
+        <div class="info-card__value">${{ totalValue.toFixed(2) }}</div>
+        <div class="info-card__sub">
+          Costo: ${{ getDisplayCost(selectedMaterial.cost || 0, selectedMaterial.unit).toFixed(4) }} / {{ getDisplayUnit(selectedMaterial.unit) }}
+        </div>
+      </div>
+
+      <!-- Stock después del despacho -->
+      <div v-if="stockAfterDispatch && !stockAfterDispatch.isNegative" class="info-card info-card--remaining">
+        <div class="info-card__header">
+          <i class="fas fa-arrow-down"></i>
+          <span>Quedará en bodega</span>
+        </div>
+        <div class="info-card__value">
+          {{ stockAfterDispatch.remaining }}
+          <span class="info-card__unit">{{ stockAfterDispatch.unit }}</span>
+        </div>
+      </div>
+
+      <!-- Alerta rentabilidad -->
+      <div v-if="showRentabilityAlert" class="alert-card alert-card--rent">
+        <div class="alert-card__icon">⚠️</div>
+        <div>
+          <strong>Alerta de Rentabilidad</strong>
+          <p>El costo supera o iguala la venta esperada.</p>
+        </div>
+      </div>
+
+      <!-- Empty state -->
+      <div v-if="!selectedMaterial" class="summary-empty">
+        <i class="fas fa-truck-loading"></i>
+        <p>Selecciona una materia prima para ver el resumen</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div v-if="showOutModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header modal-header--out">
+        <i class="fas fa-truck-loading"></i>
+        <h3>Confirmar Despacho</h3>
+      </div>
+      <ul class="modal-list">
+        <li><strong>Material:</strong> {{ selectedMaterial?.name }}</li>
+        <li><strong>Cantidad:</strong> {{ form.quantity }} {{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : '' }}</li>
+        <li><strong>Destino:</strong> {{ form.entity }}</li>
+        <li><strong>Valor:</strong> <span class="modal-highlight-out">${{ totalValue.toFixed(2) }}</span></li>
+      </ul>
+      <div class="hold-area">
+        <button
+          class="hold-btn"
+          @mousedown="emit('start-hold')"
+          @mouseleave="emit('cancel-hold')"
+          @mouseup="emit('cancel-hold')"
+          @touchstart.prevent="emit('start-hold')"
+          @touchend.prevent="emit('cancel-hold')"
+        >
+          <span class="hold-btn__text">Mantén para confirmar</span>
+          <div class="hold-btn__progress" :style="{ width: holdProgress + '%' }"></div>
+        </button>
+        <button class="btn-cancel-hold" @click="cancelHold">Cancelar</button>
       </div>
     </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
-.form-tab {
-  display: flex;
-  justify-content: center;
-  width: 100%;
+.dispatch-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+
+  @media (min-width: 900px) {
+    grid-template-columns: 1fr 300px;
+    align-items: start;
+  }
 }
 
-.form-card {
+.form-panel {
   background: white;
-  padding: 1.25rem;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  width: 100%;
-  max-width: 600px;
-  border: 1px solid $border-light;
-
-  @media (min-width: 640px) {
-    padding: 2rem;
-  }
-
-  h2 {
-    color: $NICOLE-PURPLE;
-    margin: 0 0 1.5rem;
-  }
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  overflow: hidden;
 }
 
-.form-row {
-  display: flex;
-  flex-direction: column;
-
-  @media (min-width: 640px) {
-    flex-direction: row;
-    gap: 1rem;
-  }
-}
-
-.form-group {
-  margin-bottom: 1.2rem;
-
-  &.half {
-    width: 100%;
-
-    @media (min-width: 640px) {
-      width: 50%;
-    }
-  }
-
-  label {
-    display: block;
-    margin-bottom: 0.4rem;
-    font-weight: 500;
-  }
-
-  input,
-  textarea {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid $border-light;
-    border-radius: 6px;
-  }
-}
-
-.readonly-display {
+.panel-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  background: $gray-50;
-  padding: 0.75rem;
-  border-radius: 6px;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
+
+  .panel-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  h2 { margin: 0; font-size: 1.1rem; font-weight: 800; color: #1e293b; }
+  p  { margin: 0.2rem 0 0; font-size: 0.82rem; color: #64748b; font-weight: 500; }
+
+  &--out .panel-icon { background: #fee2e2; color: #dc2626; }
 }
 
-.input-prefix-wrapper {
+.datetime-row {
   display: flex;
-  border: 1px solid $border-light;
-  border-radius: 6px;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem 0;
+}
+
+.datetime-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475569;
+
+  i { color: #dc2626; font-size: 0.8rem; }
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1rem;
+  padding: 1.25rem 1.5rem;
+
+  .field {
+    margin-bottom: 1.1rem;
+
+    &.full { grid-column: span 2; }
+    &.half { grid-column: span 2; @media (min-width: 640px) { grid-column: span 1; } }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #475569;
+      margin-bottom: 0.4rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 0.7rem 0.9rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      color: #1e293b;
+      background: white;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-sizing: border-box;
+
+      &:focus {
+        outline: none;
+        border-color: #dc2626;
+        box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+      }
+
+      &.input-error { border-color: #ef4444; }
+    }
+
+    textarea { resize: vertical; min-height: 72px; }
+  }
+}
+
+.unit-hint {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.optional {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #94a3b8;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.input-with-prefix {
+  display: flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+
+  &:focus-within {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+  }
+
+  .prefix {
+    padding: 0.7rem 0.75rem;
+    background: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+    color: #64748b;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
 
   input {
-    border: none !important;
     flex: 1;
-    padding: 0.75rem;
+    border: none !important;
+    box-shadow: none !important;
+    padding-left: 0.5rem !important;
   }
 }
 
-.input-prefix {
-  padding: 0.75rem;
-  background: $gray-50;
-  border-right: 1px solid $border-light;
-  color: $text-light;
+.error-text {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #dc2626;
+  font-size: 0.75rem;
   font-weight: 600;
+  margin-top: 0.3rem;
+
+  i { font-size: 0.7rem; }
 }
 
-.value-calculator {
-  border-radius: 10px;
-  padding: 1rem;
-  margin-bottom: 1.2rem;
-  border: 1px solid #93c5fd;
-  background: #eff6ff;
+.name-tags {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
 
-  &__amount {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: #1d4ed8;
+.name-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: $NICOLE-PURPLE;
+  background: rgba($NICOLE-PURPLE, 0.08);
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &:hover { background: $NICOLE-PURPLE; color: white; }
+}
+
+.form-actions {
+  padding: 0 1.5rem 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.8rem 1.75rem;
+  border: none;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &--out {
+    background: #dc2626;
+    color: white;
+    &:hover:not(:disabled) { background: #b91c1c; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(220,38,38,0.3); }
   }
+
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+// ─── Summary Panel ────────────────────────────────────────────────────────────
+
+.summary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.info-card {
+  background: white;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  padding: 1.25rem;
 
   &__header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.75rem;
-    color: $text-light;
-    font-weight: 700;
-    margin-bottom: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+    margin-bottom: 0.75rem;
+
+    i { font-size: 0.85rem; }
   }
 
-  &__hint {
-    font-size: 0.75rem;
-    color: $text-light;
-    margin: 0;
+  &__value {
+    font-size: 2rem;
+    font-weight: 900;
+    color: #1e293b;
+    line-height: 1;
   }
+
+  &__unit {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #64748b;
+    margin-left: 0.25rem;
+  }
+
+  &__sub {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    font-weight: 500;
+    margin-top: 0.4rem;
+  }
+
+  &--stock     { .info-card__header { i { color: $NICOLE-PURPLE; } } }
+  &--total-out { background: #fff5f5; border-color: #fecaca; .info-card__value { color: #dc2626; } .info-card__header { color: #dc2626; i { color: #dc2626; } } }
+  &--remaining { background: #f0fdf4; border-color: #bbf7d0; .info-card__value { color: #047857; } .info-card__header { i { color: #047857; } } }
 }
 
-.rentability-alert {
-  display: flex;
-  gap: 1rem;
-  background: #fff7ed;
-  border: 1px solid #fb923c;
-  border-radius: 10px;
+.alert-card {
+  border-radius: 12px;
   padding: 1rem;
-  margin-bottom: 1.2rem;
-
-  &__icon {
-    font-size: 1.5rem;
-  }
-
-  &__body {
-    font-size: 0.85rem;
-    color: #7c2d12;
-
-    strong {
-      color: #c2410c;
-    }
-
-    p {
-      margin: 0.2rem 0 0;
-    }
-  }
-}
-
-.suggested-tags {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+  gap: 0.75rem;
+  align-items: flex-start;
 
-  .tag {
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: $NICOLE-PURPLE;
-    background: rgba($NICOLE-PURPLE, 0.08);
-    padding: 0.3rem 0.8rem;
-    border-radius: 999px;
-    cursor: pointer;
+  &--rent {
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+
+    strong { color: #c2410c; font-size: 0.85rem; display: block; }
+    p { margin: 0.2rem 0 0; font-size: 0.78rem; color: #9a3412; }
   }
+
+  &__icon { font-size: 1.25rem; flex-shrink: 0; }
 }
 
-.actions {
-  margin-top: 1.5rem;
-  display: flex;
-  justify-content: flex-end;
+.summary-empty {
+  background: white;
+  border-radius: 14px;
+  border: 1px dashed #e2e8f0;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: #94a3b8;
+
+  i { font-size: 2rem; opacity: 0.4; display: block; margin-bottom: 0.75rem; }
+  p { margin: 0; font-size: 0.85rem; font-weight: 500; }
 }
 
-.btn-primary {
-  background: $NICOLE-PURPLE;
-  color: white;
-  border: none;
-  padding: 0.8rem 1.5rem;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-}
+// ─── Confirm Modal ────────────────────────────────────────────────────────────
 
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgba(0,0,0,0.5);
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   z-index: 1000;
   backdrop-filter: blur(2px);
+  padding: 1rem;
 }
 
-.modal-content {
+.modal-box {
   background: white;
+  border-radius: 16px;
   padding: 2rem;
-  border-radius: 12px;
-  max-width: 400px;
-  text-align: center;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
 }
 
-.hold-button-container {
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+
+  i { font-size: 1.25rem; }
+  h3 { margin: 0; font-size: 1.1rem; font-weight: 800; color: #1e293b; }
+
+  &--out { i { color: #dc2626; } }
+}
+
+.modal-list {
+  background: #f8fafc;
+  padding: 1rem;
+  border-radius: 10px;
+  list-style: none;
+  margin: 0 0 1.5rem;
+
+  li { font-size: 0.88rem; margin-bottom: 0.35rem; color: #374151; }
+}
+
+.modal-highlight-out { color: #dc2626; font-weight: 700; }
+
+.hold-area {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  margin-top: 1.5rem;
+  gap: 0.75rem;
 }
 
 .hold-btn {
   position: relative;
-  background: $error;
+  width: 100%;
+  padding: 1rem;
+  background: #dc2626;
   color: white;
   border: none;
-  padding: 1rem;
-  border-radius: 8px;
-  font-weight: 600;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
   overflow: hidden;
+  user-select: none;
 
-  .btn-text {
+  &__text {
     position: relative;
     z-index: 2;
   }
 
-  .progress-bar {
+  &__progress {
     position: absolute;
     top: 0;
     left: 0;
     height: 100%;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0,0,0,0.2);
     z-index: 1;
     transition: width 0.05s linear;
   }
 }
 
-.btn-cancel {
+.btn-cancel-hold {
+  width: 100%;
+  padding: 0.75rem;
   background: transparent;
-  border: 1px solid $border-light;
-  padding: 0.8rem;
-  border-radius: 8px;
-  color: $text-light;
-}
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  color: #64748b;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.88rem;
+  transition: all 0.2s;
 
-.error-text {
-  color: $error;
-  font-size: 0.75rem;
-}
-
-.modal-list {
-  list-style: none;
-  padding: 0;
-  background: $gray-50;
-  border-radius: 8px;
-  padding: 1rem;
-  margin: 1rem 0;
-  text-align: left;
-
-  li {
-    font-size: 0.9rem;
-    margin-bottom: 0.3rem;
-  }
+  &:hover { background: #f8fafc; }
 }
 </style>

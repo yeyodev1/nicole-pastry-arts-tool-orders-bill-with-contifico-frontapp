@@ -15,7 +15,8 @@ const searchQuery = ref('')
 const expandedSections = ref({
   low: true,
   warning: true,
-  optimal: true // Default open all for better visibility
+  optimal: true,
+  overstock: false
 })
 
 // Supplier Order Modal State
@@ -46,7 +47,7 @@ const fetchData = async () => {
 
 const getDisplayUnit = (unit: string) => {
   if (unit === 'g') return 'kg'
-  if (unit === 'ml') return 'L'
+  if (unit === 'ml') return 'lt'
   return unit
 }
 
@@ -55,23 +56,18 @@ const getDisplayQuantity = (quantity: number, unit: string) => {
   return quantity.toFixed(2)
 }
 
-type Status = 'low' | 'warning' | 'optimal'
+type Status = 'low' | 'warning' | 'optimal' | 'overstock'
 
 const getStockStatus = (m: any): Status => {
   const current = m.quantity || 0
   const min = m.minStock || 0
   const max = m.maxStock || 0
 
-  // Si no hay stock, siempre es crítico (sin importar configuración de límites)
   if (current === 0) return 'low'
-
-  // Si no se configuraron límites (min y max = 0) pero hay stock, considerar óptimo
   if (min === 0 && max === 0) return 'optimal'
-
-  // Lógica normal cuando hay límites configurados
+  if (max > 0 && current > max) return 'overstock'
   if (current < min) return 'low'
-  if (current >= min && current < (min * 1.5)) return 'warning'
-  // Si está entre min*1.5 y max (o si no hay max), es óptimo
+  if (current >= min && current < min * 1.5) return 'warning'
   return 'optimal'
 }
 
@@ -86,13 +82,24 @@ const filteredMaterials = computed(() => {
 })
 
 const itemsByStatus = computed(() => {
-  const groups: Record<Status, any[]> = { low: [], warning: [], optimal: [] }
+  const groups: Record<Status, any[]> = { low: [], warning: [], optimal: [], overstock: [] }
   filteredMaterials.value.forEach(m => {
-    const status = getStockStatus(m)
-    groups[status].push(m)
+    groups[getStockStatus(m)].push(m)
   })
   return groups
 })
+
+const stats = computed(() => ({
+  total: materials.value.length,
+  low: itemsByStatus.value.low.length,
+  warning: itemsByStatus.value.warning.length,
+  optimal: itemsByStatus.value.optimal.length,
+  overstock: itemsByStatus.value.overstock.length
+}))
+
+const toggleSection = (section: Status) => {
+  expandedSections.value[section] = !expandedSections.value[section]
+}
 
 const exportToExcel = () => {
   if (materials.value.length === 0) return
@@ -100,7 +107,6 @@ const exportToExcel = () => {
   const data = materials.value.map(m => {
     const unitCost = m.cost || 0
     const totalValue = (m.quantity || 0) * unitCost
-
     return {
       'Proveedor': m.provider?.name || (typeof m.provider === 'string' ? '...' : 'N/A'),
       'Categoría': m.category || 'N/A',
@@ -114,71 +120,39 @@ const exportToExcel = () => {
     }
   })
 
-  // Create sheet
   const ws = XLSX.utils.json_to_sheet(data)
-
-  // Styles Setup
   const headerStyle = {
     font: { bold: true, color: { rgb: "FFFFFF" } },
     fill: { fgColor: { rgb: "4338CA" } },
     alignment: { horizontal: "center", vertical: "center" },
     border: { top: { style: "thin" }, bottom: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" } }
   }
-
   const bodyStyle = {
     font: { name: "Arial", sz: 10 },
     alignment: { vertical: "center" },
     border: { bottom: { style: "thin", color: { rgb: "E2E8F0" } } }
   }
-
-  // Apply Styles
   const range = XLSX.utils.decode_range(ws['!ref']!)
   for (let R = range.s.r; R <= range.e.r; ++R) {
     for (let C = range.s.c; C <= range.e.c; ++C) {
-      const cell_address = { c: C, r: R }
-      const cell_ref = XLSX.utils.encode_cell(cell_address)
+      const cell_ref = XLSX.utils.encode_cell({ c: C, r: R })
       if (!ws[cell_ref]) continue
-
       if (R === 0) {
         ws[cell_ref].s = headerStyle
       } else {
         ws[cell_ref].s = bodyStyle
-        // Number formats
-        if (C === 5 || C === 7 || C === 8) { // Quantity, Cost, Total
-          ws[cell_ref].z = '#,##0.00'
-        }
+        if (C === 5 || C === 7 || C === 8) ws[cell_ref].z = '#,##0.00'
       }
     }
   }
-
-  // Column Widths
   ws['!cols'] = [
-    { wch: 20 }, // Prov
-    { wch: 15 }, // Cat
-    { wch: 20 }, // Sub
-    { wch: 35 }, // Name
-    { wch: 10 }, // Code
-    { wch: 10 }, // Qty
-    { wch: 8 },  // Unit
-    { wch: 15 }, // Cost
-    { wch: 15 }  // Total
+    { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 35 },
+    { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 15 }, { wch: 15 }
   ]
-
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, "Estado de Bodega")
   XLSX.writeFile(wb, `Inventario_Nicole_${new Date().toISOString().split('T')[0]}.xlsx`)
   success('Archivo Excel generado correctamente')
-}
-
-const stats = computed(() => ({
-  total: materials.value.length,
-  low: itemsByStatus.value.low.length,
-  warning: itemsByStatus.value.warning.length,
-  optimal: itemsByStatus.value.optimal.length
-}))
-
-const toggleSection = (section: 'low' | 'warning' | 'optimal') => {
-  expandedSections.value[section] = !expandedSections.value[section]
 }
 
 onMounted(fetchData)
@@ -187,119 +161,177 @@ onMounted(fetchData)
 <template>
   <div class="inventory-summary">
     <div class="content-container">
+
+      <!-- Header -->
       <div class="header">
         <div class="title-section">
           <h1>Centro de Control de Inventario</h1>
           <p>Monitoreo predictivo de stock y reabastecimiento</p>
         </div>
-        
         <div class="actions-bar">
           <div class="search-box">
             <i class="fas fa-search"></i>
-            <input 
-              v-model="searchQuery" 
-              placeholder="Buscar insumo..." 
-              type="text"
-            />
+            <input v-model="searchQuery" placeholder="Buscar insumo..." type="text" />
             <button v-if="searchQuery" class="clear-search" @click="searchQuery = ''">
               <i class="fas fa-times"></i>
             </button>
           </div>
-
-          <router-link to="/supply-chain/orders" class="btn-history">
+          <router-link to="/supply-chain/orders" class="btn-action">
             <i class="fas fa-clipboard-list"></i>
-            <span>Ver Historial</span>
+            <span>Historial</span>
           </router-link>
-
-          <button class="btn-export" @click="exportToExcel">
+          <button class="btn-action btn-export" @click="exportToExcel">
             <i class="fas fa-file-excel"></i>
             <span>Exportar</span>
           </button>
-
-          <button class="btn-refresh" @click="fetchData" :disabled="isLoading">
+          <button class="btn-action btn-refresh" @click="fetchData" :disabled="isLoading">
             <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
             <span>Sincronizar</span>
           </button>
         </div>
       </div>
 
+      <!-- Loading -->
       <div v-if="isLoading" class="loading-state">
         <div class="spinner"></div>
         <span>Calculando niveles de inventario...</span>
       </div>
 
+      <!-- Empty onboarding state -->
+      <div v-else-if="materials.length === 0" class="onboarding">
+        <div class="onboarding-hero">
+          <div class="hero-icon"><i class="fas fa-warehouse"></i></div>
+          <h2>Tu bodega está vacía</h2>
+          <p>Para comenzar a gestionar tu inventario, sigue estos tres pasos:</p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div class="step-icon"><i class="fas fa-truck"></i></div>
+            <div class="step-body">
+              <strong>Crea un Proveedor</strong>
+              <span>Registra los datos del proveedor: RUC, teléfono, correo y dirección.</span>
+            </div>
+            <router-link to="/supply-chain/providers" class="step-btn">
+              Ir a Proveedores <i class="fas fa-arrow-right"></i>
+            </router-link>
+          </div>
+          <div class="step-arrow"><i class="fas fa-chevron-right"></i></div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div class="step-icon"><i class="fas fa-box"></i></div>
+            <div class="step-body">
+              <strong>Agrega Materias Primas</strong>
+              <span>Desde el perfil del proveedor, en la sección "Portafolio", crea las materias primas.</span>
+            </div>
+            <router-link to="/supply-chain/providers" class="step-btn">
+              Ir a Proveedores <i class="fas fa-arrow-right"></i>
+            </router-link>
+          </div>
+          <div class="step-arrow"><i class="fas fa-chevron-right"></i></div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div class="step-icon"><i class="fas fa-chart-bar"></i></div>
+            <div class="step-body">
+              <strong>Monitorea tu Inventario</strong>
+              <span>Aquí verás el estado de stock de cada producto en tiempo real.</span>
+            </div>
+            <span class="step-btn disabled">Pendiente de datos</span>
+          </div>
+        </div>
+        <div class="onboarding-tip">
+          <i class="fas fa-lightbulb"></i>
+          <span>Tip: También puedes crear <router-link to="/supply-chain/categories">Categorías</router-link> para organizar mejor tus materias primas antes de comenzar.</span>
+        </div>
+      </div>
+
+      <!-- Dashboard -->
       <div v-else class="dashboard">
-        <!-- Stats Overview -->
+
+        <!-- Stats Row -->
         <div class="summary-cards">
-          <div class="glass-card stat-item low" @click="toggleSection('low')">
-            <div class="icon-box"><i class="fas fa-skull-crossbones"></i></div>
-            <div class="content">
-              <span class="value">{{ stats.low }}</span>
-              <span class="desc">Críticos (Pedir Ya)</span>
+          <div class="stat-card stat-low" @click="toggleSection('low')">
+            <div class="stat-icon"><i class="fas fa-exclamation-circle"></i></div>
+            <div class="stat-body">
+              <span class="stat-value">{{ stats.low }}</span>
+              <span class="stat-label">Críticos</span>
             </div>
-            <div class="indicator" :class="{ active: expandedSections.low }"></div>
+            <div class="stat-bar" :class="{ active: expandedSections.low }"></div>
           </div>
 
-          <div class="glass-card stat-item warning" @click="toggleSection('warning')">
-            <div class="icon-box"><i class="fas fa-tachometer-alt"></i></div>
-            <div class="content">
-              <span class="value">{{ stats.warning }}</span>
-              <span class="desc">Alerta Stock Próximo</span>
+          <div class="stat-card stat-warning" @click="toggleSection('warning')">
+            <div class="stat-icon"><i class="fas fa-tachometer-alt"></i></div>
+            <div class="stat-body">
+              <span class="stat-value">{{ stats.warning }}</span>
+              <span class="stat-label">En Alerta</span>
             </div>
-            <div class="indicator" :class="{ active: expandedSections.warning }"></div>
+            <div class="stat-bar" :class="{ active: expandedSections.warning }"></div>
           </div>
 
-          <div class="glass-card stat-item optimal" @click="toggleSection('optimal')">
-            <div class="icon-box"><i class="fas fa-shield-alt"></i></div>
-            <div class="content">
-              <span class="value">{{ stats.optimal }}</span>
-              <span class="desc">Niveles Óptimos</span>
+          <div class="stat-card stat-optimal" @click="toggleSection('optimal')">
+            <div class="stat-icon"><i class="fas fa-shield-alt"></i></div>
+            <div class="stat-body">
+              <span class="stat-value">{{ stats.optimal }}</span>
+              <span class="stat-label">Óptimos</span>
             </div>
-            <div class="indicator" :class="{ active: expandedSections.optimal }"></div>
+            <div class="stat-bar" :class="{ active: expandedSections.optimal }"></div>
+          </div>
+
+          <div class="stat-card stat-overstock" @click="toggleSection('overstock')">
+            <div class="stat-icon"><i class="fas fa-boxes"></i></div>
+            <div class="stat-body">
+              <span class="stat-value">{{ stats.overstock }}</span>
+              <span class="stat-label">Sobrestock</span>
+            </div>
+            <div class="stat-bar" :class="{ active: expandedSections.overstock }"></div>
           </div>
         </div>
 
-        <!-- Accordion Sections -->
+        <!-- Accordion Sections: rojo → amarillo → verde → azul -->
         <div class="accordion-layout">
-          
-          <!-- SECTION: CRITICAL -->
+
+          <!-- CRITICO -->
           <div class="accordion-group low" :class="{ open: expandedSections.low }">
             <button class="accordion-header" @click="toggleSection('low')">
               <div class="title-group">
-                 <i class="fas fa-exclamation-circle main-icon"></i>
-                 <h2>URGENTE: ABAJO DEL MÍNIMO</h2>
-                 <span class="count-badge">{{ stats.low }}</span>
+                <i class="fas fa-exclamation-circle main-icon"></i>
+                <h2>CRITICO — ABAJO DEL MINIMO</h2>
+                <span class="count-badge">{{ stats.low }}</span>
               </div>
               <i class="fas fa-chevron-down arrow"></i>
             </button>
-            
             <div class="accordion-content">
               <div v-if="itemsByStatus.low.length === 0" class="empty-msg">
-                <i class="fas fa-check-double"></i> No hay insumos críticos por el momento.
+                <i class="fas fa-check-double"></i>
+                No hay insumos críticos por el momento.
               </div>
               <div v-else class="grid-display">
                 <div v-for="m in itemsByStatus.low" :key="m._id" class="inv-card style-low">
-                  <div class="header-card">
-                     <div class="meta">
-                        <span class="cat">{{ m.category }}</span>
-                        <h3 class="name">{{ m.name }}</h3>
-                     </div>
-                     <div class="status-dot shine"></div>
+                  <div class="card-header">
+                    <div class="card-meta">
+                      <span class="card-cat">{{ m.category || 'Sin categoría' }}</span>
+                      <h3 class="card-name">{{ m.name }}</h3>
+                      <span v-if="m.provider?.name" class="card-provider">
+                        <i class="fas fa-truck"></i> {{ m.provider.name }}
+                      </span>
+                    </div>
+                    <div class="status-dot dot-low shine"></div>
                   </div>
-                  <div class="progress-container">
-                     <div class="progress-info">
-                        <span>Stock Actual</span>
-                        <span class="val">{{ getDisplayQuantity(m.quantity, m.unit) }} {{ getDisplayUnit(m.unit) }}</span>
-                     </div>
-                     <div class="progress-bar-bg">
-                        <div class="progress-bar-fill" :style="{ width: Math.min((m.quantity / (m.minStock || 1)) * 100, 100) + '%' }"></div>
-                     </div>
-                     <div class="min-line">Mínimo sugerido: {{ getDisplayQuantity(m.minStock, m.unit) }}{{ getDisplayUnit(m.unit) }}</div>
+                  <div class="progress-section">
+                    <div class="progress-labels">
+                      <span>Stock actual</span>
+                      <span class="progress-qty">{{ getDisplayQuantity(m.quantity, m.unit) }} {{ getDisplayUnit(m.unit) }}</span>
+                    </div>
+                    <div class="progress-track">
+                      <div
+                        class="progress-fill fill-low"
+                        :style="{ width: Math.min((m.quantity / (m.minStock || 1)) * 100, 100) + '%' }"
+                      ></div>
+                    </div>
+                    <div class="progress-hint">Mínimo: {{ getDisplayQuantity(m.minStock || 0, m.unit) }} {{ getDisplayUnit(m.unit) }}</div>
                   </div>
-
-                  <!-- NEW: Order Button -->
-                  <div class="card-footer" v-if="m.provider">
-                    <button class="btn-order-action" @click="openOrderModal(m)">
+                  <div v-if="m.provider" class="card-footer">
+                    <button class="btn-order" @click="openOrderModal(m)">
                       <i class="fas fa-truck"></i> Realizar Pedido
                     </button>
                   </div>
@@ -308,44 +340,46 @@ onMounted(fetchData)
             </div>
           </div>
 
-          <!-- SECTION: WARNING -->
+          <!-- ALERTA -->
           <div class="accordion-group warning" :class="{ open: expandedSections.warning }">
             <button class="accordion-header" @click="toggleSection('warning')">
               <div class="title-group">
-                 <i class="fas fa-history main-icon"></i>
-                 <h2>ALERTA: REABASTECIMIENTO PRÓXIMO</h2>
-                 <span class="count-badge">{{ stats.warning }}</span>
+                <i class="fas fa-exclamation-triangle main-icon"></i>
+                <h2>ALERTA — REABASTECIMIENTO PROXIMO</h2>
+                <span class="count-badge">{{ stats.warning }}</span>
               </div>
               <i class="fas fa-chevron-down arrow"></i>
             </button>
-            
             <div class="accordion-content">
               <div v-if="itemsByStatus.warning.length === 0" class="empty-msg">
+                <i class="fas fa-check"></i>
                 No hay alertas de reabastecimiento.
               </div>
               <div v-else class="grid-display">
                 <div v-for="m in itemsByStatus.warning" :key="m._id" class="inv-card style-warning">
-                   <div class="header-card">
-                     <div class="meta">
-                        <span class="cat">{{ m.category }}</span>
-                        <h3 class="name">{{ m.name }}</h3>
-                     </div>
+                  <div class="card-header">
+                    <div class="card-meta">
+                      <span class="card-cat">{{ m.category || 'Sin categoría' }}</span>
+                      <h3 class="card-name">{{ m.name }}</h3>
+                      <span v-if="m.provider?.name" class="card-provider">
+                        <i class="fas fa-truck"></i> {{ m.provider.name }}
+                      </span>
+                    </div>
+                    <div class="status-dot dot-warning"></div>
                   </div>
-                  <div class="stock-details">
-                     <div class="metric">
-                        <span class="lab">Actual</span>
-                        <span class="qty">{{ getDisplayQuantity(m.quantity, m.unit) }}</span>
-                     </div>
-                     <div class="separator"><i class="fas fa-arrow-right"></i></div>
-                     <div class="metric">
-                        <span class="lab">Mínimo x1.5</span>
-                        <span class="qty">{{ getDisplayQuantity(m.minStock * 1.5, m.unit) }}</span>
-                     </div>
+                  <div class="stock-comparison">
+                    <div class="cmp-block">
+                      <span class="cmp-label">Actual</span>
+                      <span class="cmp-value">{{ getDisplayQuantity(m.quantity, m.unit) }} {{ getDisplayUnit(m.unit) }}</span>
+                    </div>
+                    <i class="fas fa-arrow-right cmp-arrow"></i>
+                    <div class="cmp-block">
+                      <span class="cmp-label">Mínimo</span>
+                      <span class="cmp-value">{{ getDisplayQuantity(m.minStock || 0, m.unit) }} {{ getDisplayUnit(m.unit) }}</span>
+                    </div>
                   </div>
-
-                  <!-- NEW: Order Button -->
-                  <div class="card-footer" v-if="m.provider">
-                    <button class="btn-order-action" @click="openOrderModal(m)">
+                  <div v-if="m.provider" class="card-footer">
+                    <button class="btn-order" @click="openOrderModal(m)">
                       <i class="fas fa-truck"></i> Realizar Pedido
                     </button>
                   </div>
@@ -354,23 +388,88 @@ onMounted(fetchData)
             </div>
           </div>
 
-          <!-- SECTION: OPTIMAL -->
+          <!-- OPTIMO -->
           <div class="accordion-group optimal" :class="{ open: expandedSections.optimal }">
             <button class="accordion-header" @click="toggleSection('optimal')">
               <div class="title-group">
-                 <i class="fas fa-shield-alt main-icon"></i>
-                 <h2>INVENTARIO ÓPTIMO</h2>
-                 <span class="count-badge">{{ stats.optimal }}</span>
+                <i class="fas fa-shield-alt main-icon"></i>
+                <h2>OPTIMO — STOCK SALUDABLE</h2>
+                <span class="count-badge">{{ stats.optimal }}</span>
               </div>
               <i class="fas fa-chevron-down arrow"></i>
             </button>
-            
             <div class="accordion-content">
-              <div class="items-bubble-cloud">
-                 <div v-for="m in itemsByStatus.optimal" :key="m._id" class="bubble-item">
-                   <span class="n">{{ m.name }}</span>
-                   <span class="q">{{ getDisplayQuantity(m.quantity, m.unit) }}{{ getDisplayUnit(m.unit) }}</span>
-                 </div>
+              <div v-if="itemsByStatus.optimal.length === 0" class="empty-msg">
+                <i class="fas fa-info-circle"></i>
+                No hay insumos en nivel óptimo.
+              </div>
+              <div v-else class="grid-display">
+                <div v-for="m in itemsByStatus.optimal" :key="m._id" class="inv-card style-optimal">
+                  <div class="card-header">
+                    <div class="card-meta">
+                      <span class="card-cat">{{ m.category || 'Sin categoría' }}</span>
+                      <h3 class="card-name">{{ m.name }}</h3>
+                      <span v-if="m.provider?.name" class="card-provider">
+                        <i class="fas fa-truck"></i> {{ m.provider.name }}
+                      </span>
+                    </div>
+                    <div class="status-dot dot-optimal"></div>
+                  </div>
+                  <div class="stock-comparison">
+                    <div class="cmp-block">
+                      <span class="cmp-label">Actual</span>
+                      <span class="cmp-value cmp-green">{{ getDisplayQuantity(m.quantity, m.unit) }} {{ getDisplayUnit(m.unit) }}</span>
+                    </div>
+                    <i class="fas fa-check cmp-arrow cmp-arrow-green"></i>
+                    <div class="cmp-block">
+                      <span class="cmp-label">Máximo</span>
+                      <span class="cmp-value">{{ m.maxStock ? getDisplayQuantity(m.maxStock, m.unit) : '—' }} {{ m.maxStock ? getDisplayUnit(m.unit) : '' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SOBRESTOCK -->
+          <div class="accordion-group overstock" :class="{ open: expandedSections.overstock }">
+            <button class="accordion-header" @click="toggleSection('overstock')">
+              <div class="title-group">
+                <i class="fas fa-boxes main-icon"></i>
+                <h2>SOBRESTOCK — EXCEDE EL MAXIMO</h2>
+                <span class="count-badge">{{ stats.overstock }}</span>
+              </div>
+              <i class="fas fa-chevron-down arrow"></i>
+            </button>
+            <div class="accordion-content">
+              <div v-if="itemsByStatus.overstock.length === 0" class="empty-msg">
+                <i class="fas fa-check-circle"></i>
+                Ningún insumo excede su nivel máximo.
+              </div>
+              <div v-else class="grid-display">
+                <div v-for="m in itemsByStatus.overstock" :key="m._id" class="inv-card style-overstock">
+                  <div class="card-header">
+                    <div class="card-meta">
+                      <span class="card-cat">{{ m.category || 'Sin categoría' }}</span>
+                      <h3 class="card-name">{{ m.name }}</h3>
+                      <span v-if="m.provider?.name" class="card-provider">
+                        <i class="fas fa-truck"></i> {{ m.provider.name }}
+                      </span>
+                    </div>
+                    <div class="status-dot dot-overstock"></div>
+                  </div>
+                  <div class="stock-comparison">
+                    <div class="cmp-block">
+                      <span class="cmp-label">Actual</span>
+                      <span class="cmp-value cmp-blue">{{ getDisplayQuantity(m.quantity, m.unit) }} {{ getDisplayUnit(m.unit) }}</span>
+                    </div>
+                    <i class="fas fa-arrow-up cmp-arrow cmp-arrow-blue"></i>
+                    <div class="cmp-block">
+                      <span class="cmp-label">Máximo</span>
+                      <span class="cmp-value">{{ getDisplayQuantity(m.maxStock, m.unit) }} {{ getDisplayUnit(m.unit) }}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -379,7 +478,6 @@ onMounted(fetchData)
       </div>
     </div>
 
-    <!-- Supplier Order Modal -->
     <SupplierOrderModal
       :is-open="isOrderModalOpen"
       :provider="selectedOrderProvider"
@@ -398,20 +496,20 @@ onMounted(fetchData)
 }
 
 .content-container {
-  padding: 2rem 1rem;
-  max-width: 1300px;
-  margin: 0 auto;
+  padding: 1.5rem 1rem;
 
   @media (min-width: 768px) {
-    padding: 3rem 2rem;
+    padding: 2.5rem 2rem;
   }
 }
+
+// ─── Header ───────────────────────────────────────────────────────────────────
 
 .header {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  margin-bottom: 3.5rem;
+  gap: 1.25rem;
+  margin-bottom: 2.5rem;
 
   @media (min-width: 900px) {
     flex-direction: row;
@@ -420,32 +518,31 @@ onMounted(fetchData)
   }
 
   h1 {
-    font-size: 2rem;
+    font-size: 1.75rem;
     font-weight: 800;
     color: #1e1b4b;
     margin: 0;
-    letter-spacing: -1px;
+    letter-spacing: -0.5px;
     background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 
-    @media (min-width: 640px) {
-      font-size: 2.5rem;
-    }
+    @media (min-width: 640px) { font-size: 2.25rem; }
   }
 
   p {
-    font-size: 1rem;
+    font-size: 0.95rem;
     color: #64748b;
-    margin-top: 0.5rem;
+    margin: 0.4rem 0 0;
     font-weight: 500;
   }
 }
 
 .actions-bar {
   display: flex;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .search-box {
@@ -453,21 +550,23 @@ onMounted(fetchData)
   display: flex;
   align-items: center;
   width: 100%;
-  max-width: 300px;
+  max-width: 260px;
 
   i.fa-search {
     position: absolute;
-    left: 1rem;
+    left: 0.9rem;
     color: #94a3b8;
     pointer-events: none;
+    font-size: 0.85rem;
   }
 
   input {
     width: 100%;
-    padding: 0.85rem 1rem 0.85rem 2.75rem;
-    border-radius: 14px;
+    padding: 0.7rem 1rem 0.7rem 2.4rem;
+    border-radius: 12px;
     border: 1px solid #e2e8f0;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
+    background: white;
     transition: all 0.2s;
 
     &:focus {
@@ -479,612 +578,613 @@ onMounted(fetchData)
 
   .clear-search {
     position: absolute;
-    right: 0.75rem;
+    right: 0.6rem;
     background: none;
     border: none;
     color: #94a3b8;
     cursor: pointer;
-    padding: 0.25rem;
+    padding: 0.2rem;
+    font-size: 0.8rem;
 
-    &:hover {
-      color: #ef4444;
-    }
+    &:hover { color: #ef4444; }
   }
 }
 
-.btn-history {
-  display: flex;
+.btn-action {
+  display: inline-flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.85rem 1.75rem;
+  gap: 0.5rem;
+  padding: 0.7rem 1.25rem;
   background: white;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid #e2e8f0;
-  color: $NICOLE-PURPLE;
-  font-weight: 700;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.88rem;
   cursor: pointer;
   text-decoration: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-
-  i {
-    font-size: 1rem;
-  }
+  transition: all 0.2s;
+  white-space: nowrap;
 
   &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    background: $NICOLE-PURPLE;
-    color: white;
-    border-color: $NICOLE-PURPLE;
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
   }
+
+  &.btn-export { color: #10b981; &:hover { background: #10b981; color: white; border-color: #10b981; } }
+  &.btn-refresh { color: #4338ca; &:hover { background: #4338ca; color: white; border-color: #4338ca; } }
+
+  &:disabled { opacity: 0.6; cursor: not-allowed; &:hover { transform: none; } }
 }
 
-.btn-export {
+// ─── Loading ──────────────────────────────────────────────────────────────────
+
+.loading-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  padding: 0.85rem 1.75rem;
-  background: white;
-  border-radius: 14px;
-  border: 1px solid #e2e8f0;
-  color: #10b981;
-  font-weight: 700;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  justify-content: center;
+  padding: 6rem;
+  gap: 1.25rem;
+  color: #64748b;
+  font-weight: 600;
 
-  i {
-    font-size: 1rem;
-  }
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    background: #10b981;
-    color: white;
-    border-color: #10b981;
+  .spinner {
+    width: 3rem;
+    height: 3rem;
+    border: 4px solid #e2e8f0;
+    border-top-color: #4338ca;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 }
 
-.btn-refresh {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.85rem 1.75rem;
-  background: white;
-  border-radius: 14px;
-  border: 1px solid #e2e8f0;
-  color: #4338ca;
-  font-weight: 700;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  i {
-    font-size: 1rem;
-  }
+// ─── Onboarding ───────────────────────────────────────────────────────────────
 
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    background: #4338ca;
-    color: white;
-    border-color: #4338ca;
-  }
+.onboarding {
+  padding: 2rem 0 4rem;
 }
 
-/* Stats Dashboard */
-.summary-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2rem;
-  margin-bottom: 4rem;
+.onboarding-hero {
+  text-align: center;
+  margin-bottom: 3rem;
 
-  @media (max-width: 900px) {
-    grid-template-columns: 1fr;
-  }
-}
-
-.glass-card {
-  position: relative;
-  background: white;
-  border-radius: 24px;
-  padding: 1.75rem;
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  border: 1px solid #f1f5f9;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-  cursor: pointer;
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  overflow: hidden;
-
-  &:hover {
-    transform: translateY(-8px) scale(1.02);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-  }
-
-  .icon-box {
-    width: 4rem;
-    height: 4rem;
-    border-radius: 20px;
+  .hero-icon {
+    width: 80px;
+    height: 80px;
+    background: rgba($NICOLE-PURPLE, 0.08);
+    border-radius: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
+    font-size: 2rem;
+    color: $NICOLE-PURPLE;
+    margin: 0 auto 1.5rem;
   }
 
-  .content {
+  h2 { font-size: 1.75rem; font-weight: 900; color: #1e293b; margin: 0 0 0.5rem; }
+  p { color: #64748b; font-size: 1rem; font-weight: 500; margin: 0; }
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  @media (min-width: 768px) { flex-direction: row; gap: 0; align-items: flex-start; }
+}
+
+.step-arrow {
+  display: none;
+  color: #cbd5e1;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+
+  @media (min-width: 768px) { display: flex; align-items: center; padding: 0 0.5rem; margin-top: 40px; }
+}
+
+.step {
+  flex: 1;
+  background: white;
+  border-radius: 20px;
+  border: 2px solid #f1f5f9;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: relative;
+  transition: all 0.2s;
+
+  &:hover { border-color: rgba($NICOLE-PURPLE, 0.3); box-shadow: 0 8px 24px rgba($NICOLE-PURPLE, 0.06); }
+
+  .step-num {
+    position: absolute;
+    top: -14px;
+    left: 1.5rem;
+    width: 28px;
+    height: 28px;
+    background: $NICOLE-PURPLE;
+    color: white;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step-icon {
+    width: 48px;
+    height: 48px;
+    background: rgba($NICOLE-PURPLE, 0.08);
+    color: $NICOLE-PURPLE;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+  }
+
+  .step-body {
+    flex: 1;
+    strong { display: block; font-size: 1rem; font-weight: 800; color: #1e293b; margin-bottom: 0.4rem; }
+    span { font-size: 0.85rem; color: #64748b; font-weight: 500; line-height: 1.5; }
+  }
+
+  .step-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.1rem;
+    border-radius: 12px;
+    background: $NICOLE-PURPLE;
+    color: white;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: all 0.2s;
+    align-self: flex-start;
+
+    &:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba($NICOLE-PURPLE, 0.25); }
+    &.disabled { background: #f1f5f9; color: #94a3b8; cursor: default; &:hover { transform: none; box-shadow: none; } }
+  }
+}
+
+.onboarding-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 2rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 16px;
+  padding: 1rem 1.25rem;
+  font-size: 0.88rem;
+  color: #92400e;
+  font-weight: 500;
+
+  i { color: #f59e0b; margin-top: 2px; flex-shrink: 0; }
+  a { color: $NICOLE-PURPLE; font-weight: 700; text-decoration: none; &:hover { text-decoration: underline; } }
+}
+
+// ─── Stats Row ────────────────────────────────────────────────────────────────
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+
+  @media (min-width: 640px) { grid-template-columns: repeat(4, 1fr); }
+  @media (min-width: 900px) { gap: 1.25rem; margin-bottom: 2.5rem; }
+}
+
+.stat-card {
+  background: white;
+  border-radius: 18px;
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s;
+
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  }
+
+  .stat-icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+  }
+
+  .stat-body {
     display: flex;
     flex-direction: column;
 
-    .value {
-      font-size: 2.25rem;
+    .stat-value {
+      font-size: 2rem;
       font-weight: 900;
       line-height: 1;
-      margin-bottom: 0.25rem;
     }
 
-    .desc {
-      font-size: 0.85rem;
+    .stat-label {
+      font-size: 0.75rem;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      margin-top: 0.2rem;
     }
   }
 
-  .indicator {
+  .stat-bar {
     position: absolute;
     bottom: 0;
     left: 0;
-    height: 4px;
+    height: 3px;
     width: 0;
-    transition: width 0.6s ease;
-
-    &.active {
-      width: 100%;
-    }
+    transition: width 0.5s ease;
+    &.active { width: 100%; }
   }
 
-  &.low {
-    .icon-box {
-      background: #fee2e2;
-      color: #ef4444;
-    }
-
-    .value {
-      color: #ef4444;
-    }
-
-    .indicator {
-      background: #ef4444;
-    }
+  &.stat-low {
+    .stat-icon { background: #fee2e2; color: #ef4444; }
+    .stat-value { color: #ef4444; }
+    .stat-bar { background: #ef4444; }
   }
 
-  &.warning {
-    .icon-box {
-      background: #fef3c7;
-      color: #d97706;
-    }
-
-    .value {
-      color: #d97706;
-    }
-
-    .indicator {
-      background: #d97706;
-    }
+  &.stat-warning {
+    .stat-icon { background: #fef3c7; color: #d97706; }
+    .stat-value { color: #d97706; }
+    .stat-bar { background: #d97706; }
   }
 
-  &.optimal {
-    .icon-box {
-      background: #dcfce7;
-      color: #10b981;
-    }
+  &.stat-optimal {
+    .stat-icon { background: #dcfce7; color: #10b981; }
+    .stat-value { color: #10b981; }
+    .stat-bar { background: #10b981; }
+  }
 
-    .value {
-      color: #10b981;
-    }
-
-    .indicator {
-      background: #10b981;
-    }
+  &.stat-overstock {
+    .stat-icon { background: #dbeafe; color: #3b82f6; }
+    .stat-value { color: #3b82f6; }
+    .stat-bar { background: #3b82f6; }
   }
 }
 
-/* Accordion Engine */
+// ─── Accordion ────────────────────────────────────────────────────────────────
+
 .accordion-layout {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 }
 
 .accordion-group {
   background: white;
-  border-radius: 20px;
+  border-radius: 18px;
   border: 1px solid #f1f5f9;
   overflow: hidden;
-  transition: all 0.3s ease;
+  transition: box-shadow 0.3s;
 
   .accordion-header {
     width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.5rem 2rem;
+    padding: 1.25rem 1.5rem;
     background: white;
     border: none;
     cursor: pointer;
     text-align: left;
-    transition: background 0.3s;
+    transition: background 0.2s;
 
-    &:hover {
-      background: #f8fafc;
-    }
+    &:hover { background: #f8fafc; }
 
     .title-group {
       display: flex;
       align-items: center;
-      gap: 1.25rem;
+      gap: 1rem;
 
-      .main-icon {
-        font-size: 1.25rem;
-      }
+      .main-icon { font-size: 1.1rem; }
 
       h2 {
         margin: 0;
-        font-size: 1.15rem;
+        font-size: 1rem;
         font-weight: 800;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.3px;
       }
 
       .count-badge {
-        padding: 0.25rem 0.75rem;
+        padding: 0.2rem 0.65rem;
         border-radius: 99px;
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-weight: 800;
       }
     }
 
     .arrow {
-      font-size: 1rem;
+      font-size: 0.9rem;
       color: #94a3b8;
-      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      flex-shrink: 0;
     }
   }
 
   .accordion-content {
     max-height: 0;
-    transition: max-height 0.4s cubic-bezier(1, 0, 0, 1);
-    padding: 0 2rem;
-    opacity: 0;
     overflow: hidden;
+    opacity: 0;
+    padding: 0 1.5rem;
+    transition: max-height 0.4s cubic-bezier(1, 0, 0, 1), opacity 0.3s, padding 0.3s;
   }
 
   &.open {
-    box-shadow: 0 12px 20px -5px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.07);
 
     .accordion-content {
-      max-height: 2000px;
-      padding-bottom: 2.5rem;
+      max-height: 3000px;
       opacity: 1;
+      padding: 0 1.5rem 2rem;
     }
 
-    .arrow {
-      transform: rotate(180deg);
-    }
+    .arrow { transform: rotate(180deg); }
   }
 
-  // Branding Sections
   &.low {
-    border-left: 6px solid #ef4444;
-
-    .main-icon,
-    h2 {
-      color: #ef4444;
-    }
-
-    .count-badge {
-      background: #fee2e2;
-      color: #ef4444;
-    }
+    border-left: 5px solid #ef4444;
+    .main-icon, h2 { color: #dc2626; }
+    .count-badge { background: #fee2e2; color: #dc2626; }
   }
 
   &.warning {
-    border-left: 6px solid #f59e0b;
-
-    .main-icon,
-    h2 {
-      color: #b45309;
-    }
-
-    .count-badge {
-      background: #fef3c7;
-      color: #b45309;
-    }
+    border-left: 5px solid #f59e0b;
+    .main-icon, h2 { color: #b45309; }
+    .count-badge { background: #fef3c7; color: #b45309; }
   }
 
   &.optimal {
-    border-left: 6px solid #10b981;
+    border-left: 5px solid #10b981;
+    .main-icon, h2 { color: #047857; }
+    .count-badge { background: #dcfce7; color: #047857; }
+  }
 
-    .main-icon,
-    h2 {
-      color: #047857;
-    }
-
-    .count-badge {
-      background: #dcfce7;
-      color: #047857;
-    }
+  &.overstock {
+    border-left: 5px solid #3b82f6;
+    .main-icon, h2 { color: #1d4ed8; }
+    .count-badge { background: #dbeafe; color: #1d4ed8; }
   }
 }
 
-/* Inventory Cards (Inside Accordion) */
+// ─── Inventory Cards ──────────────────────────────────────────────────────────
+
 .grid-display {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  padding-top: 1.25rem;
 }
 
 .inv-card {
-  background: #f8fafc;
-  border-radius: 18px;
-  padding: 1.5rem;
+  border-radius: 14px;
+  padding: 1.25rem;
   border: 1px solid #f1f5f9;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
   transition: all 0.2s;
 
-  &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
-  }
+  &:hover { transform: translateY(-3px); box-shadow: 0 8px 16px rgba(0, 0, 0, 0.06); }
 
-  .header-card {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-
-    .cat {
-      font-size: 0.7rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      color: #94a3b8;
-      letter-spacing: 1px;
-    }
-
-    .name {
-      margin: 0.25rem 0 0;
-      font-size: 1.15rem;
-      font-weight: 700;
-      color: #1e293b;
-    }
-  }
-
-  .status-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-  }
-
-  &.style-low {
-    background: #fffafa;
-    border: 1px solid #fee2e2;
-
-    .status-dot {
-      background: #ef4444;
-    }
-  }
-
-  &.style-warning {
-    background: #fffcf0;
-    border: 1px solid #fef3c7;
-
-    .status-dot {
-      background: #f59e0b;
-    }
-  }
-
-  .card-footer {
-    padding-top: 1rem;
-    border-top: 1px solid rgba(0, 0, 0, 0.05);
-    margin-top: auto;
-  }
-
-  .btn-order-action {
-    width: 100%;
-    padding: 0.75rem;
-    border-radius: 12px;
-    border: none;
-    background: white;
-    color: $NICOLE-PURPLE;
-    font-weight: 800;
-    font-size: 0.85rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    border: 1px solid rgba($NICOLE-PURPLE, 0.3);
-    transition: all 0.2s;
-
-    &:hover {
-      background: $NICOLE-PURPLE;
-      color: white;
-      transform: scale(1.02);
-    }
-  }
+  &.style-low { background: #fffafa; border-color: #fee2e2; }
+  &.style-warning { background: #fffcf0; border-color: #fef3c7; }
+  &.style-optimal { background: #f0fdf4; border-color: #bbf7d0; }
+  &.style-overstock { background: #eff6ff; border-color: #bfdbfe; }
 }
 
-/* Progress Mechanism */
-.progress-container {
-  .progress-info {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.9rem;
-    font-weight: 700;
-    margin-bottom: 0.4rem;
-    color: #64748b;
-
-    .val {
-      color: #1e293b;
-      font-size: 1.1rem;
-    }
-  }
-
-  .progress-bar-bg {
-    height: 10px;
-    background: #e2e8f0;
-    border-radius: 20px;
-    overflow: hidden;
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: #ef4444;
-    border-radius: 20px;
-  }
-
-  .min-line {
-    font-size: 0.75rem;
-    font-weight: 700;
-    color: #94a3b8;
-    margin-top: 0.5rem;
-    text-align: right;
-  }
-}
-
-.stock-details {
+.card-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  background: white;
-  padding: 1rem;
-  border-radius: 12px;
-
-  .metric {
-    display: flex;
-    flex-direction: column;
-
-    .lab {
-      font-size: 0.7rem;
-      font-weight: 800;
-      color: #94a3b8;
-      text-transform: uppercase;
-    }
-
-    .qty {
-      font-size: 1.15rem;
-      font-weight: 800;
-      color: #1e293b;
-    }
-  }
-
-  .separator {
-    color: #cbd5e1;
-  }
-}
-
-/* Cloud Bubbles */
-.items-bubble-cloud {
-  display: flex;
-  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 0.75rem;
 }
 
-.bubble-item {
-  background: white;
-  border: 1px solid #e2e8f0;
-  padding: 0.6rem 1.25rem;
-  border-radius: 99px;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  transition: all 0.2s;
-
-  &:hover {
-    background: #10b981;
-    color: white;
-    border-color: #10b981;
-
-    .q {
-      color: rgba(255, 255, 255, 0.8);
-    }
-  }
-
-  .n {
-    font-weight: 700;
-    font-size: 0.9rem;
-  }
-
-  .q {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #10b981;
-  }
-}
-
-/* Loading state animations */
-.loading-state {
+.card-meta {
   display: flex;
   flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-cat {
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #94a3b8;
+  letter-spacing: 1px;
+}
+
+.card-name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-provider {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+
+  i { font-size: 0.7rem; }
+}
+
+.status-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+
+  &.dot-low { background: #ef4444; }
+  &.dot-warning { background: #f59e0b; }
+  &.dot-optimal { background: #10b981; }
+  &.dot-overstock { background: #3b82f6; }
+}
+
+// Progress bar (critical)
+.progress-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+
+  .progress-qty { color: #1e293b; font-size: 0.95rem; font-weight: 700; }
+}
+
+.progress-track {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 99px;
+
+  &.fill-low { background: #ef4444; }
+}
+
+.progress-hint {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-align: right;
+}
+
+// Stock comparison (warning / optimal / overstock)
+.stock-comparison {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: white;
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.cmp-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+
+  .cmp-label {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: 0.5px;
+  }
+
+  .cmp-value {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #1e293b;
+
+    &.cmp-green { color: #047857; }
+    &.cmp-blue { color: #1d4ed8; }
+  }
+}
+
+.cmp-arrow {
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+
+  &.cmp-arrow-green { color: #10b981; }
+  &.cmp-arrow-blue { color: #3b82f6; }
+}
+
+// Card footer / order button
+.card-footer {
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  padding-top: 0.85rem;
+  margin-top: auto;
+}
+
+.btn-order {
+  width: 100%;
+  padding: 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba($NICOLE-PURPLE, 0.25);
+  background: white;
+  color: $NICOLE-PURPLE;
+  font-weight: 800;
+  font-size: 0.82rem;
+  cursor: pointer;
+  display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8rem;
-  gap: 1.5rem;
-  color: #64748b;
+  gap: 0.5rem;
+  transition: all 0.2s;
+
+  &:hover { background: $NICOLE-PURPLE; color: white; border-color: $NICOLE-PURPLE; }
+}
+
+// Empty section message
+.empty-msg {
+  text-align: center;
+  padding: 2.5rem;
+  color: #94a3b8;
   font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
 
-  .spinner {
-    width: 3.5rem;
-    height: 3.5rem;
-    border: 5px solid #e2e8f0;
-    border-top-color: #4338ca;
-    border-radius: 50%;
-    animation: spin 1s cubic-bezier(0.53, 0.21, 0.29, 0.67) infinite;
-  }
+  i { font-size: 2.5rem; opacity: 0.3; }
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
+// Shine animation for critical dot
 .shine {
   animation: shine-pulse 2s infinite;
 }
 
 @keyframes shine-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
-  }
-
-  70% {
-    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-  }
-}
-
-.empty-msg {
-  text-align: center;
-  padding: 3rem;
-  color: #94a3b8;
-  font-weight: 600;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  align-items: center;
-
-  i {
-    font-size: 3rem;
-    opacity: 0.3;
-  }
+  0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  70%  { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 </style>
