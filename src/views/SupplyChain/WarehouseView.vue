@@ -55,7 +55,7 @@ const HOLD_DURATION = 1200
 
 // --- Shared Computed / Options ---
 const materialOptions = computed(() => materials.value.map(m => ({
-  value: m._id, label: m.name, subtitle: `Stock: ${(m.quantity / (m.unit === 'u' ? 1 : 1000)).toFixed(2)} ${m.unit === 'u' ? 'u' : (m.unit === 'ml' ? 'L' : 'kg')}`
+  value: m._id, label: m.name, subtitle: `Stock: ${(m.quantity / (m.unit === 'u' ? 1 : 1000)).toFixed(2)} ${m.unit === 'u' ? 'u' : (m.unit === 'ml' ? 'lt' : 'kg')}`
 })))
 
 const filteredProviderOptions = computed(() => {
@@ -206,123 +206,166 @@ watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
 
 <template>
   <div class="warehouse-view">
-    <div class="content-container">
-      <div class="header">
-        <div class="title">
-          <h1>Bodega</h1>
-          <p>Gestión de Inventario Modernizada</p>
-        </div>
+    <!-- Header -->
+    <div class="wh-header">
+      <div class="wh-title">
+        <h1><i class="fas fa-warehouse"></i> Bodega</h1>
+        <p>Control de entradas, salidas y bajas de inventario</p>
       </div>
+    </div>
 
-      <div class="tabs">
-        <button v-for="t in [['movements', 'Historial', 'fa-history'], ['in', 'Recepción', 'fa-box-open'], ['out', 'Despacho', 'fa-truck-loading'], ['loss', 'Bajas', 'fa-trash-alt']]"
-          :key="t[0]" :class="{ active: activeTab === t[0] }" @click="activeTab = (t[0] as any)">
-          <i :class="'fas ' + t[2]"></i> <span class="tab-label">{{ t[1] }}</span>
-        </button>
-      </div>
+    <!-- Tabs -->
+    <div class="wh-tabs">
+      <button
+        v-for="t in [
+          { key: 'movements', label: 'Historial',  icon: 'fa-history',       color: 'tab-neutral' },
+          { key: 'in',        label: 'Recepción',  icon: 'fa-box-open',      color: 'tab-in'      },
+          { key: 'out',       label: 'Despacho',   icon: 'fa-truck-loading', color: 'tab-out'     },
+          { key: 'loss',      label: 'Bajas',      icon: 'fa-trash-alt',     color: 'tab-loss'    },
+        ]"
+        :key="t.key"
+        :class="['wh-tab', t.color, { active: activeTab === t.key }]"
+        @click="activeTab = (t.key as any)"
+      >
+        <i :class="'fas ' + t.icon"></i>
+        <span>{{ t.label }}</span>
+      </button>
+    </div>
 
-      <div class="main-content">
-        <WarehouseHistoryTable v-if="activeTab === 'movements'"
-          :materials="materials" :movements="movements" :isLoading="isLoading"
-          :activeFilters="activeFilters" :currentPage="currentPage" :totalPages="totalPages"
-          :totalInValue="movements.filter(m => m.type === 'IN').reduce((s, m) => s + (m.quantity * (m.rawMaterial?.cost || 0)), 0)"
-          @filter="handleFilter" @page-change="handlePageChange"
-        />
-        
-        <WarehouseReceptionForm v-if="activeTab === 'in'"
-          v-model:form="inForm" :materials="materials" :providers="providers"
-          :suggestedOrders="suggestedOrders" :isSubmitting="isSubmitting"
-          :materialOptions="materialOptions" :filteredProviderOptions="filteredProviderOptions"
-          @submit="onInSubmit" @apply-suggestion="applySuggestion"
-        />
+    <!-- Content -->
+    <div class="wh-content">
+      <WarehouseHistoryTable v-if="activeTab === 'movements'"
+        :materials="materials" :movements="movements" :isLoading="isLoading"
+        :activeFilters="activeFilters" :currentPage="currentPage" :totalPages="totalPages"
+        :totalInValue="movements.filter(m => m.type === 'IN').reduce((s, m) => s + (m.quantity * (m.rawMaterial?.cost || 0)), 0)"
+        @filter="handleFilter" @page-change="handlePageChange"
+      />
 
-        <WarehouseDispatchForm v-if="activeTab === 'out'"
-          v-model:form="outForm" :materials="materials" :materialOptions="materialOptions"
-          :entityOptions="entityOptions" :isSubmitting="isSubmitting"
-          :holdProgress="holdProgress" :isHolding="isHolding"
-          @submit="onOutSubmit" @start-hold="startHold" @cancel-hold="stopHold"
-        />
+      <WarehouseReceptionForm v-if="activeTab === 'in'"
+        v-model:form="inForm" :materials="materials" :providers="providers"
+        :suggestedOrders="suggestedOrders" :isSubmitting="isSubmitting"
+        :materialOptions="materialOptions" :filteredProviderOptions="filteredProviderOptions"
+        @submit="onInSubmit" @apply-suggestion="applySuggestion"
+      />
 
-        <WarehouseLossForm v-if="activeTab === 'loss'"
-          v-model:form="lossForm" :materials="materials" :materialOptions="materialOptions"
-          :isSubmitting="isSubmitting" @submit="onLossSubmit"
-        />
-      </div>
+      <WarehouseDispatchForm v-if="activeTab === 'out'"
+        v-model:form="outForm" :materials="materials" :materialOptions="materialOptions"
+        :entityOptions="entityOptions" :isSubmitting="isSubmitting"
+        :holdProgress="holdProgress" :isHolding="isHolding"
+        @submit="onOutSubmit" @start-hold="startHold" @cancel-hold="stopHold"
+      />
+
+      <WarehouseLossForm v-if="activeTab === 'loss'"
+        v-model:form="lossForm" :materials="materials" :materialOptions="materialOptions"
+        :isSubmitting="isSubmitting" @submit="onLossSubmit"
+      />
     </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .warehouse-view {
-  padding: 1rem;
-  max-width: 1100px;
-  margin: 0 auto;
   width: 100%;
+  min-height: 100vh;
+  background: var(--color-background);
   box-sizing: border-box;
-  overflow-x: hidden;
+}
+
+// ─── Header ───────────────────────────────────────────────────────────────────
+
+.wh-header {
+  padding: 1.75rem 1.5rem 0;
 
   @media (min-width: 768px) {
-    padding: 2rem;
+    padding: 2rem 2.5rem 0;
   }
 }
 
-.header {
-  margin-bottom: 2rem;
-
+.wh-title {
   h1 {
-    color: $NICOLE-PURPLE;
     margin: 0;
+    font-size: 1.75rem;
+    font-weight: 800;
+    color: $NICOLE-PURPLE;
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+
+    i { font-size: 1.4rem; opacity: 0.85; }
+
+    @media (min-width: 640px) { font-size: 2rem; }
   }
 
   p {
-    color: $text-light;
-    margin: 0.5rem 0 0;
+    margin: 0.35rem 0 0;
+    color: #64748b;
     font-size: 0.9rem;
+    font-weight: 500;
   }
 }
 
-.tabs {
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+
+.wh-tabs {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 2rem;
-  border-bottom: 2px solid #f1f5f9;
+  gap: 0;
+  padding: 1.25rem 1.5rem 0;
+  border-bottom: 2px solid #e2e8f0;
   overflow-x: auto;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 
-  &::-webkit-scrollbar {
-    display: none;
+  &::-webkit-scrollbar { display: none; }
+
+  @media (min-width: 768px) {
+    padding: 1.5rem 2.5rem 0;
+    gap: 0.25rem;
+  }
+}
+
+.wh-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border: none;
+  background: none;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #94a3b8;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  border-radius: 8px 8px 0 0;
+  transition: all 0.2s;
+
+  i { font-size: 0.95rem; }
+
+  &:hover {
+    color: #475569;
+    background: #f8fafc;
   }
 
-  @media (min-width: 640px) {
-    gap: 1rem;
+  &.active {
+    color: $NICOLE-PURPLE;
+    border-bottom-color: $NICOLE-PURPLE;
+    background: rgba($NICOLE-PURPLE, 0.04);
   }
 
-  button {
-    background: none;
-    border: none;
-    padding: 0.8rem 1rem;
-    font-size: 0.9rem;
-    color: $text-light;
-    cursor: pointer;
-    border-bottom: 3px solid transparent;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 700;
-    transition: all 0.2s;
-    white-space: nowrap;
+  &.tab-in.active   { color: #059669; border-bottom-color: #059669; background: rgba(#059669, 0.04); }
+  &.tab-out.active  { color: #dc2626; border-bottom-color: #dc2626; background: rgba(#dc2626, 0.04); }
+  &.tab-loss.active { color: #d97706; border-bottom-color: #d97706; background: rgba(#d97706, 0.04); }
+}
 
-    i {
-      font-size: 1.1rem;
-    }
+// ─── Content ──────────────────────────────────────────────────────────────────
 
-    &.active {
-      color: $NICOLE-PURPLE;
-      border-bottom-color: $NICOLE-PURPLE;
-      background: rgba($NICOLE-PURPLE, 0.05);
-      border-radius: 12px 12px 0 0;
-    }
+.wh-content {
+  padding: 1.5rem;
+
+  @media (min-width: 768px) {
+    padding: 2rem 2.5rem;
   }
 }
 </style>

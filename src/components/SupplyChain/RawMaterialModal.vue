@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import HoldConfirmButton from '@/components/ui/HoldConfirmButton.vue'
 import DeleteMaterialModal from '@/views/SupplyChain/components/DeleteMaterialModal.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
+import ProviderCategoryService from '@/services/provider-category.service'
 
 const props = defineProps({
   isOpen: { type: Boolean, required: true },
@@ -12,7 +13,7 @@ const props = defineProps({
   isSaving: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['close', 'save', 'delete'])
+const emit = defineEmits(['close', 'save', 'delete', 'category-created'])
 
 const form = ref({
   name: '',
@@ -30,8 +31,8 @@ const form = ref({
 
 const units = [
   { value: 'u', label: 'Unidades (u)' },
-  { value: 'g', label: 'Gramos (g)' },
-  { value: 'ml', label: 'Mililitros (ml)' }
+  { value: 'g', label: 'Kilogramos (kg)' },
+  { value: 'ml', label: 'Litros (lt)' }
 ]
 
 const calculatedUnitCost = computed(() => {
@@ -41,10 +42,20 @@ const calculatedUnitCost = computed(() => {
   return 0
 })
 
-// Conversion functions now identity as we always use base units
-const getDisplayQuantity = (quantity: number, unit: string) => quantity
-const getDisplayUnit = (unit: string) => unit
-const toBackendQuantity = (inputQty: number, unit: string) => inputQty
+// Conversion: backend stores g/ml, user works in kg/lt
+const getDisplayQuantity = (quantity: number, unit: string) => {
+  if (unit === 'g' || unit === 'ml') return quantity / 1000
+  return quantity
+}
+const getDisplayUnit = (unit: string) => {
+  if (unit === 'g') return 'kg'
+  if (unit === 'ml') return 'lt'
+  return unit
+}
+const toBackendQuantity = (inputQty: number, unit: string) => {
+  if (unit === 'g' || unit === 'ml') return inputQty * 1000
+  return inputQty
+}
 
 const resetForm = () => {
   form.value = {
@@ -70,13 +81,13 @@ watch(() => props.isOpen, (newVal) => {
         name: m.name,
         code: m.code || '',
         unit: m.unit || 'u',
-        quantity: m.quantity || 0,
+        quantity: getDisplayQuantity(m.quantity || 0, m.unit),
         minStock: getDisplayQuantity(m.minStock || 0, m.unit),
         maxStock: getDisplayQuantity(m.maxStock || 0, m.unit),
         provider: m.provider?._id || m.provider || '',
         category: m.category || '',
         presentationPrice: m.presentationPrice || 0,
-        presentationQuantity: m.presentationQuantity || 1,
+        presentationQuantity: getDisplayQuantity(m.presentationQuantity || 1, m.unit),
         wastePercentage: m.wastePercentage || 0
       }
     } else {
@@ -117,6 +128,7 @@ const handleSubmit = () => {
 
   payload.minStock = toBackendQuantity(payload.minStock || 0, payload.unit)
   payload.maxStock = toBackendQuantity(payload.maxStock || 0, payload.unit)
+  payload.presentationQuantity = toBackendQuantity(payload.presentationQuantity || 1, payload.unit)
 
   payload.cost = calculatedUnitCost.value
 
@@ -127,6 +139,29 @@ const handleSubmit = () => {
   if (!payload.provider) delete payload.provider
 
   emit('save', payload)
+}
+
+// Inline category creation
+const showNewCatInput = ref(false)
+const newCatName = ref('')
+const isCreatingCat = ref(false)
+const newCatError = ref('')
+
+const handleCreateCategory = async () => {
+  if (!newCatName.value.trim()) return
+  isCreatingCat.value = true
+  newCatError.value = ''
+  try {
+    const created = await ProviderCategoryService.createCategory(newCatName.value.trim())
+    form.value.category = created.name
+    emit('category-created', created)
+    newCatName.value = ''
+    showNewCatInput.value = false
+  } catch (err: any) {
+    newCatError.value = err.response?.data?.message || 'Error al crear categoría'
+  } finally {
+    isCreatingCat.value = false
+  }
 }
 
 // Delete Logic
@@ -200,6 +235,30 @@ const categoryOptions = computed(() => {
                     {{ cat.name }}
                   </button>
                 </div>
+
+                <!-- Inline new category -->
+                <div class="new-cat-row" v-if="!showNewCatInput">
+                  <button type="button" class="btn-add-cat-inline" @click="showNewCatInput = true">
+                    <i class="fas fa-plus"></i> Nueva categoría
+                  </button>
+                </div>
+                <div v-else class="new-cat-form">
+                  <input
+                    v-model="newCatName"
+                    placeholder="Nombre de la categoría..."
+                    class="new-cat-input"
+                    @keyup.enter="handleCreateCategory"
+                    @keyup.escape="showNewCatInput = false; newCatName = ''"
+                    autofocus
+                  />
+                  <button type="button" class="btn-cat-confirm" @click="handleCreateCategory" :disabled="!newCatName.trim() || isCreatingCat">
+                    <i class="fas fa-check"></i>
+                  </button>
+                  <button type="button" class="btn-cat-cancel" @click="showNewCatInput = false; newCatName = ''; newCatError = ''">
+                    <i class="fas fa-times"></i>
+                  </button>
+                  <span v-if="newCatError" class="cat-error">{{ newCatError }}</span>
+                </div>
               </div>
               <div class="form-group">
                 <label>Unidad de Medida</label>
@@ -218,7 +277,7 @@ const categoryOptions = computed(() => {
                 <span class="badge" :class="stockStatus.class">{{ stockStatus.label }}</span>
               </div>
               <div class="stock-level">
-                <span class="current">{{ form.quantity }} {{ form.unit }}</span>
+                <span class="current">{{ form.quantity }} {{ getDisplayUnit(form.unit) }}</span>
                 <span class="label">en stock <span v-if="calculatedUnitCost > 0">(${{ (form.quantity * calculatedUnitCost).toFixed(2) }})</span></span>
               </div>
             </div>
@@ -250,7 +309,7 @@ const categoryOptions = computed(() => {
                 <label>Cantidad</label>
                 <input type="number" v-model.number="form.presentationQuantity" placeholder="0" min="0" step="any" />
                 <span class="input-hint" v-if="form.unit !== 'u'">
-                  Ingrese la cantidad en {{ form.unit }}
+                  Ingrese la cantidad en {{ getDisplayUnit(form.unit) }}
                 </span>
               </div>
               <div class="form-group flex-1">
@@ -260,16 +319,16 @@ const categoryOptions = computed(() => {
             </div>
 
             <div class="cost-summary" v-if="calculatedUnitCost > 0">
-              <!-- Kg / L Cost (Main Focus) -->
+              <!-- Cost per kg / lt (main) -->
               <div class="summary-item" v-if="form.unit !== 'u'">
-                <span class="label">Costo por {{ form.unit === 'g' ? 'Kg' : (form.unit === 'ml' ? 'Litro' : '') }}:</span>
-                <span class="value main">${{ (calculatedUnitCost * 1000).toFixed(4) }}</span>
+                <span class="label">Costo por {{ getDisplayUnit(form.unit) }}:</span>
+                <span class="value main">${{ calculatedUnitCost.toFixed(4) }}</span>
               </div>
 
-              <!-- Base Unit Cost (g / ml / u) -->
+              <!-- Cost per unit -->
               <div class="summary-item" :class="{ sub: form.unit !== 'u' }">
                 <span class="label">Costo {{ form.unit === 'u' ? 'por Unidad' : `por ${form.unit}` }}:</span>
-                <span class="value" :class="{ main: form.unit === 'u' }">${{ calculatedUnitCost.toFixed(6) }}</span>
+                <span class="value" :class="{ main: form.unit === 'u' }">${{ (form.unit !== 'u' ? calculatedUnitCost / 1000 : calculatedUnitCost).toFixed(6) }}</span>
               </div>
             </div>
           </div>
@@ -606,6 +665,93 @@ const categoryOptions = computed(() => {
       color: $NICOLE-PURPLE;
     }
   }
+}
+
+.new-cat-row {
+  margin-top: 0.5rem;
+}
+
+.btn-add-cat-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 99px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: $NICOLE-PURPLE;
+    color: $NICOLE-PURPLE;
+  }
+}
+
+.new-cat-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.new-cat-input {
+  flex: 1;
+  min-width: 140px;
+  padding: 0.45rem 0.75rem;
+  border: 2px solid $NICOLE-PURPLE;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  outline: none;
+  background: white;
+}
+
+.btn-cat-confirm {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: $NICOLE-PURPLE;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  transition: opacity 0.2s;
+
+  &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+.btn-cat-cancel {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  transition: all 0.2s;
+
+  &:hover { background: #fee2e2; color: #ef4444; border-color: #fecaca; }
+}
+
+.cat-error {
+  width: 100%;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #ef4444;
 }
 
 .highlight-title {

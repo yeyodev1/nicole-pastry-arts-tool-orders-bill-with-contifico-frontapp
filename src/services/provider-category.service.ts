@@ -4,6 +4,7 @@ export interface IProviderCategory {
   _id: string
   name: string
   isActive: boolean
+  materialCount?: number
 }
 
 class ProviderCategoryService extends APIBase {

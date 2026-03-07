@@ -137,7 +137,7 @@ watch(() => props.isOpen, async (newVal) => {
 
 const getDisplayUnit = (unit: string) => {
   if (unit === 'g') return 'kg'
-  if (unit === 'ml') return 'L'
+  if (unit === 'ml') return 'lt'
   return unit
 }
 
