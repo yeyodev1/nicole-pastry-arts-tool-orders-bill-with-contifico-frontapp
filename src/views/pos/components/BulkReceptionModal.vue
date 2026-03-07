@@ -20,14 +20,34 @@ const emit = defineEmits<{
 }>();
 
 const isProcessing = ref(false);
+const isChangingBranch = ref(false);
 const localBranch = ref(props.selectedBranch);
 
 watch(() => props.selectedBranch, (v) => { localBranch.value = v });
-watch(localBranch, (v) => { if (v !== props.selectedBranch) emit('change-branch', v) });
+watch(localBranch, (v) => {
+  if (v !== props.selectedBranch) {
+    isChangingBranch.value = true;
+    emit('change-branch', v);
+  }
+});
+watch(() => props.dispatches, () => { isChangingBranch.value = false; });
 
 const bulkNotes = ref('');
-type BulkFilterMode = 'yesterday' | 'today' | 'tomorrow' | 'today_tomorrow' | 'all';
-const filterMode = ref<BulkFilterMode>('all');
+type BulkFilterMode = 'yesterday' | 'today' | 'tomorrow';
+const filterMode = ref<BulkFilterMode>('today');
+
+const isReadOnly = computed(() => filterMode.value === 'yesterday' || filterMode.value === 'tomorrow');
+
+const formatTabDate = (offset: number): string => {
+  const todayStr = getECTTodayString();
+  const d = new Date(todayStr + 'T12:00:00');
+  d.setDate(d.getDate() + offset);
+  return d.toLocaleDateString('es-EC', { day: 'numeric', month: 'long' });
+};
+
+const labelYesterday = computed(() => formatTabDate(-1));
+const labelToday     = computed(() => formatTabDate(0));
+const labelTomorrow  = computed(() => formatTabDate(1));
 
 // --- Options ---
 const statusOptions = [
@@ -78,11 +98,9 @@ const calculateConsolidated = () => {
     const dDateStr = getDStr(parseECTDate(d.deliveryDate));
 
     let dateMatch = false;
-    if      (filterMode.value === 'all')          dateMatch = true;
-    else if (filterMode.value === 'yesterday'     && dDateStr === yesterdayStr) dateMatch = true;
-    else if (filterMode.value === 'today'         && dDateStr === todayStr)     dateMatch = true;
-    else if (filterMode.value === 'tomorrow'      && dDateStr === tomorrowStr)  dateMatch = true;
-    else if (filterMode.value === 'today_tomorrow' && (dDateStr === todayStr || dDateStr === tomorrowStr)) dateMatch = true;
+    if      (filterMode.value === 'yesterday' && dDateStr === yesterdayStr) dateMatch = true;
+    else if (filterMode.value === 'today'     && dDateStr === todayStr)     dateMatch = true;
+    else if (filterMode.value === 'tomorrow'  && dDateStr === tomorrowStr)  dateMatch = true;
     if (!dateMatch) return;
 
     d.dispatch.items.forEach((item: any) => {
@@ -207,31 +225,60 @@ const handleConfirm = async () => {
       <!-- ── Body ── -->
       <div class="modal-body">
 
+        <!-- Loading overlay when switching branch -->
+        <div v-if="isChangingBranch" class="branch-loading">
+          <div class="branch-spinner"></div>
+          <span>Cargando sucursal...</span>
+        </div>
+
         <!-- Filter tabs -->
-        <div class="filter-tabs">
-          <button :class="{ active: filterMode === 'yesterday' }"     @click="filterMode = 'yesterday'">Ayer</button>
-          <button :class="{ active: filterMode === 'today' }"         @click="filterMode = 'today'">Hoy</button>
-          <button :class="{ active: filterMode === 'tomorrow' }"      @click="filterMode = 'tomorrow'">Mañana</button>
-          <button :class="{ active: filterMode === 'today_tomorrow' }" @click="filterMode = 'today_tomorrow'">Hoy y Mañana</button>
-          <button :class="{ active: filterMode === 'all' }"           @click="filterMode = 'all'">Todo</button>
+        <div v-else class="filter-tabs">
+          <button :class="{ active: filterMode === 'yesterday' }" @click="filterMode = 'yesterday'">
+            <span class="tab-day">Ayer</span>
+            <span class="tab-date">{{ labelYesterday }}</span>
+            <span class="readonly-badge">Solo lectura</span>
+          </button>
+          <button :class="{ active: filterMode === 'today' }" @click="filterMode = 'today'">
+            <span class="tab-day">Hoy</span>
+            <span class="tab-date">{{ labelToday }}</span>
+          </button>
+          <button :class="{ active: filterMode === 'tomorrow' }" @click="filterMode = 'tomorrow'">
+            <span class="tab-day">Mañana</span>
+            <span class="tab-date">{{ labelTomorrow }}</span>
+            <span class="readonly-badge">Solo lectura</span>
+          </button>
+        </div>
+
+        <!-- Readonly banner for Ayer / Mañana -->
+        <div v-if="!isChangingBranch && isReadOnly" class="readonly-banner">
+          <i class="fa-solid fa-eye"></i>
+          <div class="readonly-banner-text">
+            <span>Estás viendo <strong>{{ filterMode === 'yesterday' ? 'AYER' : 'MAÑANA' }}</strong> ({{ filterMode === 'yesterday' ? labelYesterday : labelTomorrow }}) — solo lectura.</span>
+            <span>Para confirmar recepciones ve a <strong>HOY</strong>.</span>
+          </div>
+          <button class="btn-go-today" @click="filterMode = 'today'">
+            <i class="fa-solid fa-calendar-day"></i> Ir a Hoy · {{ labelToday }}
+          </button>
         </div>
 
         <!-- Empty -->
-        <div v-if="consolidatedItems.length === 0" class="empty-msg">
+        <div v-if="!isChangingBranch && consolidatedItems.length === 0" class="empty-msg">
           <i class="fa-solid fa-check-circle"></i>
           <p v-if="filterMode === 'today'">No hay ítems para <strong>HOY</strong>.</p>
           <p v-else-if="filterMode === 'yesterday'">No hay ítems para <strong>AYER</strong>.</p>
-          <p v-else-if="filterMode === 'tomorrow'">No hay ítems para <strong>MAÑANA</strong>.</p>
-          <p v-else-if="filterMode === 'today_tomorrow'">No hay ítems para <strong>HOY Y MAÑANA</strong>.</p>
-          <p v-else>No hay ítems pendientes en general.</p>
-          <button class="btn-restock-empty" @click="emit('open-restock')">
+          <p v-else>No hay ítems para <strong>MAÑANA</strong>.</p>
+          <div v-if="filterMode === 'today'" class="empty-hint">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Puede que producción aún no haya marcado ningún envío como <strong>enviado</strong> hacia esta sucursal, o que todo ya fue recibido.</span>
+          </div>
+          <button v-if="filterMode === 'today'" class="btn-restock-empty" @click="emit('open-restock')">
             <i class="fa-solid fa-clipboard-check"></i>
             Hacer Cierre de Producción (Reposición)
           </button>
         </div>
 
         <!-- Items list -->
-        <div v-else class="items-list">
+        <div v-else-if="!isChangingBranch" class="items-list" :class="{ 'is-readonly': isReadOnly }">
           <div class="list-header">
             <span>Producto</span>
             <span class="col-right">Enviado / Recibido</span>
@@ -266,9 +313,9 @@ const handleConfirm = async () => {
                   <strong>{{ item.totalSent }}</strong>
                 </div>
                 <div class="qty-control">
-                  <button tabindex="-1" @click="item.quantityReceived = Math.max(0, item.quantityReceived - 1)">−</button>
-                  <input type="number" v-model="item.quantityReceived" min="0" />
-                  <button tabindex="-1" @click="item.quantityReceived++">+</button>
+                  <button tabindex="-1" :disabled="isReadOnly" @click="item.quantityReceived = Math.max(0, item.quantityReceived - 1)">−</button>
+                  <input type="number" v-model="item.quantityReceived" min="0" :readonly="isReadOnly" />
+                  <button tabindex="-1" :disabled="isReadOnly" @click="item.quantityReceived++">+</button>
                 </div>
               </div>
             </div>
@@ -279,6 +326,7 @@ const handleConfirm = async () => {
                 <SearchableSelect
                   v-model="item.itemStatus"
                   :options="statusOptions"
+                  :disabled="isReadOnly"
                   placeholder="Estado..."
                   searchPlaceholder="Buscar estado..."
                 >
@@ -325,7 +373,7 @@ const handleConfirm = async () => {
           <HoldConfirmButton
             label="Confirmar Recepción Masiva"
             @confirmed="handleConfirm"
-            :disabled="isProcessing || consolidatedItems.length === 0"
+            :disabled="isProcessing || isChangingBranch || isReadOnly || consolidatedItems.length === 0"
             color="#7C3AED"
           />
         </div>
@@ -487,6 +535,77 @@ const handleConfirm = async () => {
   gap: 1.25rem;
 }
 
+// ─── Branch loading ───────────────────────────────────────────────────────────
+.branch-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2.5rem 1rem;
+  color: $text-light;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.branch-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid $border-light;
+  border-top-color: $NICOLE-PURPLE;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+// ─── Readonly banner ──────────────────────────────────────────────────────────
+.readonly-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid $border-light;
+  border-left: 4px solid $text-light;
+  border-radius: 8px;
+  padding: 0.7rem 1rem;
+  font-size: 0.83rem;
+  color: $text-light;
+
+  > i { flex-shrink: 0; font-size: 0.95rem; }
+
+  .readonly-banner-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1.4;
+  }
+
+  .btn-go-today {
+    flex-shrink: 0;
+    background: $NICOLE-PURPLE;
+    color: white;
+    border: none;
+    border-radius: 7px;
+    padding: 0.45rem 0.85rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+    transition: all 0.15s;
+
+    &:hover {
+      background: darken(#7C3AED, 5%);
+      transform: translateY(-1px);
+    }
+  }
+}
+
 // ─── Filter tabs ──────────────────────────────────────────────────────────────
 .filter-tabs {
   display: flex;
@@ -517,6 +636,47 @@ const handleConfirm = async () => {
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     }
   }
+
+  button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+
+  .tab-day {
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .tab-date {
+    font-size: 0.68rem;
+    font-weight: 500;
+    opacity: 0.7;
+    line-height: 1.1;
+  }
+
+  .readonly-badge {
+    display: inline-block;
+    font-size: 0.58rem;
+    font-weight: 700;
+    background: $gray-200;
+    color: $text-light;
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-top: 1px;
+  }
+}
+
+.items-list.is-readonly {
+  opacity: 0.75;
+  pointer-events: none;
+
+  .qty-control button { cursor: not-allowed; }
+  .qty-control input  { background: $gray-50; color: $text-light; cursor: default; }
 }
 
 // ─── Items list ───────────────────────────────────────────────────────────────
@@ -811,6 +971,22 @@ const handleConfirm = async () => {
 
   i { font-size: 3rem; color: $success; }
   p { font-size: 1.05rem; margin: 0; }
+
+  .empty-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    padding: 0.65rem 0.9rem;
+    font-size: 0.83rem;
+    color: #0369a1;
+    text-align: left;
+    max-width: 420px;
+
+    i { font-size: 0.9rem; color: #0284c7; flex-shrink: 0; margin-top: 1px; }
+  }
 
   .btn-restock-empty {
     background: white;
