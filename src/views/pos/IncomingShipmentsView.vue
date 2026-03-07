@@ -10,6 +10,7 @@ import DeliveryModal from './components/DeliveryModal.vue'
 import BulkReceptionModal from './components/BulkReceptionModal.vue'
 import RestockDailyModal from './components/RestockDailyModal.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
+import ConfirmationModal from '@/components/ConfirmationModal.vue'
 import { useToast } from '@/composables/useToast'
 
 type POSFilterMode = 'yesterday' | 'today' | 'tomorrow' | 'all' | 'custom'
@@ -29,6 +30,9 @@ const showDatePicker = computed(() => filterMode.value === 'custom')
 const showBulkModal = ref(false)
 const showDeliveryModal = ref(false)
 const showRestockModal = ref(false)
+const showOldClosingConfirm = ref(false)
+const pendingProductionFormData = ref<any>(null)
+const pendingProductionBranch = ref('')
 const selectedOrder = ref<POSOrder | null>(null)
 const selectedOrderIds = ref<Set<string>>(new Set())
 
@@ -175,7 +179,10 @@ const handleExportProductionOrder = async () => {
     }
     const lastEntryDate = formData.items.find(i => i.lastEntry)?.lastEntry?.date
     if (lastEntryDate && lastEntryDate !== formData.formDate) {
-      info(`Usando cierre del ${lastEntryDate} (no hay cierre de hoy)`)
+      pendingProductionFormData.value = formData
+      pendingProductionBranch.value = branch
+      showOldClosingConfirm.value = true
+      return
     }
     await exportRestockProductionOrder(formData, branch)
     success('Orden de Producción exportada')
@@ -183,6 +190,21 @@ const handleExportProductionOrder = async () => {
     showError('Error al exportar la orden de producción')
   } finally {
     isExportingProduction.value = false
+  }
+}
+
+const confirmExportWithOldClosing = async () => {
+  showOldClosingConfirm.value = false
+  isExportingProduction.value = true
+  try {
+    await exportRestockProductionOrder(pendingProductionFormData.value, pendingProductionBranch.value)
+    success('Orden de Producción exportada')
+  } catch {
+    showError('Error al exportar la orden de producción')
+  } finally {
+    isExportingProduction.value = false
+    pendingProductionFormData.value = null
+    pendingProductionBranch.value = ''
   }
 }
 
@@ -389,6 +411,15 @@ onMounted(async () => {
       @close="showRestockModal = false"
       @success="handleRestockSuccess"
       @notify="handleNotification"
+    />
+    <ConfirmationModal
+      :is-open="showOldClosingConfirm"
+      title="No hay cierre de hoy"
+      :message="`El cierre de producción de hoy aún no ha sido enviado.\n\nSe usará el cierre del ${pendingProductionFormData?.items?.find((i: any) => i.lastEntry)?.lastEntry?.date ?? ''} (día anterior) para generar la Orden de Producción.\n\n¿Deseas continuar de todas formas?`"
+      confirm-text="Sí, exportar con cierre anterior"
+      cancel-text="Cancelar"
+      @close="showOldClosingConfirm = false"
+      @confirm="confirmExportWithOldClosing"
     />
 
     <!-- Floating branch badge -->

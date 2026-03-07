@@ -85,6 +85,7 @@ const handleRetry = () => emit('retry-invoice')
     <div class="card-header">
        <div class="date-badge">
          <i class="far fa-clock"></i>
+         <span class="date-label">Entrega:</span>
          {{ formatOrderTime(order) }}
        </div>
        <span class="type-badge" :class="order.deliveryType">
@@ -151,72 +152,83 @@ const handleRetry = () => emit('retry-invoice')
 
     <!-- Actions Footer -->
     <div class="card-actions" @click.stop>
-       <button class="btn-whatsapp-copy" @click="emit('copy-summary')" title="Copiar Resumen para WhatsApp">
-          <i class="fa-brands fa-whatsapp"></i> Copiar Pedido
-       </button>
-      
-        <div class="icon-actions">
-          <button 
-             class="btn-icon" 
-             @click="emit('payment')"
-             :class="{
+
+      <!-- Retry Invoice: primary CTA when in ERROR state -->
+      <button
+        v-if="order.invoiceStatus === 'ERROR'"
+        class="btn-retry-primary"
+        @click="handleRetry"
+      >
+        <i class="fa-solid fa-rotate-right"></i>
+        Reintentar Factura
+      </button>
+
+      <!-- WhatsApp copy: shown when NOT in error -->
+      <button v-else class="btn-whatsapp-copy" @click="emit('copy-summary')">
+        <i class="fa-brands fa-whatsapp"></i> Copiar Pedido
+      </button>
+
+      <div class="icon-actions">
+        <!-- Cobro -->
+        <div class="icon-btn-wrap">
+          <button
+            class="btn-icon"
+            @click="emit('payment')"
+            :class="{
               'is-paid': getPaymentStatus(order) === 'paid',
               'is-partial': getPaymentStatus(order) === 'partial'
             }"
-             title="Registrar Cobro"
           >
-             <i class="fa-solid fa-dollar-sign"></i>
+            <i class="fa-solid fa-dollar-sign"></i>
           </button>
-         <button 
+          <span class="icon-label">Cobro</span>
+        </div>
+
+        <!-- Datos de factura (solo si no está pagado/procesado) -->
+        <div
           v-if="order.invoiceStatus !== 'PROCESSED' && getPaymentStatus(order) !== 'paid' && getPaymentStatus(order) !== 'settled'"
-          class="btn-icon" 
-          @click="emit('invoice-edit')"
-          title="Facturación"
-         >
+          class="icon-btn-wrap"
+        >
+          <button class="btn-icon" @click="emit('invoice-edit')">
             <i class="fa-solid fa-file-invoice"></i>
-         </button>
-          <button 
-           v-if="order.invoiceStatus === 'ERROR'"
-           class="btn-icon btn-retry-invoice" 
-           @click="handleRetry"
-           title="Reintentar Facturación"
-          >
-             <i class="fa-solid fa-rotate-right"></i>
           </button>
-         <button 
-          v-if="!order.settledInIsland"
-          class="btn-icon btn-settle" 
-          @click="emit('settle')"
-          title="Registrar Facturación en Isla"
-         >
+          <span class="icon-label">Factura</span>
+        </div>
+
+        <!-- Isla (solo si no está facturado en isla) -->
+        <div v-if="!order.settledInIsland" class="icon-btn-wrap">
+          <button class="btn-icon btn-settle" @click="emit('settle')">
             <i class="fa-solid fa-store"></i>
-         </button>
-         <!-- Edit & Delete -->
-         <button 
-          class="btn-icon btn-edit" 
-          @click="emit('edit')"
-          title="Editar Pedido"
-         >
+          </button>
+          <span class="icon-label">Isla</span>
+        </div>
+
+        <!-- Editar -->
+        <div class="icon-btn-wrap">
+          <button class="btn-icon btn-edit" @click="emit('edit')">
             <i class="fa-solid fa-pen-to-square"></i>
-         </button>
-         <!-- Return Action -->
-         <button 
+          </button>
+          <span class="icon-label">Editar</span>
+        </div>
+
+        <!-- Devolver (solo si fue despachado) -->
+        <div
           v-if="['SENT', 'PARTIAL', 'PROBLEM'].includes(order.dispatchStatus || '')"
-          class="btn-icon btn-return" 
-          @click="emit('return')"
-          title="Devolver Pedido"
-         >
-            <i class="fa-solid fa-undo"></i>
-         </button>
+          class="icon-btn-wrap"
+        >
+          <button class="btn-icon btn-return" @click="emit('return')">
+            <i class="fa-solid fa-reply"></i>
+          </button>
+          <span class="icon-label">Devolver</span>
+        </div>
 
-         <button 
-          class="btn-icon btn-delete" 
-          @click="emit('delete')"
-          title="Eliminar Pedido"
-         >
+        <!-- Eliminar -->
+        <div class="icon-btn-wrap">
+          <button class="btn-icon btn-delete" @click="emit('delete')">
             <i class="fa-solid fa-trash-can"></i>
-         </button>
-
+          </button>
+          <span class="icon-label">Eliminar</span>
+        </div>
       </div>
     </div>
   </article>
@@ -272,6 +284,14 @@ const handleRetry = () => emit('retry-invoice')
       display: flex;
       align-items: center;
       gap: 0.4rem;
+
+      .date-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #94a3b8;
+        letter-spacing: 0.4px;
+      }
     }
 
     .type-badge {
@@ -461,79 +481,114 @@ const handleRetry = () => emit('retry-invoice')
       }
     }
 
+    .btn-retry-primary {
+      flex: 1;
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 4px rgba(239, 68, 68, 0.25);
+      animation: pulse-red 2s infinite;
+
+      &:hover {
+        background: #dc2626;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(239, 68, 68, 0.35);
+      }
+    }
+
     .icon-actions {
       display: flex;
-      gap: 0.4rem;
+      gap: 0.5rem;
       flex-wrap: wrap;
       justify-content: flex-end;
+      align-items: flex-end;
 
       @media (max-width: 480px) {
         justify-content: center;
         margin-top: 0.5rem;
       }
+    }
 
-      .btn-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid #e2e8f0;
-        background: white;
-        color: #64748b;
-        cursor: pointer;
-        transition: all 0.2s;
-        font-size: 1rem;
+    .icon-btn-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.2rem;
+
+      .icon-label {
+        font-size: 0.6rem;
+        font-weight: 600;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+      }
+    }
+
+    .btn-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #e2e8f0;
+      background: white;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 1rem;
+
+      &:hover {
+        border-color: #8b5cf6;
+        color: #8b5cf6;
+        background: #f8fafc;
+      }
+
+      &.is-paid {
+        color: #22c55e;
+        border-color: #22c55e;
+        background: #f0fdf4;
+      }
+
+      &.is-partial {
+        color: #f59e0b;
+        border-color: #f59e0b;
+        background: #fffbeb;
+      }
+
+      &.btn-delete:hover {
+        color: #ef4444;
+        border-color: #ef4444;
+        background: #fef2f2;
+      }
+
+      &.btn-return {
+        color: #f97316;
+        border-color: #fed7aa;
+        background: #fff7ed;
 
         &:hover {
-          border-color: #8b5cf6;
-          color: #8b5cf6;
-          background: #f8fafc;
+          background: #f97316;
+          color: white;
+          border-color: #f97316;
         }
+      }
 
-        &.is-paid {
-          color: #22c55e;
-          border-color: #22c55e;
-          background: #f0fdf4;
-        }
-
-        &.is-partial {
-          color: #f59e0b;
-          border-color: #f59e0b;
-          background: #fffbeb;
-        }
-
-        &.btn-delete:hover {
-          color: #ef4444;
-          border-color: #ef4444;
-          background: #fef2f2;
-        }
-
-        &.btn-retry-invoice {
-          color: #ef4444;
-          border-color: #fecaca;
-          background: #fef2f2;
-          animation: pulse-red 2s infinite;
-
-          &:hover {
-            background: #ef4444;
-            color: white;
-            border-color: #ef4444;
-          }
-        }
-
-        &.btn-return:hover {
-          color: #f59e0b;
-          border-color: #f59e0b;
-          background: #fffbeb;
-        }
-
-        &.btn-settle:hover {
-          color: #8b5cf6;
-          border-color: #8b5cf6;
-          background: #fdf4ff;
-        }
+      &.btn-settle:hover {
+        color: #8b5cf6;
+        border-color: #8b5cf6;
+        background: #fdf4ff;
       }
     }
   }
