@@ -257,8 +257,14 @@ const handleReturnOrder = async (order: any) => {
 const sidebarOpen = ref(false)
 
 // --- INVOICE STATUS MONITOR ---
-const invoiceStatus = ref<{ pending: number; error: number } | null>(null)
+const invoiceStatus = ref<{
+  pending: number
+  error: number
+  processed: number
+  errorOrders?: Array<{ _id: string; customerName: string; invoiceError?: string; invoiceData?: any; deliveryDate?: string }>
+} | null>(null)
 const isProcessingBatch = ref(false)
+const showErrorDetails = ref(false)
 
 const fetchInvoiceStatus = async () => {
   try {
@@ -272,22 +278,15 @@ const fetchInvoiceStatus = async () => {
 const handleManualBatchProcess = async () => {
   isProcessingBatch.value = true
   try {
-    let remaining = 1
-    let totalProcessed = 0
-    let totalFailed = 0
-    while (remaining > 0) {
-      const result = await OrderService.triggerBatchInvoice()
-      remaining = result.remaining
-      totalProcessed += result.results.processed
-      totalFailed += result.results.failed
-      if (remaining > 0) await new Promise(r => setTimeout(r, 2000))
-    }
-    if (totalFailed > 0) {
-      showError(`Procesadas: ${totalProcessed} ✓ | Con error: ${totalFailed} — revisa la vista de Errores`)
+    const result = await OrderService.triggerBatchInvoice()
+    if (result.results.processed > 0) {
+      success(`${result.results.processed} factura(s) procesada(s) exitosamente`)
+    } else if (result.results.failed > 0) {
+      showError(`${result.results.failed} factura(s) con error — revisa los detalles abajo`)
     } else {
-      success(`${totalProcessed} factura(s) procesada(s) exitosamente`)
+      info('No hay facturas pendientes para procesar')
     }
-    fetchInvoiceStatus()
+    await fetchInvoiceStatus()
     fetchOrders()
   } catch (err: any) {
     showError(err.data?.message || err.message || 'Error al procesar facturas')
@@ -357,35 +356,67 @@ onMounted(() => {
       </div>
 
       <!-- Invoice Monitor Banner -->
-      <div
-        v-if="invoiceStatus && (invoiceStatus.pending > 0 || invoiceStatus.error > 0)"
-        class="invoice-monitor"
-        :class="{ 'has-error': invoiceStatus.error > 0 }"
-      >
-        <div class="monitor-left">
-          <div class="monitor-icon">
-            <i class="fas fa-file-invoice-dollar"></i>
-          </div>
-          <div class="monitor-info">
-            <span class="monitor-title">Facturas pendientes de procesar</span>
-            <div class="monitor-counts">
-              <span v-if="invoiceStatus.pending > 0" class="count-badge pending">
-                <i class="fas fa-clock"></i> {{ invoiceStatus.pending }} pendiente{{ invoiceStatus.pending !== 1 ? 's' : '' }}
+      <div v-if="invoiceStatus && (invoiceStatus.pending > 0 || invoiceStatus.error > 0)" class="invoice-monitor" :class="{ 'has-error': invoiceStatus.error > 0 }">
+        <!-- Top row -->
+        <div class="monitor-top">
+          <div class="monitor-left">
+            <div class="monitor-icon">
+              <i class="fas" :class="invoiceStatus.error > 0 ? 'fa-exclamation-triangle' : 'fa-file-invoice-dollar'"></i>
+            </div>
+            <div class="monitor-info">
+              <span class="monitor-title">
+                {{ invoiceStatus.error > 0 ? 'Facturas con errores de datos' : 'Facturas pendientes' }}
               </span>
-              <span v-if="invoiceStatus.error > 0" class="count-badge error">
-                <i class="fas fa-exclamation-circle"></i> {{ invoiceStatus.error }} con error
-              </span>
+              <div class="monitor-counts">
+                <span v-if="invoiceStatus.pending > 0" class="count-badge pending">
+                  <i class="fas fa-clock"></i> {{ invoiceStatus.pending }} pendiente{{ invoiceStatus.pending !== 1 ? 's' : '' }}
+                </span>
+                <span v-if="invoiceStatus.error > 0" class="count-badge error">
+                  <i class="fas fa-times-circle"></i> {{ invoiceStatus.error }} con error
+                </span>
+              </div>
             </div>
           </div>
+          <div class="monitor-actions">
+            <button
+              v-if="invoiceStatus.error > 0"
+              class="btn-toggle-errors"
+              @click="showErrorDetails = !showErrorDetails"
+            >
+              <i class="fas" :class="showErrorDetails ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+              {{ showErrorDetails ? 'Ocultar errores' : 'Ver errores' }}
+            </button>
+            <button
+              v-if="invoiceStatus.pending > 0"
+              class="btn-process-now"
+              :disabled="isProcessingBatch"
+              @click="handleManualBatchProcess"
+            >
+              <i class="fas" :class="isProcessingBatch ? 'fa-spinner fa-spin' : 'fa-play'"></i>
+              {{ isProcessingBatch ? 'Procesando...' : 'Procesar lote' }}
+            </button>
+          </div>
         </div>
-        <button
-          class="btn-process-now"
-          :disabled="isProcessingBatch"
-          @click="handleManualBatchProcess"
-        >
-          <i class="fas" :class="isProcessingBatch ? 'fa-spinner fa-spin' : 'fa-play'"></i>
-          {{ isProcessingBatch ? 'Procesando...' : 'Procesar ahora' }}
-        </button>
+
+        <!-- Error detail list -->
+        <div v-if="showErrorDetails && invoiceStatus.errorOrders?.length" class="error-orders-list">
+          <div class="error-list-header">
+            <i class="fas fa-info-circle"></i>
+            Estos pedidos tienen errores de datos. Corrígelos para que puedan facturarse.
+          </div>
+          <div v-for="errOrder in invoiceStatus.errorOrders" :key="errOrder._id" class="error-order-row">
+            <div class="error-order-info">
+              <span class="error-order-name">{{ errOrder.customerName }}</span>
+              <span class="error-order-msg">
+                <i class="fas fa-exclamation-circle"></i>
+                {{ errOrder.invoiceError || 'Error desconocido' }}
+              </span>
+            </div>
+            <button class="btn-fix-order" @click="router.push(`/orders/${errOrder._id}`)">
+              <i class="fas fa-pen"></i> Corregir
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Batch Toolbar -->
@@ -729,15 +760,11 @@ onMounted(() => {
 
 /* ── Invoice Monitor ────────────────────────────────────── */
 .invoice-monitor {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
   background: #fffbeb;
   border: 1.5px solid #fcd34d;
   border-left: 5px solid #f59e0b;
   border-radius: 12px;
-  padding: 1rem 1.25rem;
+  overflow: hidden;
   margin-bottom: 1rem;
 
   &.has-error {
@@ -745,14 +772,21 @@ onMounted(() => {
     border-color: #fca5a5;
     border-left-color: #ef4444;
 
-    .monitor-icon {
-      background: #ef4444;
-    }
+    .monitor-icon { background: #ef4444; }
+    .monitor-title { color: #991b1b; }
   }
 
-  @media (max-width: 600px) {
-    flex-direction: column;
-    align-items: flex-start;
+  .monitor-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+
+    @media (max-width: 600px) {
+      flex-direction: column;
+      align-items: flex-start;
+    }
   }
 
   .monitor-left {
@@ -782,10 +816,6 @@ onMounted(() => {
     margin-bottom: 0.3rem;
   }
 
-  .has-error & .monitor-title {
-    color: #991b1b;
-  }
-
   .monitor-counts {
     display: flex;
     gap: 0.5rem;
@@ -801,17 +831,33 @@ onMounted(() => {
     padding: 2px 8px;
     border-radius: 20px;
 
-    &.pending {
-      background: #fef3c7;
-      color: #92400e;
-      border: 1px solid #fcd34d;
-    }
+    &.pending { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    &.error { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  }
 
-    &.error {
-      background: #fee2e2;
-      color: #991b1b;
-      border: 1px solid #fca5a5;
-    }
+  .monitor-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-shrink: 0;
+  }
+
+  .btn-toggle-errors {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: transparent;
+    border: 1.5px solid #fca5a5;
+    color: #dc2626;
+    padding: 0.5rem 0.9rem;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+
+    &:hover { background: #fee2e2; }
   }
 
   .btn-process-now {
@@ -821,32 +867,94 @@ onMounted(() => {
     background: #f59e0b;
     color: white;
     border: none;
-    padding: 0.6rem 1.2rem;
+    padding: 0.5rem 1rem;
     border-radius: 8px;
     font-weight: 700;
-    font-size: 0.88rem;
+    font-size: 0.82rem;
     cursor: pointer;
     transition: all 0.2s;
     white-space: nowrap;
-    flex-shrink: 0;
 
-    &:hover:not(:disabled) {
-      background: #d97706;
-      box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
+    &:hover:not(:disabled) { background: #d97706; }
+    &:disabled { opacity: 0.65; cursor: not-allowed; }
+  }
+
+  .error-orders-list {
+    border-top: 1px solid #fca5a5;
+    background: #fff5f5;
+    padding: 0.75rem 1.25rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+
+    .error-list-header {
+      font-size: 0.8rem;
+      color: #7f1d1d;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      i { color: #ef4444; }
+    }
+  }
+
+  .error-order-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    background: white;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+
+    @media (max-width: 600px) {
+      flex-direction: column;
+      align-items: flex-start;
     }
 
-    &:disabled {
-      opacity: 0.65;
-      cursor: not-allowed;
+    .error-order-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      min-width: 0;
     }
 
-    .has-error & {
-      background: #ef4444;
+    .error-order-name {
+      font-weight: 700;
+      font-size: 0.88rem;
+      color: #1e293b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
-      &:hover:not(:disabled) {
-        background: #dc2626;
-        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
-      }
+    .error-order-msg {
+      font-size: 0.78rem;
+      color: #dc2626;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      i { font-size: 0.7rem; }
+    }
+
+    .btn-fix-order {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: #dc2626;
+      color: white;
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background 0.2s;
+
+      &:hover { background: #b91c1c; }
     }
   }
 }
