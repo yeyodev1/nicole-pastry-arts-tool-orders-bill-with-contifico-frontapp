@@ -165,7 +165,12 @@ class OrderService extends APIBase {
     }
   }
 
-  async getInvoiceStatus(): Promise<{ pending: number; error: number; processed: number }> {
+  async getInvoiceStatus(): Promise<{
+    pending: number
+    error: number
+    processed: number
+    errorOrders?: Array<{ _id: string; customerName: string; invoiceError?: string; invoiceData?: any; deliveryDate?: string }>
+  }> {
     try {
       const response = await this.get<any>('orders/invoice-status')
       return response.data
