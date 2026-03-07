@@ -14,9 +14,10 @@ class ProductionService extends APIBase {
     }
   }
 
-  async getAllOrders(): Promise<ProductionTask[]> {
+  async getAllOrders(date?: string): Promise<ProductionTask[]> {
     try {
-      const response = await this.get<{ data: ProductionTask[] }>('production/all-orders')
+      const query = date ? `?date=${date}` : ''
+      const response = await this.get<{ data: ProductionTask[] }>(`production/all-orders${query}`)
       return response.data.data
     } catch (error) {
       console.error('Error fetching all orders:', error)
