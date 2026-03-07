@@ -164,6 +164,26 @@ class OrderService extends APIBase {
       throw error
     }
   }
+
+  async getInvoiceStatus(): Promise<{ pending: number; error: number; processed: number }> {
+    try {
+      const response = await this.get<any>('orders/invoice-status')
+      return response.data
+    } catch (error) {
+      console.error('Error fetching invoice status:', error)
+      throw error
+    }
+  }
+
+  async triggerBatchInvoice(): Promise<{ remaining: number; results: { processed: number; failed: number } }> {
+    try {
+      const response = await this.post<any>('orders/batch-invoice', {})
+      return response.data
+    } catch (error) {
+      console.error('Error triggering batch invoice:', error)
+      throw error
+    }
+  }
 }
 
 export default new OrderService()

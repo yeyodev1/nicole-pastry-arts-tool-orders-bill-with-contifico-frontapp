@@ -56,6 +56,9 @@ const outstandingBalance = computed(() => {
   return Math.max(0, computedTotal.value - totalPaid.value)
 })
 
+const isReturned = computed(() => order.value?.dispatchStatus === 'RETURNED')
+const canReturn = computed(() => !!order.value && !isReturned.value)
+
 const handleOrderUpdated = (updatedOrder: any) => {
   order.value = updatedOrder
 }
@@ -195,6 +198,18 @@ onMounted(() => {
     </header>
 
     <main class="container" v-if="order">
+      <!-- Return Banner -->
+      <div v-if="isReturned" class="return-banner">
+        <div class="return-banner-icon">
+          <i class="fas fa-rotate-left"></i>
+        </div>
+        <div class="return-banner-body">
+          <strong>Pedido Devuelto</strong>
+          <p v-if="order.returnNotes">{{ order.returnNotes }}</p>
+          <p v-else>Este pedido fue marcado como devuelto.</p>
+        </div>
+      </div>
+
       <!-- Summary Grid -->
       <OrderSummaryInfo :order="order" />
 
@@ -246,6 +261,29 @@ onMounted(() => {
           />
         </section>
       </div>
+
+      <!-- Return Section -->
+      <section v-if="canReturn" class="return-section">
+        <div class="return-section-header">
+          <i class="fas fa-rotate-left"></i>
+          <h3>Gestión de Devolución</h3>
+        </div>
+        <div class="return-card">
+          <div class="return-card-left">
+            <div class="return-card-icon">
+              <i class="fas fa-box-open"></i>
+            </div>
+            <div class="return-card-info">
+              <strong>Registrar devolución de este pedido</strong>
+              <p>El pedido saldrá de producción y quedará marcado como devuelto. Se te pedirá un motivo antes de confirmar.</p>
+            </div>
+          </div>
+          <button class="btn-return-action" @click="handleReturnOrder">
+            <i class="fas fa-rotate-left"></i>
+            Registrar Devolución
+          </button>
+        </div>
+      </section>
 
       <!-- Danger Zone -->
       <section class="danger-zone-section" v-if="order && order.invoiceStatus !== 'PROCESSED' && !order.settledInIsland && outstandingBalance > 0.05">
@@ -566,5 +604,165 @@ onMounted(() => {
 
 .mb-4 {
   margin-bottom: 1rem;
+}
+
+/* Return Banner (already returned) */
+.return-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: #fff7ed;
+  border: 1.5px solid #fed7aa;
+  border-left: 5px solid #f97316;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+
+  .return-banner-icon {
+    width: 44px;
+    height: 44px;
+    background: #f97316;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.15rem;
+    flex-shrink: 0;
+  }
+
+  .return-banner-body {
+    strong {
+      display: block;
+      color: #c2410c;
+      font-size: 1rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 0.2rem;
+    }
+
+    p {
+      margin: 0;
+      color: #9a3412;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+  }
+}
+
+/* Return Action Section */
+.return-section {
+  margin-top: 2.5rem;
+  border-top: 1px solid #fed7aa;
+  padding-top: 2rem;
+  margin-bottom: 0;
+
+  .return-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: #ea580c;
+    margin-bottom: 1rem;
+
+    i {
+      font-size: 1.1rem;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+  }
+}
+
+.return-card {
+  background: white;
+  border: 1.5px solid #fed7aa;
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+
+  @media (max-width: 640px) {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .return-card-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    @media (max-width: 640px) {
+      flex-direction: column;
+    }
+  }
+
+  .return-card-icon {
+    width: 48px;
+    height: 48px;
+    background: #fff7ed;
+    border: 1.5px solid #fed7aa;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f97316;
+    font-size: 1.3rem;
+    flex-shrink: 0;
+  }
+
+  .return-card-info {
+    strong {
+      display: block;
+      color: #111827;
+      font-size: 1rem;
+      margin-bottom: 0.25rem;
+    }
+
+    p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+  }
+}
+
+.btn-return-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff7ed;
+  border: 2px solid #f97316;
+  color: #ea580c;
+  padding: 0.75rem 1.5rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+
+  i {
+    font-size: 0.95rem;
+  }
+
+  &:hover {
+    background: #f97316;
+    color: white;
+    box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+  }
+
+  @media (max-width: 640px) {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

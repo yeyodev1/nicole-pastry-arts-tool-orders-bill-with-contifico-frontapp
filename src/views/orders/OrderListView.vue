@@ -256,8 +256,49 @@ const handleReturnOrder = async (order: any) => {
 
 const sidebarOpen = ref(false)
 
+// --- INVOICE STATUS MONITOR ---
+const invoiceStatus = ref<{ pending: number; error: number } | null>(null)
+const isProcessingBatch = ref(false)
+
+const fetchInvoiceStatus = async () => {
+  try {
+    const status = await OrderService.getInvoiceStatus()
+    invoiceStatus.value = status
+  } catch {
+    // silently fail — non-critical widget
+  }
+}
+
+const handleManualBatchProcess = async () => {
+  isProcessingBatch.value = true
+  try {
+    let remaining = 1
+    let totalProcessed = 0
+    let totalFailed = 0
+    while (remaining > 0) {
+      const result = await OrderService.triggerBatchInvoice()
+      remaining = result.remaining
+      totalProcessed += result.results.processed
+      totalFailed += result.results.failed
+      if (remaining > 0) await new Promise(r => setTimeout(r, 2000))
+    }
+    if (totalFailed > 0) {
+      showError(`Procesadas: ${totalProcessed} ✓ | Con error: ${totalFailed} — revisa la vista de Errores`)
+    } else {
+      success(`${totalProcessed} factura(s) procesada(s) exitosamente`)
+    }
+    fetchInvoiceStatus()
+    fetchOrders()
+  } catch (err: any) {
+    showError(err.data?.message || err.message || 'Error al procesar facturas')
+  } finally {
+    isProcessingBatch.value = false
+  }
+}
+
 onMounted(() => {
   fetchOrders()
+  fetchInvoiceStatus()
 })
 </script>
 
@@ -312,6 +353,38 @@ onMounted(() => {
         </div>
         <button @click="fetchOrders" class="btn-refresh" :disabled="isLoading" title="Actualizar">
           <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
+        </button>
+      </div>
+
+      <!-- Invoice Monitor Banner -->
+      <div
+        v-if="invoiceStatus && (invoiceStatus.pending > 0 || invoiceStatus.error > 0)"
+        class="invoice-monitor"
+        :class="{ 'has-error': invoiceStatus.error > 0 }"
+      >
+        <div class="monitor-left">
+          <div class="monitor-icon">
+            <i class="fas fa-file-invoice-dollar"></i>
+          </div>
+          <div class="monitor-info">
+            <span class="monitor-title">Facturas pendientes de procesar</span>
+            <div class="monitor-counts">
+              <span v-if="invoiceStatus.pending > 0" class="count-badge pending">
+                <i class="fas fa-clock"></i> {{ invoiceStatus.pending }} pendiente{{ invoiceStatus.pending !== 1 ? 's' : '' }}
+              </span>
+              <span v-if="invoiceStatus.error > 0" class="count-badge error">
+                <i class="fas fa-exclamation-circle"></i> {{ invoiceStatus.error }} con error
+              </span>
+            </div>
+          </div>
+        </div>
+        <button
+          class="btn-process-now"
+          :disabled="isProcessingBatch"
+          @click="handleManualBatchProcess"
+        >
+          <i class="fas" :class="isProcessingBatch ? 'fa-spinner fa-spin' : 'fa-play'"></i>
+          {{ isProcessingBatch ? 'Procesando...' : 'Procesar ahora' }}
         </button>
       </div>
 
@@ -653,4 +726,128 @@ onMounted(() => {
 .list-enter-from,
 .list-leave-to { opacity: 0; transform: translateY(16px); }
 .list-leave-active { position: absolute; }
+
+/* ── Invoice Monitor ────────────────────────────────────── */
+.invoice-monitor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #fffbeb;
+  border: 1.5px solid #fcd34d;
+  border-left: 5px solid #f59e0b;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+
+  &.has-error {
+    background: #fef2f2;
+    border-color: #fca5a5;
+    border-left-color: #ef4444;
+
+    .monitor-icon {
+      background: #ef4444;
+    }
+  }
+
+  @media (max-width: 600px) {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .monitor-left {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+  }
+
+  .monitor-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: #f59e0b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  .monitor-title {
+    display: block;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #92400e;
+    margin-bottom: 0.3rem;
+  }
+
+  .has-error & .monitor-title {
+    color: #991b1b;
+  }
+
+  .monitor-counts {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .count-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+
+    &.pending {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fcd34d;
+    }
+
+    &.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+  }
+
+  .btn-process-now {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #f59e0b;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &:hover:not(:disabled) {
+      background: #d97706;
+      box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
+    }
+
+    &:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .has-error & {
+      background: #ef4444;
+
+      &:hover:not(:disabled) {
+        background: #dc2626;
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+      }
+    }
+  }
+}
 </style>
