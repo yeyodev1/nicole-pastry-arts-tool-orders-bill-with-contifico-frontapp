@@ -98,7 +98,8 @@ interface ConsolidatedItem {
   quantityReceived: number;
   itemStatus: 'OK' | 'MISSING' | 'DAMAGED' | 'BAD_CONDITION';
   itemNote: string;
-  sources: { orderId: string; dispatchId: string; quantitySent: number; }[];
+  sources: { orderId: string; dispatchId: string; quantitySent: number; productId: string; }[];
+  deliveryRounds: string[]; // e.g. ['Primera Entrega', 'Segunda Entrega']
 }
 
 const consolidatedItems = ref<ConsolidatedItem[]>([]);
@@ -139,20 +140,30 @@ const calculateConsolidated = () => {
 
   internalDispatches.value.forEach(d => {
     const dDateStr = getDStr(parseECTDate(d.deliveryDate));
+    const isRestock = d.salesChannel === 'Restock' || d.salesChannel === 'Restock-Bodega';
     let dateMatch = false;
     if      (filterMode.value === 'yesterday' && dDateStr === yesterdayStr) dateMatch = true;
     else if (filterMode.value === 'today'     && dDateStr === todayStr)     dateMatch = true;
     else if (filterMode.value === 'tomorrow'  && dDateStr === tomorrowStr)  dateMatch = true;
+    // Restock orders show in the "today" tab regardless of their delivery date
+    // because they need to be received whenever they arrive, not tied to a specific date
+    if (filterMode.value === 'today' && isRestock) dateMatch = true;
     if (!dateMatch) return;
 
+    const roundLabel = isRestock && d.comments ? (d.comments as string) : null;
+
     d.dispatch.items.forEach((item: any) => {
-      if (!map.has(item.productId)) {
-        map.set(item.productId, { productId: item.productId, name: item.name, totalSent: 0, quantityReceived: 0, itemStatus: 'OK', itemNote: '', sources: [] });
+      const key = item.name;
+      if (!map.has(key)) {
+        map.set(key, { productId: String(item.productId), name: item.name, totalSent: 0, quantityReceived: 0, itemStatus: 'OK', itemNote: '', sources: [], deliveryRounds: [] });
       }
-      const entry = map.get(item.productId)!;
+      const entry = map.get(key)!;
       entry.totalSent        += item.quantitySent;
       entry.quantityReceived += item.quantitySent;
-      entry.sources.push({ orderId: d.orderId, dispatchId: d.dispatch._id, quantitySent: item.quantitySent });
+      entry.sources.push({ orderId: d.orderId, dispatchId: d.dispatch._id, quantitySent: item.quantitySent, productId: String(item.productId) });
+      if (roundLabel && !entry.deliveryRounds.includes(roundLabel)) {
+        entry.deliveryRounds.push(roundLabel);
+      }
     });
   });
 
@@ -210,7 +221,7 @@ const handleConfirm = async () => {
       }
 
       update.items.push({
-        productId: cItem.productId,
+        productId: source.productId,
         quantityReceived: allocated,
         itemStatus: status,
         ...(cItem.itemNote ? { itemNote: cItem.itemNote } : {})
@@ -277,12 +288,13 @@ const startEditReceived = () => {
           itemStatus: (item.itemStatus || 'OK') as 'OK' | 'MISSING' | 'DAMAGED' | 'BAD_CONDITION',
           itemNote: item.itemNote || '',
           sources: [],
+          deliveryRounds: [],
         });
       }
       const entry = map.get(key)!;
       entry.totalSent        += item.quantitySent ?? 0;
       entry.quantityReceived += item.quantityReceived ?? item.quantitySent ?? 0;
-      entry.sources.push({ orderId: d.orderId, dispatchId: d.dispatch._id, quantitySent: item.quantitySent });
+      entry.sources.push({ orderId: d.orderId, dispatchId: d.dispatch._id, quantitySent: item.quantitySent, productId: String(item.productId) });
     });
   });
   editableReceivedItems.value = Array.from(map.values());
@@ -310,7 +322,7 @@ const handleConfirmEdit = async () => {
       let status = cItem.itemStatus as string;
       if (allocated < source.quantitySent && status === 'OK') status = 'MISSING';
       update.items.push({
-        productId: cItem.productId,
+        productId: source.productId,
         quantityReceived: allocated,
         itemStatus: status,
         ...(cItem.itemNote ? { itemNote: cItem.itemNote } : {})
@@ -603,6 +615,11 @@ watch(() => props.isOpen, (v) => {
             <div class="item-main">
               <div class="item-info">
                 <span class="item-name">{{ item.name }}</span>
+                <div v-if="item.deliveryRounds.length > 0" class="round-badges">
+                  <span v-for="round in item.deliveryRounds" :key="round" class="round-badge">
+                    <i class="fa-solid fa-truck-ramp-box"></i> {{ round }}
+                  </span>
+                </div>
                 <div v-if="item.quantityReceived !== item.totalSent" class="diff-badge">
                   <i class="fa-solid fa-triangle-exclamation"></i>
                   <span v-if="item.quantityReceived < item.totalSent">
@@ -843,11 +860,12 @@ watch(() => props.isOpen, (v) => {
 // ─── Body ─────────────────────────────────────────────────────────────────────
 .modal-body {
   padding: 1.25rem 1.5rem;
-  overflow-y: auto;
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  overflow: hidden; // scroll is handled by items-list, not modal-body
 }
 
 // ─── Branch loading ───────────────────────────────────────────────────────────
@@ -923,6 +941,7 @@ watch(() => props.isOpen, (v) => {
 
 // ─── Filter tabs ──────────────────────────────────────────────────────────────
 .filter-tabs {
+  flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
   background: #F1F5F9;
@@ -1033,7 +1052,10 @@ watch(() => props.isOpen, (v) => {
 .items-list {
   border: 1px solid $border-light;
   border-radius: 12px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .list-header {
@@ -1094,6 +1116,30 @@ watch(() => props.isOpen, (v) => {
   font-size: 0.95rem;
   color: #1e293b;
   line-height: 1.3;
+}
+
+.round-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+.round-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: $NICOLE-PURPLE;
+  background: rgba($NICOLE-PURPLE, 0.08);
+  border: 1px solid rgba($NICOLE-PURPLE, 0.2);
+  padding: 2px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+
+  i { font-size: 0.6rem; }
 }
 
 .diff-badge {
@@ -1256,6 +1302,8 @@ watch(() => props.isOpen, (v) => {
 
 // ─── General notes ────────────────────────────────────────────────────────────
 .notes-section {
+  flex-shrink: 0;
+
   label {
     display: flex;
     align-items: center;
