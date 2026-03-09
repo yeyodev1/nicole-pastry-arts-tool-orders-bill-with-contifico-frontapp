@@ -169,8 +169,6 @@ const generatedMessage = computed(() => {
     }
   })
 
-  if (!hasItems) return 'Seleccione cantidades para generar el mensaje.'
-
   text += `\n_Nicole Pastry Arts — Departamento de Compras_`
   return text
 })
@@ -225,6 +223,10 @@ const saveOrder = async () => {
 }
 
 const copyToClipboard = () => {
+  if (!orderItems.value.some(i => i.orderQty > 0)) {
+    showError('No hay cantidades seleccionadas para copiar.')
+    return
+  }
   navigator.clipboard.writeText(generatedMessage.value)
   success('Mensaje copiado al portapapeles. ¡Listo para pegar en WhatsApp!')
 }
@@ -330,11 +332,22 @@ watch([deliveryDate, orderItems], () => {
             </div>
 
             <div class="section-divider"></div>
-            <div class="section-title">Vista Previa del Mensaje</div>
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Vista Previa del Mensaje</span>
+              <button 
+                class="btn-copy-sm" 
+                @click="copyToClipboard"
+                title="Copiar mensaje ahora"
+                v-if="orderItems.some(i => i.orderQty > 0)"
+              >
+                <i class="far fa-copy"></i> Copiar Mensaje
+              </button>
+            </div>
             <div v-if="isLoadingDetails" class="skeleton skeleton-preview" style="height: 150px; border-radius: 16px;"></div>
             <div v-else class="message-preview-container">
               <div class="message-preview" :class="{ 'is-saved': isSaved }">
-                <div class="message-text" v-html="formatWhatsApp(generatedMessage)"></div>
+                <div class="message-text" v-html="formatWhatsApp(generatedMessage)" v-if="orderItems.some(i => i.orderQty > 0)"></div>
+                <div class="message-text text-muted" v-else>Seleccione cantidades mayores a 0 para generar y visualizar el mensaje de WhatsApp.</div>
                 <div class="bubble-footer">
                   <span class="time">{{ new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
                   <span v-if="isSaved" class="checks">
@@ -669,6 +682,11 @@ watch([deliveryDate, orderItems], () => {
     :deep(i) {
       font-style: italic;
     }
+
+    &.text-muted {
+      color: #64748b !important;
+      font-style: italic;
+    }
   }
 
   .bubble-footer {
@@ -768,6 +786,26 @@ watch([deliveryDate, orderItems], () => {
       cursor: not-allowed;
       transform: none;
     }
+  }
+}
+
+.btn-copy-sm {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #16a34a;
+    color: white;
   }
 }
 
