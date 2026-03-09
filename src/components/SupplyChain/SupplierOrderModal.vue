@@ -116,8 +116,8 @@ watch(() => props.isOpen, async (newVal) => {
             unit: m.unit,
             currentStock: m.quantity,
             pendingStock: pending,
-            suggested: displayQty,
-            orderQty: displayQty > 0 ? parseFloat(displayQty.toFixed(2)) : 0
+            suggested: displayQty > 0 ? parseFloat(displayQty.toFixed(2)) : 0,
+            orderQty: 0
           }
         })
       } catch (err) {
@@ -307,6 +307,17 @@ watch([deliveryDate, orderItems], () => {
                     <span class="pending-stock" v-if="item.pendingStock > 0">
                       <i class="fas fa-truck-ramp-box"></i> Pedido solicitado: {{ getDisplayQuantity(item.pendingStock, item.unit) }} {{ getDisplayUnit(item.unit) }}
                     </span>
+                    <span class="suggested-hint" v-if="item.suggested > 0 && item.orderQty === 0">
+                      <i class="fas fa-lightbulb"></i> Sugerido: {{ item.suggested }} {{ getDisplayUnit(item.unit) }}
+                    </span>
+                    <button 
+                      v-if="item.suggested > 0 && item.orderQty === 0" 
+                      class="btn-apply-suggestion" 
+                      @click="item.orderQty = item.suggested"
+                      title="Aplicar cantidad sugerida"
+                    >
+                      Aplicar
+                    </button>
                   </div>
                 </div>
                 <div class="item-action">
@@ -551,6 +562,32 @@ watch([deliveryDate, orderItems], () => {
       display: flex;
       align-items: center;
       gap: 4px;
+    }
+
+    .suggested-hint {
+      color: #10b981;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 700;
+    }
+
+    .btn-apply-suggestion {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 6px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+
+      &:hover {
+        background: #10b981;
+        color: white;
+      }
     }
   }
 
