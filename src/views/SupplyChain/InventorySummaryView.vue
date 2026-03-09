@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import RawMaterialService from '@/services/raw-material.service'
+import WarehouseSettingsService from '@/services/warehouse-settings.service'
 import { useToast } from '@/composables/useToast'
 import SupplierOrderModal from '@/components/SupplyChain/SupplierOrderModal.vue'
 
@@ -24,6 +25,18 @@ const isOrderModalOpen = ref(false)
 const selectedOrderProvider = ref<any>(null)
 const selectedMaterialId = ref('')
 
+const receptionPoints = ref<{ _id?: string; name: string; isActive: boolean }[]>([])
+const selectedReceptionPoint = ref('')
+
+const fetchSettings = async () => {
+  try {
+    const data = await WarehouseSettingsService.getSettings()
+    receptionPoints.value = data.receptionPoints.filter(p => p.isActive)
+  } catch (err) {
+    console.error('Error fetching settings', err)
+  }
+}
+
 const openOrderModal = (m: any) => {
   if (!m.provider) {
     showError('Este insumo no tiene un proveedor asignado.')
@@ -37,13 +50,17 @@ const openOrderModal = (m: any) => {
 const fetchData = async () => {
   isLoading.value = true
   try {
-    materials.value = await RawMaterialService.getRawMaterials()
+    materials.value = await RawMaterialService.getRawMaterials(undefined, undefined, undefined, selectedReceptionPoint.value)
   } catch (err) {
     showError('Error al cargar datos de inventario')
   } finally {
     isLoading.value = false
   }
 }
+
+watch(selectedReceptionPoint, () => {
+  fetchData()
+})
 
 const getDisplayUnit = (unit: string) => {
   if (unit === 'g') return 'kg'
@@ -155,7 +172,10 @@ const exportToExcel = () => {
   success('Archivo Excel generado correctamente')
 }
 
-onMounted(fetchData)
+onMounted(async () => {
+  await fetchSettings()
+  fetchData()
+})
 </script>
 
 <template>
@@ -176,6 +196,10 @@ onMounted(fetchData)
               <i class="fas fa-times"></i>
             </button>
           </div>
+          <select v-model="selectedReceptionPoint" class="filter-select">
+            <option value="">Bodega General</option>
+            <option v-for="pt in receptionPoints" :key="pt.name" :value="pt.name">{{ pt.name }}</option>
+          </select>
           <router-link to="/supply-chain/orders" class="btn-action">
             <i class="fas fa-clipboard-list"></i>
             <span>Historial</span>
@@ -527,7 +551,9 @@ onMounted(fetchData)
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 
-    @media (min-width: 640px) { font-size: 2.25rem; }
+    @media (min-width: 640px) {
+      font-size: 2.25rem;
+    }
   }
 
   p {
@@ -586,7 +612,9 @@ onMounted(fetchData)
     padding: 0.2rem;
     font-size: 0.8rem;
 
-    &:hover { color: #ef4444; }
+    &:hover {
+      color: #ef4444;
+    }
   }
 }
 
@@ -612,10 +640,63 @@ onMounted(fetchData)
     transform: translateY(-1px);
   }
 
-  &.btn-export { color: #10b981; &:hover { background: #10b981; color: white; border-color: #10b981; } }
-  &.btn-refresh { color: #4338ca; &:hover { background: #4338ca; color: white; border-color: #4338ca; } }
+  &.btn-export {
+    color: #10b981;
 
-  &:disabled { opacity: 0.6; cursor: not-allowed; &:hover { transform: none; } }
+    &:hover {
+      background: #10b981;
+      color: white;
+      border-color: #10b981;
+    }
+  }
+
+  &.btn-refresh {
+    color: #4338ca;
+
+    &:hover {
+      background: #4338ca;
+      color: white;
+      border-color: #4338ca;
+    }
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+
+    &:hover {
+      transform: none;
+    }
+  }
+}
+
+.filter-select {
+  padding: 0.7rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #475569;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23475569%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem top 50%;
+  background-size: 0.65rem auto;
+  padding-right: 2.5rem;
+
+  &:hover {
+    border-color: #cbd5e1;
+    background-color: #f8fafc;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: #4338ca;
+    box-shadow: 0 0 0 3px rgba(67, 56, 202, 0.1);
+  }
 }
 
 // ─── Loading ──────────────────────────────────────────────────────────────────
@@ -640,7 +721,11 @@ onMounted(fetchData)
   }
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 
@@ -665,8 +750,19 @@ onMounted(fetchData)
     margin: 0 auto 1.5rem;
   }
 
-  h2 { font-size: 1.75rem; font-weight: 900; color: #1e293b; margin: 0 0 0.5rem; }
-  p { color: #64748b; font-size: 1rem; font-weight: 500; margin: 0; }
+  h2 {
+    font-size: 1.75rem;
+    font-weight: 900;
+    color: #1e293b;
+    margin: 0 0 0.5rem;
+  }
+
+  p {
+    color: #64748b;
+    font-size: 1rem;
+    font-weight: 500;
+    margin: 0;
+  }
 }
 
 .steps {
@@ -674,7 +770,11 @@ onMounted(fetchData)
   flex-direction: column;
   gap: 1rem;
 
-  @media (min-width: 768px) { flex-direction: row; gap: 0; align-items: flex-start; }
+  @media (min-width: 768px) {
+    flex-direction: row;
+    gap: 0;
+    align-items: flex-start;
+  }
 }
 
 .step-arrow {
@@ -683,7 +783,12 @@ onMounted(fetchData)
   font-size: 1.25rem;
   flex-shrink: 0;
 
-  @media (min-width: 768px) { display: flex; align-items: center; padding: 0 0.5rem; margin-top: 40px; }
+  @media (min-width: 768px) {
+    display: flex;
+    align-items: center;
+    padding: 0 0.5rem;
+    margin-top: 40px;
+  }
 }
 
 .step {
@@ -698,7 +803,10 @@ onMounted(fetchData)
   position: relative;
   transition: all 0.2s;
 
-  &:hover { border-color: rgba($NICOLE-PURPLE, 0.3); box-shadow: 0 8px 24px rgba($NICOLE-PURPLE, 0.06); }
+  &:hover {
+    border-color: rgba($NICOLE-PURPLE, 0.3);
+    box-shadow: 0 8px 24px rgba($NICOLE-PURPLE, 0.06);
+  }
 
   .step-num {
     position: absolute;
@@ -730,8 +838,21 @@ onMounted(fetchData)
 
   .step-body {
     flex: 1;
-    strong { display: block; font-size: 1rem; font-weight: 800; color: #1e293b; margin-bottom: 0.4rem; }
-    span { font-size: 0.85rem; color: #64748b; font-weight: 500; line-height: 1.5; }
+
+    strong {
+      display: block;
+      font-size: 1rem;
+      font-weight: 800;
+      color: #1e293b;
+      margin-bottom: 0.4rem;
+    }
+
+    span {
+      font-size: 0.85rem;
+      color: #64748b;
+      font-weight: 500;
+      line-height: 1.5;
+    }
   }
 
   .step-btn {
@@ -748,8 +869,21 @@ onMounted(fetchData)
     transition: all 0.2s;
     align-self: flex-start;
 
-    &:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba($NICOLE-PURPLE, 0.25); }
-    &.disabled { background: #f1f5f9; color: #94a3b8; cursor: default; &:hover { transform: none; box-shadow: none; } }
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 12px rgba($NICOLE-PURPLE, 0.25);
+    }
+
+    &.disabled {
+      background: #f1f5f9;
+      color: #94a3b8;
+      cursor: default;
+
+      &:hover {
+        transform: none;
+        box-shadow: none;
+      }
+    }
   }
 }
 
@@ -766,8 +900,21 @@ onMounted(fetchData)
   color: #92400e;
   font-weight: 500;
 
-  i { color: #f59e0b; margin-top: 2px; flex-shrink: 0; }
-  a { color: $NICOLE-PURPLE; font-weight: 700; text-decoration: none; &:hover { text-decoration: underline; } }
+  i {
+    color: #f59e0b;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+
+  a {
+    color: $NICOLE-PURPLE;
+    font-weight: 700;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
 }
 
 // ─── Stats Row ────────────────────────────────────────────────────────────────
@@ -778,8 +925,14 @@ onMounted(fetchData)
   gap: 1rem;
   margin-bottom: 2rem;
 
-  @media (min-width: 640px) { grid-template-columns: repeat(4, 1fr); }
-  @media (min-width: 900px) { gap: 1.25rem; margin-bottom: 2.5rem; }
+  @media (min-width: 640px) {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  @media (min-width: 900px) {
+    gap: 1.25rem;
+    margin-bottom: 2.5rem;
+  }
 }
 
 .stat-card {
@@ -839,31 +992,70 @@ onMounted(fetchData)
     height: 3px;
     width: 0;
     transition: width 0.5s ease;
-    &.active { width: 100%; }
+
+    &.active {
+      width: 100%;
+    }
   }
 
   &.stat-low {
-    .stat-icon { background: #fee2e2; color: #ef4444; }
-    .stat-value { color: #ef4444; }
-    .stat-bar { background: #ef4444; }
+    .stat-icon {
+      background: #fee2e2;
+      color: #ef4444;
+    }
+
+    .stat-value {
+      color: #ef4444;
+    }
+
+    .stat-bar {
+      background: #ef4444;
+    }
   }
 
   &.stat-warning {
-    .stat-icon { background: #fef3c7; color: #d97706; }
-    .stat-value { color: #d97706; }
-    .stat-bar { background: #d97706; }
+    .stat-icon {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .stat-value {
+      color: #d97706;
+    }
+
+    .stat-bar {
+      background: #d97706;
+    }
   }
 
   &.stat-optimal {
-    .stat-icon { background: #dcfce7; color: #10b981; }
-    .stat-value { color: #10b981; }
-    .stat-bar { background: #10b981; }
+    .stat-icon {
+      background: #dcfce7;
+      color: #10b981;
+    }
+
+    .stat-value {
+      color: #10b981;
+    }
+
+    .stat-bar {
+      background: #10b981;
+    }
   }
 
   &.stat-overstock {
-    .stat-icon { background: #dbeafe; color: #3b82f6; }
-    .stat-value { color: #3b82f6; }
-    .stat-bar { background: #3b82f6; }
+    .stat-icon {
+      background: #dbeafe;
+      color: #3b82f6;
+    }
+
+    .stat-value {
+      color: #3b82f6;
+    }
+
+    .stat-bar {
+      background: #3b82f6;
+    }
   }
 }
 
@@ -894,14 +1086,18 @@ onMounted(fetchData)
     text-align: left;
     transition: background 0.2s;
 
-    &:hover { background: #f8fafc; }
+    &:hover {
+      background: #f8fafc;
+    }
 
     .title-group {
       display: flex;
       align-items: center;
       gap: 1rem;
 
-      .main-icon { font-size: 1.1rem; }
+      .main-icon {
+        font-size: 1.1rem;
+      }
 
       h2 {
         margin: 0;
@@ -943,31 +1139,65 @@ onMounted(fetchData)
       padding: 0 1.5rem 2rem;
     }
 
-    .arrow { transform: rotate(180deg); }
+    .arrow {
+      transform: rotate(180deg);
+    }
   }
 
   &.low {
     border-left: 5px solid #ef4444;
-    .main-icon, h2 { color: #dc2626; }
-    .count-badge { background: #fee2e2; color: #dc2626; }
+
+    .main-icon,
+    h2 {
+      color: #dc2626;
+    }
+
+    .count-badge {
+      background: #fee2e2;
+      color: #dc2626;
+    }
   }
 
   &.warning {
     border-left: 5px solid #f59e0b;
-    .main-icon, h2 { color: #b45309; }
-    .count-badge { background: #fef3c7; color: #b45309; }
+
+    .main-icon,
+    h2 {
+      color: #b45309;
+    }
+
+    .count-badge {
+      background: #fef3c7;
+      color: #b45309;
+    }
   }
 
   &.optimal {
     border-left: 5px solid #10b981;
-    .main-icon, h2 { color: #047857; }
-    .count-badge { background: #dcfce7; color: #047857; }
+
+    .main-icon,
+    h2 {
+      color: #047857;
+    }
+
+    .count-badge {
+      background: #dcfce7;
+      color: #047857;
+    }
   }
 
   &.overstock {
     border-left: 5px solid #3b82f6;
-    .main-icon, h2 { color: #1d4ed8; }
-    .count-badge { background: #dbeafe; color: #1d4ed8; }
+
+    .main-icon,
+    h2 {
+      color: #1d4ed8;
+    }
+
+    .count-badge {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
   }
 }
 
@@ -989,12 +1219,30 @@ onMounted(fetchData)
   gap: 1rem;
   transition: all 0.2s;
 
-  &:hover { transform: translateY(-3px); box-shadow: 0 8px 16px rgba(0, 0, 0, 0.06); }
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.06);
+  }
 
-  &.style-low { background: #fffafa; border-color: #fee2e2; }
-  &.style-warning { background: #fffcf0; border-color: #fef3c7; }
-  &.style-optimal { background: #f0fdf4; border-color: #bbf7d0; }
-  &.style-overstock { background: #eff6ff; border-color: #bfdbfe; }
+  &.style-low {
+    background: #fffafa;
+    border-color: #fee2e2;
+  }
+
+  &.style-warning {
+    background: #fffcf0;
+    border-color: #fef3c7;
+  }
+
+  &.style-optimal {
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+  }
+
+  &.style-overstock {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
 }
 
 .card-header {
@@ -1039,7 +1287,9 @@ onMounted(fetchData)
   align-items: center;
   gap: 0.3rem;
 
-  i { font-size: 0.7rem; }
+  i {
+    font-size: 0.7rem;
+  }
 }
 
 .status-dot {
@@ -1049,10 +1299,21 @@ onMounted(fetchData)
   flex-shrink: 0;
   margin-top: 4px;
 
-  &.dot-low { background: #ef4444; }
-  &.dot-warning { background: #f59e0b; }
-  &.dot-optimal { background: #10b981; }
-  &.dot-overstock { background: #3b82f6; }
+  &.dot-low {
+    background: #ef4444;
+  }
+
+  &.dot-warning {
+    background: #f59e0b;
+  }
+
+  &.dot-optimal {
+    background: #10b981;
+  }
+
+  &.dot-overstock {
+    background: #3b82f6;
+  }
 }
 
 // Progress bar (critical)
@@ -1069,7 +1330,11 @@ onMounted(fetchData)
   font-weight: 600;
   color: #64748b;
 
-  .progress-qty { color: #1e293b; font-size: 0.95rem; font-weight: 700; }
+  .progress-qty {
+    color: #1e293b;
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
 }
 
 .progress-track {
@@ -1083,7 +1348,9 @@ onMounted(fetchData)
   height: 100%;
   border-radius: 99px;
 
-  &.fill-low { background: #ef4444; }
+  &.fill-low {
+    background: #ef4444;
+  }
 }
 
 .progress-hint {
@@ -1101,7 +1368,7 @@ onMounted(fetchData)
   background: white;
   border-radius: 10px;
   padding: 0.85rem 1rem;
-  border: 1px solid rgba(0,0,0,0.05);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .cmp-block {
@@ -1123,8 +1390,13 @@ onMounted(fetchData)
     font-weight: 800;
     color: #1e293b;
 
-    &.cmp-green { color: #047857; }
-    &.cmp-blue { color: #1d4ed8; }
+    &.cmp-green {
+      color: #047857;
+    }
+
+    &.cmp-blue {
+      color: #1d4ed8;
+    }
   }
 }
 
@@ -1133,8 +1405,13 @@ onMounted(fetchData)
   font-size: 0.85rem;
   flex-shrink: 0;
 
-  &.cmp-arrow-green { color: #10b981; }
-  &.cmp-arrow-blue { color: #3b82f6; }
+  &.cmp-arrow-green {
+    color: #10b981;
+  }
+
+  &.cmp-arrow-blue {
+    color: #3b82f6;
+  }
 }
 
 // Card footer / order button
@@ -1160,7 +1437,11 @@ onMounted(fetchData)
   gap: 0.5rem;
   transition: all 0.2s;
 
-  &:hover { background: $NICOLE-PURPLE; color: white; border-color: $NICOLE-PURPLE; }
+  &:hover {
+    background: $NICOLE-PURPLE;
+    color: white;
+    border-color: $NICOLE-PURPLE;
+  }
 }
 
 // Empty section message
@@ -1174,7 +1455,10 @@ onMounted(fetchData)
   gap: 0.75rem;
   align-items: center;
 
-  i { font-size: 2.5rem; opacity: 0.3; }
+  i {
+    font-size: 2.5rem;
+    opacity: 0.3;
+  }
 }
 
 // Shine animation for critical dot
@@ -1183,8 +1467,16 @@ onMounted(fetchData)
 }
 
 @keyframes shine-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-  70%  { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5);
+  }
+
+  70% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
 </style>

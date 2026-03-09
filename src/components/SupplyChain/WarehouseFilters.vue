@@ -2,14 +2,16 @@
 import { ref, watch } from 'vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 
+const emit = defineEmits<{
+  (e: 'filter', filters: any): void
+  (e: 'export'): void
+}>()
+
 const props = defineProps<{
   materials: any[],
   receptionPoints?: { name: string; isActive: boolean }[],
-  initialFilters?: any
-}>()
-
-const emit = defineEmits<{
-  (e: 'filter', filters: any): void
+  initialFilters?: any,
+  isExporting?: boolean
 }>()
 
 const filters = ref({
@@ -85,6 +87,9 @@ const clearFilters = () => {
     </div>
 
     <div class="filter-actions">
+       <button class="btn-export" @click="emit('export')" :disabled="isExporting">
+         <i class="fas" :class="isExporting ? 'fa-spinner fa-spin' : 'fa-file-excel'"></i> Exportar
+       </button>
        <button class="btn-clear" @click="clearFilters">
          <i class="fas fa-undo"></i> Limpiar
        </button>
@@ -111,7 +116,10 @@ const clearFilters = () => {
 
   @media (max-width: 1100px) {
     grid-template-columns: 1fr 1fr 1fr;
-    &.has-points { grid-template-columns: 1fr 1fr 1fr; }
+
+    &.has-points {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
 
     .filter-actions {
       grid-column: span 3;
@@ -121,7 +129,10 @@ const clearFilters = () => {
 
   @media (max-width: 600px) {
     grid-template-columns: 1fr;
-    &.has-points { grid-template-columns: 1fr; }
+
+    &.has-points {
+      grid-template-columns: 1fr;
+    }
 
     .filter-actions {
       grid-column: span 1;
@@ -176,7 +187,35 @@ const clearFilters = () => {
 .filter-actions {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
   padding-bottom: 2px;
+}
+
+.btn-export {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+
+  &:hover:not(:disabled) {
+    background: #059669;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+  }
 }
 
 .btn-clear {

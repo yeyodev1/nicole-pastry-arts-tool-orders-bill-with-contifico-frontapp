@@ -27,7 +27,7 @@ onMounted(() => {
       const user = JSON.parse(userInfoStr)
       userRole.value = user.role
       userName.value = user.name || user.email?.split('@')[0] || 'Usuario'
-    } catch {}
+    } catch { }
   }
 })
 
@@ -108,6 +108,9 @@ const closePanel = () => { mobileOpen.value = false }
         <span class="nav-group-label">Supply Chain</span>
         <router-link to="/supply-chain/summary" active-class="active" @click="closePanel">
           <i class="fa-solid fa-chart-bar"></i> Inventario
+        </router-link>
+        <router-link to="/supply-chain/orders" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-cart-shopping"></i> Compras
         </router-link>
         <router-link to="/supply-chain/providers" active-class="active" @click="closePanel">
           <i class="fa-solid fa-truck"></i> Proveedores
@@ -236,9 +239,17 @@ const closePanel = () => { mobileOpen.value = false }
   }
 
   &.open {
-    span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-    span:nth-child(2) { opacity: 0; }
-    span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+    span:nth-child(1) {
+      transform: translateY(7px) rotate(45deg);
+    }
+
+    span:nth-child(2) {
+      opacity: 0;
+    }
+
+    span:nth-child(3) {
+      transform: translateY(-7px) rotate(-45deg);
+    }
   }
 }
 
@@ -304,7 +315,10 @@ const closePanel = () => { mobileOpen.value = false }
   flex-direction: column;
   gap: 0.1rem;
   scrollbar-width: none;
-  &::-webkit-scrollbar { display: none; }
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 
   a {
     display: flex;
@@ -330,14 +344,20 @@ const closePanel = () => { mobileOpen.value = false }
     &:hover {
       background: #f8fafc;
       color: #1e293b;
-      i { color: #64748b; }
+
+      i {
+        color: #64748b;
+      }
     }
 
     &.active {
       background: rgba($NICOLE-PURPLE, 0.09);
       color: $NICOLE-PURPLE;
       font-weight: 700;
-      i { color: $NICOLE-PURPLE; }
+
+      i {
+        color: $NICOLE-PURPLE;
+      }
     }
   }
 }
@@ -351,7 +371,9 @@ const closePanel = () => { mobileOpen.value = false }
   padding: 0.6rem 0.7rem 0.2rem;
   display: block;
 
-  &:first-child { padding-top: 0; }
+  &:first-child {
+    padding-top: 0;
+  }
 }
 
 .sidebar-footer {
@@ -415,6 +437,7 @@ const closePanel = () => { mobileOpen.value = false }
 .fade-overlay-leave-active {
   transition: opacity 0.25s;
 }
+
 .fade-overlay-enter-from,
 .fade-overlay-leave-to {
   opacity: 0;
@@ -422,8 +445,13 @@ const closePanel = () => { mobileOpen.value = false }
 
 // ─── Mobile ──────────────────────────────────────────────────────────────────
 @media (max-width: 1023px) {
-  .mobile-topbar { display: flex; }
-  .sidebar-overlay { display: block; }
+  .mobile-topbar {
+    display: flex;
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
 
   .app-sidebar {
     top: 0;
@@ -435,14 +463,21 @@ const closePanel = () => { mobileOpen.value = false }
       transform: translateX(0);
     }
 
-    .sidebar-brand { display: none; }
+    .sidebar-brand {
+      display: none;
+    }
   }
 }
 
 // ─── Desktop ─────────────────────────────────────────────────────────────────
 @media (min-width: 1024px) {
-  .mobile-topbar { display: none; }
-  .sidebar-overlay { display: none !important; }
+  .mobile-topbar {
+    display: none;
+  }
+
+  .sidebar-overlay {
+    display: none !important;
+  }
 
   .app-sidebar {
     position: sticky;

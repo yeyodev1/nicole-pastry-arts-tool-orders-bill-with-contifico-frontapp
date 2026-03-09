@@ -72,40 +72,16 @@ watch(() => props.isOpen, async (newVal) => {
           return pId === providerId
         })
 
-        // NEW: Fetch pending orders to show what's already on the way
-        let pendingMap: Record<string, number> = {}
-        const pendingData = await SupplierOrderService.getOrders({
-          provider: providerId,
-          status: 'PENDING',
-          limit: 100
-        })
-        const sentData = await SupplierOrderService.getOrders({
-          provider: providerId,
-          status: 'SENT',
-          limit: 100
-        })
-
-        const allPending = [...(pendingData.orders || []), ...(sentData.orders || [])]
-
-        allPending.forEach((order: any) => {
-          order.items.forEach((item: any) => {
-            const mId = item.material?._id || item.material
-            pendingMap[mId] = (pendingMap[mId] || 0) + item.quantity
-          })
-        })
-
         orderItems.value = providerMaterials.map((m: any) => {
           let suggestedQty = 0
           const current = m.quantity || 0
           const min = m.minStock || 0
           const max = m.maxStock || 0
 
-          const pending = pendingMap[m._id] || 0
-
           if (max > 0) {
-            suggestedQty = Math.max(0, max - (current + pending))
+            suggestedQty = Math.max(0, max - current)
           } else if (min > 0) {
-            suggestedQty = Math.max(0, (min * 2) - (current + pending))
+            suggestedQty = Math.max(0, (min * 2) - current)
           }
 
           const displayQty = (m.unit === 'g' || m.unit === 'ml') ? suggestedQty / 1000 : suggestedQty
@@ -115,9 +91,8 @@ watch(() => props.isOpen, async (newVal) => {
             name: m.name,
             unit: m.unit,
             currentStock: m.quantity,
-            pendingStock: pending,
-            suggested: displayQty,
-            orderQty: displayQty > 0 ? parseFloat(displayQty.toFixed(2)) : 0
+            suggested: displayQty > 0 ? parseFloat(displayQty.toFixed(2)) : 0,
+            orderQty: 0
           }
         })
       } catch (err) {
@@ -169,8 +144,6 @@ const generatedMessage = computed(() => {
     }
   })
 
-  if (!hasItems) return 'Seleccione cantidades para generar el mensaje.'
-
   text += `\n_Nicole Pastry Arts — Departamento de Compras_`
   return text
 })
@@ -202,8 +175,7 @@ const saveOrder = async () => {
       }),
     deliveryDate: deliveryDate.value,
     user: user._id,
-    whatsappMessage: generatedMessage.value,
-    status: 'PENDING'
+    whatsappMessage: generatedMessage.value
   }
 
   try {
@@ -225,6 +197,10 @@ const saveOrder = async () => {
 }
 
 const copyToClipboard = () => {
+  if (!orderItems.value.some(i => i.orderQty > 0)) {
+    showError('No hay cantidades seleccionadas para copiar.')
+    return
+  }
   navigator.clipboard.writeText(generatedMessage.value)
   success('Mensaje copiado al portapapeles. ¡Listo para pegar en WhatsApp!')
 }
@@ -304,9 +280,17 @@ watch([deliveryDate, orderItems], () => {
                   <span class="name">{{ item.name }}</span>
                   <div class="stock-info">
                     <span class="stock" v-if="item.currentStock > 0">Stock: {{ getDisplayQuantity(item.currentStock, item.unit) }} {{ getDisplayUnit(item.unit) }}</span>
-                    <span class="pending-stock" v-if="item.pendingStock > 0">
-                      <i class="fas fa-truck-ramp-box"></i> Pedido solicitado: {{ getDisplayQuantity(item.pendingStock, item.unit) }} {{ getDisplayUnit(item.unit) }}
+                    <span class="suggested-hint" v-if="item.suggested > 0 && item.orderQty === 0">
+                      <i class="fas fa-lightbulb"></i> Sugerido: {{ item.suggested }} {{ getDisplayUnit(item.unit) }}
                     </span>
+                    <button 
+                      v-if="item.suggested > 0 && item.orderQty === 0" 
+                      class="btn-apply-suggestion" 
+                      @click="item.orderQty = item.suggested"
+                      title="Aplicar cantidad sugerida"
+                    >
+                      Aplicar
+                    </button>
                   </div>
                 </div>
                 <div class="item-action">
@@ -319,11 +303,22 @@ watch([deliveryDate, orderItems], () => {
             </div>
 
             <div class="section-divider"></div>
-            <div class="section-title">Vista Previa del Mensaje</div>
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Vista Previa del Mensaje</span>
+              <button 
+                class="btn-copy-sm" 
+                @click="copyToClipboard"
+                title="Copiar mensaje ahora"
+                v-if="orderItems.some(i => i.orderQty > 0)"
+              >
+                <i class="far fa-copy"></i> Copiar Mensaje
+              </button>
+            </div>
             <div v-if="isLoadingDetails" class="skeleton skeleton-preview" style="height: 150px; border-radius: 16px;"></div>
             <div v-else class="message-preview-container">
               <div class="message-preview" :class="{ 'is-saved': isSaved }">
-                <div class="message-text" v-html="formatWhatsApp(generatedMessage)"></div>
+                <div class="message-text" v-html="formatWhatsApp(generatedMessage)" v-if="orderItems.some(i => i.orderQty > 0)"></div>
+                <div class="message-text text-muted" v-else>Seleccione cantidades mayores a 0 para generar y visualizar el mensaje de WhatsApp.</div>
                 <div class="bubble-footer">
                   <span class="time">{{ new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
                   <span v-if="isSaved" class="checks">
@@ -552,6 +547,32 @@ watch([deliveryDate, orderItems], () => {
       align-items: center;
       gap: 4px;
     }
+
+    .suggested-hint {
+      color: #10b981;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 700;
+    }
+
+    .btn-apply-suggestion {
+      background: rgba(16, 185, 129, 0.1);
+      color: #10b981;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 6px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.15rem 0.5rem;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+
+      &:hover {
+        background: #10b981;
+        color: white;
+      }
+    }
   }
 
   .item-action {
@@ -630,6 +651,11 @@ watch([deliveryDate, orderItems], () => {
     }
 
     :deep(i) {
+      font-style: italic;
+    }
+
+    &.text-muted {
+      color: #64748b !important;
       font-style: italic;
     }
   }
@@ -731,6 +757,26 @@ watch([deliveryDate, orderItems], () => {
       cursor: not-allowed;
       transform: none;
     }
+  }
+}
+
+.btn-copy-sm {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #16a34a;
+    color: white;
   }
 }
 

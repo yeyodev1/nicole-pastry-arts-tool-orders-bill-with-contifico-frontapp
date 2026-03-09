@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import WarehouseFilters from '@/components/SupplyChain/WarehouseFilters.vue'
 import type { RawMaterial, Movement } from '@/types/warehouse'
+import WarehouseService from '@/services/warehouse.service'
+import { useToast } from '@/composables/useToast'
+import * as XLSX from 'xlsx-js-style'
 
 interface AggEntry {
   _id: { type: string; receptionPoint: string }
@@ -24,10 +27,10 @@ const emit = defineEmits(['filter', 'page-change'])
 
 // ─── Aggregated Totals (all pages, whole period) ─────────────────────────────
 
-const totalIn   = computed(() => props.aggregates.filter(a => a._id.type === 'IN').reduce((s, a) => s + (a.totalValue || 0), 0))
-const totalOut  = computed(() => props.aggregates.filter(a => a._id.type === 'OUT').reduce((s, a) => s + (a.totalValue || 0), 0))
+const totalIn = computed(() => props.aggregates.filter(a => a._id.type === 'IN').reduce((s, a) => s + (a.totalValue || 0), 0))
+const totalOut = computed(() => props.aggregates.filter(a => a._id.type === 'OUT').reduce((s, a) => s + (a.totalValue || 0), 0))
 const totalLoss = computed(() => props.aggregates.filter(a => a._id.type === 'LOSS').reduce((s, a) => s + (a.totalValue || 0), 0))
-const netValue  = computed(() => totalIn.value - totalOut.value - totalLoss.value)
+const netValue = computed(() => totalIn.value - totalOut.value - totalLoss.value)
 
 // ─── Per-Bodega Breakdown ─────────────────────────────────────────────────────
 
@@ -36,8 +39,8 @@ const byBodega = computed(() => {
   for (const a of props.aggregates) {
     const loc = a._id.receptionPoint
     if (!map[loc]) map[loc] = { in: 0, out: 0, loss: 0, count: 0 }
-    if (a._id.type === 'IN')        map[loc].in   += a.totalValue || 0
-    else if (a._id.type === 'OUT')  map[loc].out  += a.totalValue || 0
+    if (a._id.type === 'IN') map[loc].in += a.totalValue || 0
+    else if (a._id.type === 'OUT') map[loc].out += a.totalValue || 0
     else if (a._id.type === 'LOSS') map[loc].loss += a.totalValue || 0
     map[loc].count += a.count || 0
   }
@@ -76,7 +79,84 @@ const formatDate = (date: string | undefined) => {
 const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const handleFilter = (filters: any) => emit('filter', filters)
-const changePage   = (page: number) => emit('page-change', page)
+const changePage = (page: number) => emit('page-change', page)
+
+// ─── Excel Export ────────────────────────────────────────────────────────────
+const { success, error } = useToast()
+const isExporting = ref(false)
+
+const exportToExcel = async () => {
+  if (isExporting.value) return
+  isExporting.value = true
+  try {
+    const data = await WarehouseService.getMovements({ ...props.activeFilters, limit: 100000 })
+    const allMovements = data.movements || []
+
+    if (allMovements.length === 0) {
+      error('No hay movimientos para exportar')
+      return
+    }
+
+    const rows = allMovements.map((m: any) => {
+      let origenDestino = '-'
+      if (m.type === 'IN') origenDestino = m.provider?.name || '-'
+      else if (m.type === 'LOSS') origenDestino = 'Pérdida Directa'
+      else origenDestino = m.entity || '-'
+
+      return {
+        'Fecha': formatDate(m.date || m.createdAt),
+        'Tipo': m.type === 'IN' ? 'ENTRADA' : m.type === 'OUT' ? 'SALIDA' : 'BAJA',
+        'Bodega': m.receptionPoint || '-',
+        'Materia Prima': m.rawMaterial?.name || 'Desconocido',
+        'Cantidad': Number(getDisplayQuantity(m.quantity, m.rawMaterial?.unit)),
+        'Unidad': getDisplayUnit(m.rawMaterial?.unit),
+        'Valor Unitario ($)': m.unitCost || 0,
+        'Valor Total ($)': getMovementValue(m),
+        'Origen / Destino': origenDestino,
+        'Responsable': m.responsible || '-',
+        'Observación': m.observation || ''
+      }
+    })
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+
+    const range = XLSX.utils.decode_range(ws['!ref'] || '')
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const address = XLSX.utils.encode_col(C) + '1'
+      if (!ws[address]) continue
+      ws[address].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "5A21B6" } },
+        alignment: { horizontal: 'center' }
+      }
+    }
+
+    // Auto-size columns roughly based on header lengths vs typical content
+    ws['!cols'] = [
+      { wch: 20 }, // Fecha
+      { wch: 10 }, // Tipo
+      { wch: 15 }, // Bodega
+      { wch: 30 }, // Materia
+      { wch: 10 }, // Cantidad
+      { wch: 8 },  // Unidad
+      { wch: 15 }, // Unit
+      { wch: 15 }, // Total
+      { wch: 20 }, // Origen/Destino
+      { wch: 15 }, // Responsable
+      { wch: 35 }, // Obs
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos')
+    XLSX.writeFile(wb, `Movimientos_Bodega_${new Date().toISOString().split('T')[0]}.xlsx`)
+    success('Archivo Excel generado correctamente')
+  } catch (err: any) {
+    console.error(err)
+    error('Error al exportar a Excel')
+  } finally {
+    isExporting.value = false
+  }
+}
 </script>
 
 <template>
@@ -87,7 +167,9 @@ const changePage   = (page: number) => emit('page-change', page)
       :materials="materials"
       :receptionPoints="receptionPoints"
       :initialFilters="activeFilters"
+      :isExporting="isExporting"
       @filter="handleFilter"
+      @export="exportToExcel"
     />
 
     <!-- ─── Summary Cards ─────────────────────────────────────────────────── -->
@@ -348,36 +430,86 @@ const changePage   = (page: number) => emit('page-change', page)
 
   &.card-in {
     border-left: 3px solid #059669;
-    .card-icon { background: #d1fae5; color: #059669; }
-    .card-label { color: #059669; }
-    .card-amount { color: #065f46; }
+
+    .card-icon {
+      background: #d1fae5;
+      color: #059669;
+    }
+
+    .card-label {
+      color: #059669;
+    }
+
+    .card-amount {
+      color: #065f46;
+    }
   }
 
   &.card-out {
     border-left: 3px solid #dc2626;
-    .card-icon { background: #fee2e2; color: #dc2626; }
-    .card-label { color: #dc2626; }
-    .card-amount { color: #991b1b; }
+
+    .card-icon {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .card-label {
+      color: #dc2626;
+    }
+
+    .card-amount {
+      color: #991b1b;
+    }
   }
 
   &.card-loss {
     border-left: 3px solid #d97706;
-    .card-icon { background: #fef3c7; color: #d97706; }
-    .card-label { color: #d97706; }
-    .card-amount { color: #92400e; }
+
+    .card-icon {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .card-label {
+      color: #d97706;
+    }
+
+    .card-amount {
+      color: #92400e;
+    }
   }
 
   &.card-net {
     border-left: 3px solid $NICOLE-PURPLE;
-    .card-icon { background: rgba($NICOLE-PURPLE, 0.1); color: $NICOLE-PURPLE; }
-    .card-label { color: $NICOLE-PURPLE; }
-    .card-amount { color: $NICOLE-PURPLE; }
+
+    .card-icon {
+      background: rgba($NICOLE-PURPLE, 0.1);
+      color: $NICOLE-PURPLE;
+    }
+
+    .card-label {
+      color: $NICOLE-PURPLE;
+    }
+
+    .card-amount {
+      color: $NICOLE-PURPLE;
+    }
 
     &.card-net--negative {
       border-left-color: #dc2626;
-      .card-icon { background: #fee2e2; color: #dc2626; }
-      .card-label { color: #dc2626; }
-      .card-amount { color: #991b1b; }
+
+      .card-icon {
+        background: #fee2e2;
+        color: #dc2626;
+      }
+
+      .card-label {
+        color: #dc2626;
+      }
+
+      .card-amount {
+        color: #991b1b;
+      }
     }
   }
 }
@@ -419,9 +551,14 @@ const changePage   = (page: number) => emit('page-change', page)
   text-transform: uppercase;
   letter-spacing: 0.6px;
 
-  i { color: $NICOLE-PURPLE; font-size: 0.85rem; }
+  i {
+    color: $NICOLE-PURPLE;
+    font-size: 0.85rem;
+  }
 
-  @media (min-width: 640px) { font-size: 0.85rem; }
+  @media (min-width: 640px) {
+    font-size: 0.85rem;
+  }
 }
 
 .breakdown-count {
@@ -494,7 +631,9 @@ const changePage   = (page: number) => emit('page-change', page)
   min-width: 0;
   flex: 1;
 
-  @media (min-width: 640px) { font-size: 0.88rem; }
+  @media (min-width: 640px) {
+    font-size: 0.88rem;
+  }
 }
 
 .bc-dot {
@@ -512,10 +651,17 @@ const changePage   = (page: number) => emit('page-change', page)
   letter-spacing: -0.3px;
   flex-shrink: 0;
 
-  &.net-pos { color: #059669; }
-  &.net-neg { color: #dc2626; }
+  &.net-pos {
+    color: #059669;
+  }
 
-  @media (min-width: 640px) { font-size: 1rem; }
+  &.net-neg {
+    color: #dc2626;
+  }
+
+  @media (min-width: 640px) {
+    font-size: 1rem;
+  }
 }
 
 // Progress bar: shows consumed % of stock
@@ -560,7 +706,9 @@ const changePage   = (page: number) => emit('page-change', page)
     letter-spacing: 0.3px;
     white-space: nowrap;
 
-    i { font-size: 0.6rem; }
+    i {
+      font-size: 0.6rem;
+    }
   }
 
   .bc-metric-value {
@@ -569,28 +717,60 @@ const changePage   = (page: number) => emit('page-change', page)
     white-space: nowrap;
     letter-spacing: -0.2px;
 
-    @media (min-width: 640px) { font-size: 0.95rem; }
+    @media (min-width: 640px) {
+      font-size: 0.95rem;
+    }
   }
 
   &.bc-in {
     background: #f0fdf4;
     border: 1px solid #bbf7d0;
-    .bc-metric-label { color: #059669; i { color: #059669; } }
-    .bc-metric-value { color: #065f46; }
+
+    .bc-metric-label {
+      color: #059669;
+
+      i {
+        color: #059669;
+      }
+    }
+
+    .bc-metric-value {
+      color: #065f46;
+    }
   }
 
   &.bc-out {
     background: #fff5f5;
     border: 1px solid #fecaca;
-    .bc-metric-label { color: #dc2626; i { color: #dc2626; } }
-    .bc-metric-value { color: #991b1b; }
+
+    .bc-metric-label {
+      color: #dc2626;
+
+      i {
+        color: #dc2626;
+      }
+    }
+
+    .bc-metric-value {
+      color: #991b1b;
+    }
   }
 
   &.bc-loss {
     background: #fffbeb;
     border: 1px solid #fde68a;
-    .bc-metric-label { color: #d97706; i { color: #d97706; } }
-    .bc-metric-value { color: #92400e; }
+
+    .bc-metric-label {
+      color: #d97706;
+
+      i {
+        color: #d97706;
+      }
+    }
+
+    .bc-metric-value {
+      color: #92400e;
+    }
   }
 }
 
@@ -615,7 +795,11 @@ const changePage   = (page: number) => emit('page-change', page)
   margin-bottom: 1rem;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 // ─── Table ─────────────────────────────────────────────────────────────────────
 
@@ -631,7 +815,8 @@ const changePage   = (page: number) => emit('page-change', page)
   width: 100%;
   border-collapse: collapse;
 
-  th, td {
+  th,
+  td {
     padding: 0.9rem 1rem;
     text-align: left;
     border-bottom: 1px solid $border-light;
@@ -644,13 +829,30 @@ const changePage   = (page: number) => emit('page-change', page)
     font-size: 0.85rem;
   }
 
-  tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: #fafafa; }
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  tbody tr:hover {
+    background: #fafafa;
+  }
 }
 
-.date-cell { font-size: 0.85rem; color: $text-light; white-space: nowrap; }
-.material-cell { font-weight: 600; }
-.empty-cell { color: $text-light; padding: 3rem !important; text-align: center; }
+.date-cell {
+  font-size: 0.85rem;
+  color: $text-light;
+  white-space: nowrap;
+}
+
+.material-cell {
+  font-weight: 600;
+}
+
+.empty-cell {
+  color: $text-light;
+  padding: 3rem !important;
+  text-align: center;
+}
 
 .badge {
   padding: 0.25rem 0.6rem;
@@ -658,13 +860,30 @@ const changePage   = (page: number) => emit('page-change', page)
   font-size: 0.75rem;
   font-weight: 700;
 
-  &.badge-in   { background: #d1fae5; color: #047857; }
-  &.badge-out  { background: #fee2e2; color: #c53030; }
-  &.badge-loss { background: #fef2f2; color: #991b1b; border: 1px solid #fee2e2; }
+  &.badge-in {
+    background: #d1fae5;
+    color: #047857;
+  }
+
+  &.badge-out {
+    background: #fee2e2;
+    color: #c53030;
+  }
+
+  &.badge-loss {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fee2e2;
+  }
 }
 
-.text-right { text-align: right !important; }
-.fw-600 { font-weight: 600; }
+.text-right {
+  text-align: right !important;
+}
+
+.fw-600 {
+  font-weight: 600;
+}
 
 .unit-text {
   font-size: 0.8rem;
@@ -678,8 +897,15 @@ const changePage   = (page: number) => emit('page-change', page)
   font-size: 0.95rem;
   white-space: nowrap;
 
-  &.in-value   { color: #047857; font-weight: 700; }
-  &.loss-value { color: #991b1b; font-weight: 600; }
+  &.in-value {
+    color: #047857;
+    font-weight: 700;
+  }
+
+  &.loss-value {
+    color: #991b1b;
+    font-weight: 600;
+  }
 }
 
 .bodega-tag {
@@ -693,7 +919,9 @@ const changePage   = (page: number) => emit('page-change', page)
   padding: 0.2rem 0.55rem;
   border-radius: 6px;
 
-  i { font-size: 0.7rem; }
+  i {
+    font-size: 0.7rem;
+  }
 }
 
 .responsible-tag {
@@ -707,11 +935,20 @@ const changePage   = (page: number) => emit('page-change', page)
   padding: 0.2rem 0.6rem;
   border-radius: 6px;
 
-  i { font-size: 0.7rem; color: $NICOLE-PURPLE; }
+  i {
+    font-size: 0.7rem;
+    color: $NICOLE-PURPLE;
+  }
 }
 
-.text-muted    { color: $text-light; }
-.text-muted-sm { color: #cbd5e1; font-size: 1rem; }
+.text-muted {
+  color: $text-light;
+}
+
+.text-muted-sm {
+  color: #cbd5e1;
+  font-size: 1rem;
+}
 
 // ─── Pagination ────────────────────────────────────────────────────────────────
 
@@ -730,8 +967,14 @@ const changePage   = (page: number) => emit('page-change', page)
     border-radius: 6px;
     cursor: pointer;
 
-    &:disabled { opacity: 0.5; cursor: not-allowed; }
-    &:not(:disabled):hover { background: $gray-50; }
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    &:not(:disabled):hover {
+      background: $gray-50;
+    }
   }
 }
 </style>

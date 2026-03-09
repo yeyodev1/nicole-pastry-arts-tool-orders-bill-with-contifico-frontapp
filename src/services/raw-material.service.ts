@@ -1,11 +1,12 @@
 import APIBase from './httpBase'
 
 class RawMaterialService extends APIBase {
-  async getRawMaterials(search?: string, provider?: string, category?: string) {
+  async getRawMaterials(search?: string, provider?: string, category?: string, receptionPoint?: string) {
     const params: Record<string, string> = {}
     if (search) params.search = search
     if (provider) params.provider = provider
     if (category) params.category = category
+    if (receptionPoint) params.receptionPoint = receptionPoint
     const response = await this.get<any>('raw-materials', undefined, { params })
     return response.data.data
   }
