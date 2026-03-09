@@ -17,6 +17,11 @@ class WarehouseService extends APIBase {
     const response = await this.post<any>('warehouse', payload);
     return response.data;
   }
+
+  async getStockByLocation(rawMaterialId: string): Promise<{ location: string; stock: number }[]> {
+    const response = await this.get<{ data: { location: string; stock: number }[] }>(`warehouse/stock-by-location/${rawMaterialId}`)
+    return response.data.data
+  }
 }
 
 export default new WarehouseService();

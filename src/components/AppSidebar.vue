@@ -121,6 +121,10 @@ const closePanel = () => { mobileOpen.value = false }
         <router-link to="/supply-chain/warehouse" active-class="active" @click="closePanel">
           <i class="fa-solid fa-warehouse"></i> Bodega
         </router-link>
+        <span class="nav-group-label">Configuración</span>
+        <router-link to="/supply-chain/points" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-location-dot"></i> Puntos de Entrega
+        </router-link>
       </template>
 
       <!-- Sales / Default -->

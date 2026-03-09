@@ -32,6 +32,10 @@ const props = defineProps({
   filteredProviderOptions: {
     type: Array as () => Option[],
     required: true
+  },
+  receptionPointOptions: {
+    type: Array as () => Option[],
+    default: () => []
   }
 })
 
@@ -144,6 +148,16 @@ const confirmIn = () => {
             @update:modelValue="val => emit('update:form', { ...form, rawMaterial: val })"
             :options="materialOptions"
             placeholder="Buscar materia prima..."
+          />
+        </div>
+
+        <div class="field full" v-if="receptionPointOptions.length > 0">
+          <label>Punto de Recepción</label>
+          <SearchableSelect
+            :modelValue="form.receptionPoint"
+            @update:modelValue="val => emit('update:form', { ...form, receptionPoint: val })"
+            :options="receptionPointOptions"
+            placeholder="Seleccionar punto de recepción..."
           />
         </div>
 
@@ -266,6 +280,7 @@ const confirmIn = () => {
         <li><strong>Costo unitario:</strong> ${{ form.unitCost.toFixed(2) }}/{{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : '' }}</li>
         <li><strong>Total:</strong> <span class="modal-highlight">USD ${{ totalValue.toFixed(2) }}</span></li>
         <li><strong>Proveedor:</strong> {{ providers.find((p: Provider) => p._id === form.provider)?.name || 'N/A' }}</li>
+        <li v-if="form.receptionPoint"><strong>Recibido en:</strong> {{ receptionPointOptions.find(o => o.value === form.receptionPoint)?.label || form.receptionPoint }}</li>
       </ul>
     </template>
   </ConfirmationModal>

@@ -142,6 +142,12 @@ const router = createRouter({
       meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Bodega' }
     },
     {
+      path: '/supply-chain/points',
+      name: 'warehouse-points',
+      component: () => import('../views/SupplyChain/LocationPointsView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Puntos de Entrega' }
+    },
+    {
       path: '/supply-chain/orders',
       name: 'supplier-orders-history',
       component: () => import('../views/SupplyChain/SupplierOrderHistoryView.vue'),

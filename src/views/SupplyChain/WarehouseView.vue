@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import WarehouseService from '@/services/warehouse.service'
 import SupplierOrderService from '@/services/supplier-order.service'
+import WarehouseSettingsService from '@/services/warehouse-settings.service'
 import { useWarehouse } from '@/composables/useWarehouse'
 
 // Components
@@ -16,6 +17,18 @@ const {
   fetchDependencies, fetchMovements, fetchTodaySuggestions,
   success, showError
 } = useWarehouse()
+
+// Warehouse Settings (dynamic points)
+const receptionPoints = ref<{ _id?: string; name: string; isActive: boolean }[]>([])
+const dispatchPoints = ref<{ _id?: string; name: string; isActive: boolean }[]>([])
+
+const fetchWarehouseSettings = async () => {
+  try {
+    const data = await WarehouseSettingsService.getSettings()
+    receptionPoints.value = data.receptionPoints.filter(p => p.isActive)
+    dispatchPoints.value = data.dispatchPoints.filter(p => p.isActive)
+  } catch { /* non-critical */ }
+}
 
 // View State
 const activeTab = ref<'movements' | 'in' | 'out' | 'loss'>('movements')
@@ -34,12 +47,12 @@ const activeFilters = ref({
 // --- Forms Initialization ---
 const inForm = ref({
   date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0,
-  unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: ''
+  unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '', receptionPoint: ''
 })
 
 const outForm = ref({
   date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0,
-  responsible: '', entity: '', observation: '', expectedSaleValue: 0
+  responsible: '', entity: '', observation: '', expectedSaleValue: 0, receptionPoint: ''
 })
 
 const lossForm = ref({
@@ -52,6 +65,7 @@ const holdProgress = ref(0)
 const isHolding = ref(false)
 let holdTimer: any = null
 const HOLD_DURATION = 1200
+const locationStocks = ref<{ location: string; stock: number }[]>([])
 
 // --- Shared Computed / Options ---
 const materialOptions = computed(() => materials.value.map(m => ({
@@ -70,10 +84,13 @@ const filteredProviderOptions = computed(() => {
   return providers.value.map(p => ({ value: p._id, label: p.name }))
 })
 
-const entityOptions = [
-  "Nicole Pastry Arts - San marino", "Nicole Pastry Arts - Mall del sol", "Finestra - CDP",
-  "Delacrem - Mall del sol", "Casa mía - Mall del sol", "Sucreenda - CDP", "Sucree - Vivantino"
-].map(e => ({ value: e, label: e }))
+const entityOptions = computed(() =>
+  dispatchPoints.value.map(p => ({ value: p.name, label: p.name }))
+)
+
+const receptionPointOptions = computed(() =>
+  receptionPoints.value.map(p => ({ value: p.name, label: p.name }))
+)
 
 // --- Logic Coordination ---
 const handlePageChange = (page: number) => {
@@ -184,12 +201,12 @@ const startHold = () => {
 const stopHold = () => { isHolding.value = false; holdProgress.value = 0; clearInterval(holdTimer) }
 
 // --- Helpers ---
-const resetInForm = () => { inForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '' } }
-const resetOutForm = () => { outForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: '', entity: '', observation: '', expectedSaleValue: 0 } }
+const resetInForm = () => { inForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '', receptionPoint: '' } }
+const resetOutForm = () => { outForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: '', entity: '', observation: '', expectedSaleValue: 0, receptionPoint: '' }; locationStocks.value = [] }
 const resetLossForm = () => { lossForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: 'Danny', observation: '', reason: 'CADUCIDAD' } }
 
 // --- Lifecycle ---
-onMounted(() => { fetchDependencies(); runFetchMovements() })
+onMounted(() => { fetchDependencies(); runFetchMovements(); fetchWarehouseSettings() })
 
 // Compute cost per display unit ($/kg or $/lt or $/u) from a material
 // Uses presentationPrice/presentationQuantity as source of truth (avoids unit ambiguity in stored cost field)
@@ -213,6 +230,14 @@ watch(() => inForm.value.rawMaterial, (id) => {
 })
 
 watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
+
+watch(() => outForm.value.rawMaterial, async (id) => {
+  locationStocks.value = []
+  outForm.value.receptionPoint = ''
+  if (id) {
+    try { locationStocks.value = await WarehouseService.getStockByLocation(id) } catch { /* non-critical */ }
+  }
+})
 
 </script>
 
@@ -257,6 +282,7 @@ watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
         v-model:form="inForm" :materials="materials" :providers="providers"
         :suggestedOrders="suggestedOrders" :isSubmitting="isSubmitting"
         :materialOptions="materialOptions" :filteredProviderOptions="filteredProviderOptions"
+        :receptionPointOptions="receptionPointOptions"
         @submit="onInSubmit" @apply-suggestion="applySuggestion"
       />
 
@@ -264,6 +290,7 @@ watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
         v-model:form="outForm" :materials="materials" :materialOptions="materialOptions"
         :entityOptions="entityOptions" :isSubmitting="isSubmitting"
         :holdProgress="holdProgress" :isHolding="isHolding"
+        :locationStocks="locationStocks"
         @submit="onOutSubmit" @start-hold="startHold" @cancel-hold="stopHold"
       />
 

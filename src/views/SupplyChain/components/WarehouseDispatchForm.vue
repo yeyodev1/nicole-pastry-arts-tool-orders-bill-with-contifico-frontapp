@@ -1,37 +1,39 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
-import type { RawMaterial, Option, WarehouseOutForm } from '@/types/warehouse'
+import type { RawMaterial, Option, WarehouseOutForm, LocationStock } from '@/types/warehouse'
+
+// ─── Color palette (cycled by index) ─────────────────────────────────────────
+const PALETTE = [
+  { bg: '#ede9fe', text: '#6d28d9', border: '#c4b5fd' },  // purple
+  { bg: '#dcfce7', text: '#15803d', border: '#86efac' },  // green
+  { bg: '#fef3c7', text: '#b45309', border: '#fcd34d' },  // amber
+  { bg: '#e0f2fe', text: '#0369a1', border: '#7dd3fc' },  // sky
+  { bg: '#fce7f3', text: '#be185d', border: '#f9a8d4' },  // pink
+  { bg: '#fff7ed', text: '#c2410c', border: '#fdba74' },  // orange
+  { bg: '#f0fdf4', text: '#166534', border: '#6ee7b7' },  // emerald
+]
+const getColor = (index: number) => PALETTE[index % PALETTE.length]!
+
+// ─── Name-match scoring ───────────────────────────────────────────────────────
+const keywords = (s: string) =>
+  s.toLowerCase().split(/[\s\-_,]+/).filter(w => w.length > 2)
+
+const matchScore = (a: string, b: string): number => {
+  const wa = keywords(a)
+  const wb = keywords(b)
+  return wa.filter(w => wb.includes(w)).length
+}
 
 const props = defineProps({
-  form: {
-    type: Object as () => WarehouseOutForm,
-    required: true
-  },
-  materials: {
-    type: Array as () => RawMaterial[],
-    required: true
-  },
-  entityOptions: {
-    type: Array as () => Option[],
-    required: true
-  },
-  materialOptions: {
-    type: Array as () => Option[],
-    required: true
-  },
-  isSubmitting: {
-    type: Boolean,
-    required: true
-  },
-  holdProgress: {
-    type: Number,
-    required: true
-  },
-  isHolding: {
-    type: Boolean,
-    required: true
-  }
+  form: { type: Object as () => WarehouseOutForm, required: true },
+  materials: { type: Array as () => RawMaterial[], required: true },
+  entityOptions: { type: Array as () => Option[], required: true },
+  materialOptions: { type: Array as () => Option[], required: true },
+  isSubmitting: { type: Boolean, required: true },
+  holdProgress: { type: Number, required: true },
+  isHolding: { type: Boolean, required: true },
+  locationStocks: { type: Array as () => LocationStock[], default: () => [] },
 })
 
 const emit = defineEmits(['submit', 'update:form', 'start-hold', 'cancel-hold'])
@@ -44,23 +46,32 @@ const getDisplayUnit = (unit: string) => {
   return unit
 }
 
-const getDisplayCost = (cost: number, unit: string): number => {
-  if (unit === 'g' || unit === 'ml') return cost * 1000
-  return cost
-}
+const toBackendQuantity = (inputQty: number, unit: string) =>
+  (unit === 'g' || unit === 'ml') ? inputQty * 1000 : inputQty
 
-const toBackendQuantity = (inputQty: number, unit: string) => {
-  if (unit === 'g' || unit === 'ml') return inputQty * 1000
-  return inputQty
-}
+const toDisplayQuantity = (backendQty: number, unit: string) =>
+  (unit === 'g' || unit === 'ml') ? backendQty / 1000 : backendQty
 
-const selectedMaterial = computed(() => {
-  return props.materials.find((m: RawMaterial) => m._id === props.form.rawMaterial)
+const selectedMaterial = computed(() =>
+  props.materials.find((m: RawMaterial) => m._id === props.form.rawMaterial)
+)
+
+// Stock of the selected source location (in backend units)
+const selectedLocationStock = computed(() => {
+  if (!props.form.receptionPoint || !props.locationStocks.length) return null
+  return props.locationStocks.find(ls => ls.location === props.form.receptionPoint) ?? null
+})
+
+// For display: use location stock if selected, else global material stock
+const effectiveStockBackend = computed(() => {
+  if (selectedLocationStock.value) return selectedLocationStock.value.stock
+  return selectedMaterial.value?.quantity ?? 0
 })
 
 const totalValue = computed(() => {
   if (!selectedMaterial.value || !props.form.quantity || props.form.quantity <= 0) return 0
-  const displayCost = getDisplayCost(selectedMaterial.value.cost || 0, selectedMaterial.value.unit)
+  const isWeight = selectedMaterial.value.unit === 'g' || selectedMaterial.value.unit === 'ml'
+  const displayCost = isWeight ? (selectedMaterial.value.cost || 0) * 1000 : (selectedMaterial.value.cost || 0)
   return props.form.quantity * displayCost
 })
 
@@ -68,24 +79,95 @@ const stockAfterDispatch = computed(() => {
   if (!selectedMaterial.value || !props.form.quantity || props.form.quantity <= 0) return null
   const m = selectedMaterial.value
   const backendQty = toBackendQuantity(props.form.quantity, m.unit)
-  const remaining = m.quantity - backendQty
-  const displayRemaining = (m.unit === 'g' || m.unit === 'ml') ? (remaining / 1000).toFixed(2) : remaining.toFixed(2)
-  return { remaining: parseFloat(displayRemaining), unit: getDisplayUnit(m.unit), isNegative: remaining < 0 }
+  const remaining = effectiveStockBackend.value - backendQty
+  const displayRemaining = parseFloat(toDisplayQuantity(remaining, m.unit).toFixed(2))
+  const displayCurrent   = parseFloat(toDisplayQuantity(effectiveStockBackend.value, m.unit).toFixed(2))
+  const pct = displayCurrent > 0 ? displayRemaining / displayCurrent : 0
+  return {
+    remaining: displayRemaining,
+    unit: getDisplayUnit(m.unit),
+    isNegative: remaining < 0,
+    isZero: remaining === 0,
+    level: pct <= 0 ? 'empty' : pct < 0.2 ? 'low' : 'ok',
+    location: props.form.receptionPoint || null
+  }
 })
+
+// Preview remaining per location for the selector
+const locationAfterDispatch = (ls: { location: string; stock: number }) => {
+  if (!selectedMaterial.value || !props.form.quantity || props.form.quantity <= 0) return null
+  if (ls.location !== props.form.receptionPoint) return null
+  const backendQty = toBackendQuantity(props.form.quantity, selectedMaterial.value.unit)
+  const remaining = ls.stock - backendQty
+  return parseFloat(toDisplayQuantity(remaining, selectedMaterial.value.unit).toFixed(2))
+}
+
+const insufficientStock = computed(() => {
+  if (!selectedMaterial.value || !props.form.quantity || props.form.quantity <= 0) return false
+  return effectiveStockBackend.value < toBackendQuantity(props.form.quantity, selectedMaterial.value.unit)
+})
+
+// Sum of all location stocks (in backend units)
+const totalLocationStock = computed(() =>
+  props.locationStocks.reduce((sum, ls) => sum + ls.stock, 0)
+)
 
 const showRentabilityAlert = computed(() => {
   if (!props.form.expectedSaleValue || props.form.expectedSaleValue <= 0) return false
   return totalValue.value >= props.form.expectedSaleValue
 })
 
-const insufficientStock = computed(() => {
-  if (!selectedMaterial.value || !props.form.quantity || props.form.quantity <= 0) return false
-  return selectedMaterial.value.quantity < toBackendQuantity(props.form.quantity, selectedMaterial.value.unit)
+// ─── Entity list with colors + search ────────────────────────────────────────
+const entitySearch = ref('')
+
+const entityIndexMap = computed(() => {
+  const map = new Map<string, number>()
+  props.entityOptions.forEach((o, i) => map.set(o.value, i))
+  return map
+})
+
+const entityColorByValue = (value: string) =>
+  getColor(entityIndexMap.value.get(value) ?? 0)
+
+const filteredEntities = computed(() => {
+  const q = entitySearch.value.trim().toLowerCase()
+  return props.entityOptions.filter(o => !q || o.label.toLowerCase().includes(q))
+})
+
+// ─── Location colors (stable by index in original list) ───────────────────────
+const locationIndexMap = computed(() => {
+  const map = new Map<string, number>()
+  props.locationStocks.forEach((ls, i) => map.set(ls.location, i))
+  return map
+})
+const locationColorByName = (name: string) =>
+  getColor((locationIndexMap.value.get(name) ?? 0) + 2)
+
+// ─── Recommendation: bodega seleccionada → destino sugerido ──────────────────
+// Cuando el usuario elige una bodega de origen, se recomienda el destino que
+// más palabras comparte con el nombre de esa bodega.
+const recommendedEntity = computed(() => {
+  if (!props.form.receptionPoint || !props.entityOptions.length) return null
+  let best = { value: '', score: 0 }
+  for (const opt of props.entityOptions) {
+    const s = matchScore(opt.label, props.form.receptionPoint)
+    if (s > best.score) best = { value: opt.value, score: s }
+  }
+  return best.score > 0 ? best.value : null
+})
+
+// Entities sorted: recommended first when a location is selected
+const sortedEntities = computed(() => {
+  const rec = recommendedEntity.value
+  if (!rec) return filteredEntities.value
+  return [...filteredEntities.value].sort((a, b) =>
+    a.value === rec ? -1 : b.value === rec ? 1 : 0
+  )
 })
 
 const handleSubmit = () => {
   if (!props.form.rawMaterial || props.form.quantity <= 0 || !props.form.entity) return
-  if (insufficientStock.value) return emit('submit', 'error_stock')
+  if (insufficientStock.value) return
   showOutModal.value = true
 }
 
@@ -124,14 +206,68 @@ const cancelHold = () => {
           <label>Materia Prima</label>
           <SearchableSelect
             :modelValue="form.rawMaterial"
-            @update:modelValue="val => emit('update:form', { ...form, rawMaterial: val })"
+            @update:modelValue="val => emit('update:form', { ...form, rawMaterial: val, receptionPoint: '' })"
             :options="materialOptions"
             placeholder="Buscar materia prima..."
           />
         </div>
 
+        <!-- Bodega de origen — visible solo cuando hay stock por ubicación -->
+        <div v-if="selectedMaterial && locationStocks.length > 0" class="field full">
+          <label>Bodega de origen <span class="unit-hint">(selecciona de dónde sale)</span></label>
+          <div class="location-list">
+            <button
+              v-for="ls in locationStocks"
+              :key="ls.location"
+              type="button"
+              :class="['location-item', { selected: form.receptionPoint === ls.location }]"
+              :style="form.receptionPoint === ls.location ? {
+                background: locationColorByName(ls.location).bg,
+                borderColor: locationColorByName(ls.location).border,
+              } : {}"
+              @click="emit('update:form', { ...form, receptionPoint: ls.location })"
+            >
+              <div class="location-item__left">
+                <span
+                  class="location-item__color-dot"
+                  :style="{ background: locationColorByName(ls.location).text }"
+                ></span>
+                <span
+                  class="location-item__name"
+                  :style="form.receptionPoint === ls.location ? { color: locationColorByName(ls.location).text } : {}"
+                >{{ ls.location }}</span>
+              </div>
+              <div class="location-item__right">
+                <template v-if="locationAfterDispatch(ls) !== null">
+                  <span class="location-item__current">{{ toDisplayQuantity(ls.stock, selectedMaterial?.unit ?? "").toFixed(2) }}</span>
+                  <i class="fas fa-arrow-right location-item__arrow"></i>
+                  <span
+                    class="location-item__after"
+                    :class="{
+                      'after--ok':    locationAfterDispatch(ls)! > 0,
+                      'after--empty': locationAfterDispatch(ls)! <= 0
+                    }"
+                  >{{ locationAfterDispatch(ls)!.toFixed(2) }}</span>
+                  <span class="location-item__unit">{{ getDisplayUnit(selectedMaterial?.unit ?? "") }}</span>
+                </template>
+                <template v-else>
+                  <div class="location-item__stock">
+                    <strong :style="form.receptionPoint === ls.location ? { color: locationColorByName(ls.location).text } : {}">
+                      {{ toDisplayQuantity(ls.stock, selectedMaterial?.unit ?? "").toFixed(2) }}
+                    </strong>
+                    <span>{{ getDisplayUnit(selectedMaterial?.unit ?? "") }}</span>
+                  </div>
+                </template>
+              </div>
+            </button>
+          </div>
+          <span v-if="!form.receptionPoint" class="hint-text">
+            <i class="fas fa-info-circle"></i> Selecciona una bodega para validar el stock disponible
+          </span>
+        </div>
+
         <div class="field half">
-          <label>Cantidad <span class="unit-hint">{{ selectedMaterial ? `(${getDisplayUnit(selectedMaterial.unit)})` : '' }}</span></label>
+          <label>Cantidad <span class="unit-hint">{{ selectedMaterial ? `(${getDisplayUnit(selectedMaterial?.unit ?? "")})` : '' }}</span></label>
           <input
             type="number"
             :value="form.quantity"
@@ -140,7 +276,7 @@ const cancelHold = () => {
             :class="{ 'input-error': insufficientStock }"
           />
           <span v-if="insufficientStock" class="error-text">
-            <i class="fas fa-exclamation-triangle"></i> Stock insuficiente
+            <i class="fas fa-exclamation-triangle"></i> Stock insuficiente en esta bodega
           </span>
         </div>
 
@@ -158,13 +294,55 @@ const cancelHold = () => {
         </div>
 
         <div class="field full">
-          <label>Destino (Entidad)</label>
-          <SearchableSelect
-            :modelValue="form.entity"
-            @update:modelValue="val => emit('update:form', { ...form, entity: val })"
-            :options="entityOptions"
-            placeholder="Buscar destino..."
-          />
+          <label>Destino <span class="unit-hint">(punto de despacho)</span></label>
+          <div class="entity-selector">
+            <div class="entity-search">
+              <i class="fas fa-search entity-search__icon"></i>
+              <input
+                v-model="entitySearch"
+                type="text"
+                class="entity-search__input"
+                placeholder="Filtrar destino…"
+              />
+              <button v-if="entitySearch" class="entity-search__clear" @click="entitySearch = ''">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+            <!-- Banner de recomendación (aparece al seleccionar bodega) -->
+            <div v-if="recommendedEntity && form.receptionPoint && !form.entity" class="entity-rec-banner">
+              <i class="fas fa-bolt"></i>
+              Basado en <strong>{{ form.receptionPoint }}</strong>, te sugerimos el destino marcado abajo
+            </div>
+
+            <div class="entity-list">
+              <button
+                v-for="opt in sortedEntities"
+                :key="opt.value"
+                type="button"
+                :class="['entity-item', { 'entity-item--selected': form.entity === opt.value }]"
+                :style="form.entity === opt.value ? {
+                  background: entityColorByValue(opt.value).bg,
+                  borderColor: entityColorByValue(opt.value).border,
+                  color: entityColorByValue(opt.value).text
+                } : {}"
+                @click="emit('update:form', { ...form, entity: opt.value })"
+              >
+                <span
+                  class="entity-item__dot"
+                  :style="{ background: entityColorByValue(opt.value).text }"
+                ></span>
+                <span class="entity-item__name">{{ opt.label }}</span>
+                <span
+                  v-if="opt.value === recommendedEntity && !form.entity"
+                  class="badge-recommended"
+                ><i class="fas fa-bolt"></i> Sugerido</span>
+                <i v-if="form.entity === opt.value" class="fas fa-check entity-item__check"></i>
+              </button>
+              <div v-if="filteredEntities.length === 0" class="entity-empty">
+                Sin resultados para "{{ entitySearch }}"
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="field full">
@@ -197,7 +375,7 @@ const cancelHold = () => {
         <button
           class="btn-submit btn-submit--out"
           @click="handleSubmit"
-          :disabled="isSubmitting || !form.rawMaterial || form.quantity <= 0 || !form.entity || insufficientStock"
+          :disabled="isSubmitting || !form.rawMaterial || form.quantity <= 0 || !form.entity || insufficientStock || (locationStocks.length > 0 && !form.receptionPoint)"
         >
           <i class="fas fa-truck-loading"></i>
           Registrar Salida
@@ -208,19 +386,52 @@ const cancelHold = () => {
     <!-- Right: Summary -->
     <div class="summary-panel">
 
-      <!-- Stock actual -->
-      <div v-if="selectedMaterial" class="info-card info-card--stock">
+      <!-- Stock por bodega cuando hay múltiples ubicaciones -->
+      <div v-if="selectedMaterial && locationStocks.length > 1" class="info-card info-card--locations">
+        <div class="info-card__header">
+          <i class="fas fa-warehouse"></i>
+          <span>Stock por bodega</span>
+        </div>
+        <div class="location-summary">
+          <div
+            v-for="ls in locationStocks"
+            :key="ls.location"
+            class="location-summary__row"
+            :class="{ 'is-selected': form.receptionPoint === ls.location }"
+          >
+            <span class="location-summary__name">{{ ls.location }}</span>
+            <span class="location-summary__qty">
+              {{ toDisplayQuantity(ls.stock, selectedMaterial?.unit ?? "").toFixed(2) }}
+              {{ getDisplayUnit(selectedMaterial?.unit ?? "") }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stock General (suma de todas las bodegas) -->
+      <div v-if="selectedMaterial" class="info-card info-card--global">
         <div class="info-card__header">
           <i class="fas fa-layer-group"></i>
-          <span>Stock Actual</span>
+          <span>Stock General</span>
         </div>
         <div class="info-card__value">
-          {{ selectedMaterial.unit === 'g' || selectedMaterial.unit === 'ml'
-              ? (selectedMaterial.quantity / 1000).toFixed(2)
-              : selectedMaterial.quantity.toFixed(2) }}
-          <span class="info-card__unit">{{ getDisplayUnit(selectedMaterial.unit) }}</span>
+          {{ toDisplayQuantity(locationStocks.length ? totalLocationStock : (selectedMaterial?.quantity ?? 0), selectedMaterial?.unit ?? "").toFixed(2) }}
+          <span class="info-card__unit">{{ getDisplayUnit(selectedMaterial?.unit ?? "") }}</span>
         </div>
-        <div class="info-card__sub">{{ selectedMaterial.name }}</div>
+        <div class="info-card__sub">{{ selectedMaterial.name }} · todas las bodegas</div>
+      </div>
+
+      <!-- Stock de bodega seleccionada -->
+      <div v-if="selectedMaterial && form.receptionPoint" class="info-card info-card--stock">
+        <div class="info-card__header">
+          <i class="fas fa-warehouse"></i>
+          <span>{{ form.receptionPoint }}</span>
+        </div>
+        <div class="info-card__value">
+          {{ toDisplayQuantity(effectiveStockBackend, selectedMaterial?.unit ?? "").toFixed(2) }}
+          <span class="info-card__unit">{{ getDisplayUnit(selectedMaterial?.unit ?? "") }}</span>
+        </div>
+        <div class="info-card__sub">disponible en esta bodega</div>
       </div>
 
       <!-- Valor despacho -->
@@ -231,19 +442,31 @@ const cancelHold = () => {
         </div>
         <div class="info-card__value">${{ totalValue.toFixed(2) }}</div>
         <div class="info-card__sub">
-          Costo: ${{ getDisplayCost(selectedMaterial.cost || 0, selectedMaterial.unit).toFixed(4) }} / {{ getDisplayUnit(selectedMaterial.unit) }}
+          Costo: ${{ ((selectedMaterial.unit === 'g' || selectedMaterial.unit === 'ml') ? (selectedMaterial.cost || 0) * 1000 : (selectedMaterial.cost || 0)).toFixed(4) }} / {{ getDisplayUnit(selectedMaterial?.unit ?? "") }}
         </div>
       </div>
 
       <!-- Stock después del despacho -->
-      <div v-if="stockAfterDispatch && !stockAfterDispatch.isNegative" class="info-card info-card--remaining">
+      <div
+        v-if="stockAfterDispatch && !stockAfterDispatch.isNegative"
+        :class="['info-card', 'info-card--remaining', `remaining--${stockAfterDispatch.level}`]"
+      >
         <div class="info-card__header">
-          <i class="fas fa-arrow-down"></i>
-          <span>Quedará en bodega</span>
+          <i :class="stockAfterDispatch.level === 'empty' ? 'fas fa-box' : stockAfterDispatch.level === 'low' ? 'fas fa-triangle-exclamation' : 'fas fa-arrow-trend-down'"></i>
+          <span>Quedará en</span>
+        </div>
+        <div v-if="stockAfterDispatch.location" class="remaining-location">
+          <i class="fas fa-warehouse"></i>
+          {{ stockAfterDispatch.location }}
         </div>
         <div class="info-card__value">
           {{ stockAfterDispatch.remaining }}
           <span class="info-card__unit">{{ stockAfterDispatch.unit }}</span>
+        </div>
+        <div class="info-card__sub">
+          <span v-if="stockAfterDispatch.level === 'empty'">Bodega quedará vacía</span>
+          <span v-else-if="stockAfterDispatch.level === 'low'">Stock bajo — revisar reposición</span>
+          <span v-else>Stock saludable tras el despacho</span>
         </div>
       </div>
 
@@ -273,7 +496,8 @@ const cancelHold = () => {
       </div>
       <ul class="modal-list">
         <li><strong>Material:</strong> {{ selectedMaterial?.name }}</li>
-        <li><strong>Cantidad:</strong> {{ form.quantity }} {{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : '' }}</li>
+        <li v-if="form.receptionPoint"><strong>Desde bodega:</strong> {{ form.receptionPoint }}</li>
+        <li><strong>Cantidad:</strong> {{ form.quantity }} {{ selectedMaterial ? getDisplayUnit(selectedMaterial?.unit ?? "") : '' }}</li>
         <li><strong>Destino:</strong> {{ form.entity }}</li>
         <li><strong>Valor:</strong> <span class="modal-highlight-out">${{ totalValue.toFixed(2) }}</span></li>
       </ul>
@@ -559,9 +783,15 @@ const cancelHold = () => {
     margin-top: 0.4rem;
   }
 
-  &--stock     { .info-card__header { i { color: $NICOLE-PURPLE; } } }
+  &--global    { background: #f8fafc; border-color: #e2e8f0; .info-card__header { i { color: #64748b; } } .info-card__value { color: #1e293b; } }
+  &--stock     { background: #faf5ff; border-color: #e9d5ff; .info-card__header { i { color: $NICOLE-PURPLE; } color: $NICOLE-PURPLE; } .info-card__value { color: $NICOLE-PURPLE; } }
   &--total-out { background: #fff5f5; border-color: #fecaca; .info-card__value { color: #dc2626; } .info-card__header { color: #dc2626; i { color: #dc2626; } } }
   &--remaining { background: #f0fdf4; border-color: #bbf7d0; .info-card__value { color: #047857; } .info-card__header { i { color: #047857; } } }
+
+  // Remaining levels
+  &.remaining--ok    { background: #f0fdf4; border-color: #86efac; .info-card__header { color: #166534; i { color: #16a34a; } } .info-card__value { color: #15803d; } .info-card__sub { color: #166534; } }
+  &.remaining--low   { background: #fffbeb; border-color: #fcd34d; .info-card__header { color: #92400e; i { color: #d97706; } } .info-card__value { color: #b45309; } .info-card__sub { color: #92400e; } }
+  &.remaining--empty { background: #fff1f2; border-color: #fda4af; .info-card__header { color: #9f1239; i { color: #e11d48; } } .info-card__value { color: #be123c; } .info-card__sub { color: #9f1239; } }
 }
 
 .alert-card {
@@ -690,5 +920,337 @@ const cancelHold = () => {
   transition: all 0.2s;
 
   &:hover { background: #f8fafc; }
+}
+
+// ─── Entity selector ──────────────────────────────────────────────────────────
+
+.entity-selector {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+  transition: border-color 0.2s;
+
+  &:focus-within { border-color: #94a3b8; }
+}
+
+.entity-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
+
+  &__icon { color: #94a3b8; font-size: 0.78rem; flex-shrink: 0; }
+
+  &__input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 0.85rem;
+    color: #1e293b;
+    &::placeholder { color: #94a3b8; }
+  }
+
+  &__clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 0.72rem;
+    padding: 0.2rem;
+    border-radius: 4px;
+    line-height: 1;
+    &:hover { color: #475569; }
+  }
+}
+
+.entity-rec-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: #fefce8;
+  border-bottom: 1px solid #fde68a;
+  font-size: 0.78rem;
+  color: #92400e;
+  font-weight: 500;
+
+  i { color: #d97706; font-size: 0.72rem; flex-shrink: 0; }
+  strong { font-weight: 700; }
+}
+
+.entity-list {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #e2e8f0 transparent;
+}
+
+.entity-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-bottom: 1px solid #f8fafc;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+
+  &:last-child { border-bottom: none; }
+  &:hover:not(.entity-item--selected) { background: #f8fafc; }
+
+  &--selected { font-weight: 700; }
+
+  &__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  &__name {
+    flex: 1;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__check {
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+}
+
+.entity-empty {
+  padding: 1.25rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+// ─── Remaining location label ─────────────────────────────────────────────────
+
+.remaining-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+  background: rgba(0,0,0,0.06);
+  color: inherit;
+
+  i { font-size: 0.7rem; }
+}
+
+// ─── Location selector ────────────────────────────────────────────────────────
+
+.location-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.location-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  width: 100%;
+
+  &:hover {
+    border-color: #dc2626;
+    background: #fff5f5;
+  }
+
+  &.selected {
+    border-color: #dc2626;
+    background: #fff5f5;
+    box-shadow: 0 0 0 3px rgba(#dc2626, 0.08);
+  }
+
+  &__left {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+
+    i {
+      color: #94a3b8;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+
+      .selected & { color: #dc2626; }
+    }
+  }
+
+  &__color-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  &__name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #334155;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+.badge-recommended {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #d97706;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+  white-space: nowrap;
+
+  i { font-size: 0.6rem; }
+}
+
+  &__right {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+  }
+
+  &__current {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-decoration: line-through;
+  }
+
+  &__arrow {
+    font-size: 0.65rem;
+    color: #94a3b8;
+  }
+
+  &__after {
+    font-size: 1rem;
+    font-weight: 800;
+
+    &.after--ok    { color: #15803d; }
+    &.after--empty { color: #dc2626; }
+  }
+
+  &__unit {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+  }
+
+  &__stock {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    flex-shrink: 0;
+
+    strong {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #1e293b;
+
+      .selected & { color: #dc2626; }
+    }
+
+    span {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #64748b;
+    }
+  }
+}
+
+.hint-text {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 500;
+  margin-top: 0.4rem;
+
+  i { font-size: 0.7rem; }
+}
+
+// ─── Location summary card ────────────────────────────────────────────────────
+
+.info-card--locations {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+
+  .info-card__header { color: #64748b; i { color: #475569; } }
+}
+
+.location-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    transition: background 0.12s;
+
+    &.is-selected {
+      background: rgba(#dc2626, 0.06);
+      border-radius: 6px;
+    }
+  }
+
+  &__name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #475569;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__qty {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #1e293b;
+    flex-shrink: 0;
+
+    .is-selected & { color: #dc2626; }
+  }
 }
 </style>
