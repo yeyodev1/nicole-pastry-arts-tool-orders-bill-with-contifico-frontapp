@@ -32,6 +32,10 @@ const props = defineProps({
   filteredProviderOptions: {
     type: Array as () => Option[],
     required: true
+  },
+  receptionPointOptions: {
+    type: Array as () => Option[],
+    default: () => []
   }
 })
 
@@ -147,6 +151,16 @@ const confirmIn = () => {
           />
         </div>
 
+        <div class="field full" v-if="receptionPointOptions.length > 0">
+          <label>Punto de Recepción</label>
+          <SearchableSelect
+            :modelValue="form.receptionPoint"
+            @update:modelValue="val => emit('update:form', { ...form, receptionPoint: val })"
+            :options="receptionPointOptions"
+            placeholder="Seleccionar punto de recepción..."
+          />
+        </div>
+
         <div class="field half">
           <label>Cantidad <span class="unit-hint">{{ selectedMaterial ? `(${getDisplayUnit(selectedMaterial.unit)})` : '' }}</span></label>
           <input
@@ -158,7 +172,7 @@ const confirmIn = () => {
         </div>
 
         <div class="field half" v-if="selectedMaterial">
-          <label>Costo / {{ getDisplayUnit(selectedMaterial.unit) }} <span class="unit-hint">(USD)</span></label>
+          <label>Precio de compra / {{ getDisplayUnit(selectedMaterial.unit) }} <span class="unit-hint">(USD)</span></label>
           <div class="input-with-prefix">
             <span class="prefix">$</span>
             <input
@@ -238,7 +252,8 @@ const confirmIn = () => {
           ${{ totalValue.toFixed(2) }}
         </div>
         <div class="info-card__sub">
-          {{ form.quantity }} {{ getDisplayUnit(selectedMaterial.unit) }} × ${{ form.unitCost.toFixed(4) }}
+          {{ form.quantity }} {{ getDisplayUnit(selectedMaterial.unit) }}
+          × ${{ form.unitCost % 1 === 0 ? form.unitCost.toFixed(2) : form.unitCost < 1 ? form.unitCost.toFixed(4) : form.unitCost.toFixed(2) }}/{{ getDisplayUnit(selectedMaterial.unit) }}
         </div>
       </div>
 
@@ -262,8 +277,10 @@ const confirmIn = () => {
       <ul class="modal-list">
         <li><strong>Materia Prima:</strong> {{ selectedMaterial?.name }}</li>
         <li><strong>Cantidad:</strong> {{ form.quantity }} {{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : '' }}</li>
+        <li><strong>Costo unitario:</strong> ${{ form.unitCost.toFixed(2) }}/{{ selectedMaterial ? getDisplayUnit(selectedMaterial.unit) : '' }}</li>
         <li><strong>Total:</strong> <span class="modal-highlight">USD ${{ totalValue.toFixed(2) }}</span></li>
         <li><strong>Proveedor:</strong> {{ providers.find((p: Provider) => p._id === form.provider)?.name || 'N/A' }}</li>
+        <li v-if="form.receptionPoint"><strong>Recibido en:</strong> {{ receptionPointOptions.find(o => o.value === form.receptionPoint)?.label || form.receptionPoint }}</li>
       </ul>
     </template>
   </ConfirmationModal>

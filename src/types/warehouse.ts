@@ -4,6 +4,8 @@ export interface RawMaterial {
   unit: string;
   quantity: number;
   cost: number;
+  presentationPrice?: number;
+  presentationQuantity?: number;
   provider?: string | { _id: string; name: string };
 }
 
@@ -22,6 +24,7 @@ export interface Movement {
   date: string;
   createdAt?: string;
   responsible?: string;
+  receptionPoint?: string;
   entity?: string;
   provider?: Provider;
   user?: { _id: string; name: string };
@@ -45,6 +48,7 @@ export interface WarehouseInForm {
   responsible: string;
   observation: string;
   suggestedOrderId: string;
+  receptionPoint: string;
 }
 
 export interface WarehouseOutForm {
@@ -56,6 +60,12 @@ export interface WarehouseOutForm {
   entity: string;
   observation: string;
   expectedSaleValue: number;
+  receptionPoint: string;
+}
+
+export interface LocationStock {
+  location: string;
+  stock: number;
 }
 
 export interface WarehouseLossFormState {

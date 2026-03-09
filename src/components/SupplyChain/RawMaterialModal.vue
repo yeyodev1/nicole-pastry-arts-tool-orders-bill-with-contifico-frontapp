@@ -120,6 +120,16 @@ const stockStatus = computed(() => {
   return { label: '---', class: '' }
 })
 
+// Format a cost value removing unnecessary trailing zeros (up to 4 decimal places)
+const formatCost = (val: number): string => {
+  if (!val || val === 0) return '0.00'
+  // Use up to 4 decimals but strip trailing zeros
+  return parseFloat(val.toFixed(4)).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4
+  })
+}
+
 const generateCode = (category: string, name: string) => {
   const catChar = category && category.length > 0 ? category.charAt(0).toUpperCase() : 'X'
   const nameChar = name && name.length > 1 ? name.charAt(1).toLowerCase() : (name && name.length > 0 ? name.charAt(0).toLowerCase() : 'x')
@@ -134,7 +144,11 @@ const handleSubmit = () => {
   payload.maxStock = toBackendQuantity(payload.maxStock || 0, payload.unit)
   payload.presentationQuantity = toBackendQuantity(payload.presentationQuantity || 1, payload.unit)
 
-  payload.cost = calculatedUnitCost.value
+  // Store cost as price per BASE unit ($/g or $/ml), not per display unit ($/kg or $/lt)
+  // Warehouse auto-fill uses mat.cost * 1000 to get $/kg, so we must store $/g here
+  payload.cost = (payload.unit === 'g' || payload.unit === 'ml')
+    ? calculatedUnitCost.value / 1000
+    : calculatedUnitCost.value
 
   if (!payload.code) {
     payload.code = generateCode(payload.category, payload.name)
@@ -323,16 +337,13 @@ const categoryOptions = computed(() => {
             </div>
 
             <div class="cost-summary" v-if="calculatedUnitCost > 0">
-              <!-- Cost per kg / lt (main) -->
-              <div class="summary-item" v-if="form.unit !== 'u'">
-                <span class="label">Costo por {{ getDisplayUnit(form.unit) }}:</span>
-                <span class="value main">${{ calculatedUnitCost.toFixed(4) }}</span>
+              <div class="cost-result">
+                <span class="cost-label">Costo por {{ getDisplayUnit(form.unit) }}</span>
+                <span class="cost-value">${{ formatCost(calculatedUnitCost) }}<span class="cost-unit">/{{ getDisplayUnit(form.unit) }}</span></span>
               </div>
-
-              <!-- Cost per unit -->
-              <div class="summary-item" :class="{ sub: form.unit !== 'u' }">
-                <span class="label">Costo {{ form.unit === 'u' ? 'por Unidad' : `por ${form.unit}` }}:</span>
-                <span class="value" :class="{ main: form.unit === 'u' }">${{ (form.unit !== 'u' ? calculatedUnitCost / 1000 : calculatedUnitCost).toFixed(6) }}</span>
+              <div class="cost-total-hint" v-if="form.unit !== 'u'">
+                <i class="fas fa-info-circle"></i>
+                {{ form.presentationQuantity }} {{ getDisplayUnit(form.unit) }} &times; ${{ formatCost(calculatedUnitCost) }} = <strong>${{ formatCost(form.presentationPrice) }} total</strong>
               </div>
             </div>
           </div>
@@ -843,64 +854,77 @@ const categoryOptions = computed(() => {
 }
 
 .cost-summary {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.5rem;
   margin-top: 0;
   margin-bottom: 1.5rem;
-  background: #f8fafc;
-  padding: 1rem;
+  background: #f8f5ff;
+  padding: 1rem 1.25rem;
   border-radius: 16px;
-  border: 1px solid #f1f5f9;
+  border: 1.5px solid rgba($NICOLE-PURPLE, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 
   @media (min-width: 640px) {
     margin-bottom: 2rem;
-  }
-
-  .summary-item {
-    display: flex;
+    flex-direction: row;
     align-items: center;
-    gap: 1rem;
-
-    &.sub {
-      opacity: 0.6;
-
-      .label {
-        font-size: 0.75rem;
-        font-weight: 700;
-      }
-
-      .value {
-        font-size: 0.9rem;
-      }
-    }
+    justify-content: space-between;
   }
+}
 
-  .label {
+.cost-result {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+
+  .cost-label {
+    font-size: 0.75rem;
     font-weight: 800;
     color: #94a3b8;
-    font-size: 0.8rem;
     text-transform: uppercase;
-
-    @media (min-width: 640px) {
-      font-size: 0.85rem;
-    }
+    letter-spacing: 0.05em;
+    white-space: nowrap;
   }
 
-  .value {
+  .cost-value {
+    font-size: 1.5rem;
     font-weight: 900;
-    color: #0f172a;
+    color: $NICOLE-PURPLE;
     font-family: 'JetBrains Mono', monospace;
+    letter-spacing: -0.02em;
 
-    &.main {
-      font-size: 1.25rem;
-      color: $NICOLE-PURPLE;
-
-      @media (min-width: 640px) {
-        font-size: 1.5rem;
-      }
+    @media (min-width: 640px) {
+      font-size: 1.75rem;
     }
+
+    .cost-unit {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #94a3b8;
+      margin-left: 0.1rem;
+      font-family: inherit;
+    }
+  }
+}
+
+.cost-total-hint {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+
+  i {
+    color: $NICOLE-PURPLE;
+    opacity: 0.6;
+    font-size: 0.72rem;
+  }
+
+  strong {
+    color: $NICOLE-PURPLE;
+    font-weight: 800;
   }
 }
 

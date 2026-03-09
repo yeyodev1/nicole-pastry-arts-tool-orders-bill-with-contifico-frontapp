@@ -4,6 +4,7 @@ import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 
 const props = defineProps<{
   materials: any[],
+  receptionPoints?: { name: string; isActive: boolean }[],
   initialFilters?: any
 }>()
 
@@ -14,18 +15,12 @@ const emit = defineEmits<{
 const filters = ref({
   type: props.initialFilters?.type || '',
   materialId: props.initialFilters?.materialId || '',
+  receptionPoint: props.initialFilters?.receptionPoint || '',
   startDate: props.initialFilters?.startDate || '',
   endDate: props.initialFilters?.endDate || ''
 })
 
-// Update local filters if prop changes (for initialization)
-watch(() => props.initialFilters, (newInit) => {
-  if (newInit) {
-    filters.value = { ...filters.value, ...newInit }
-  }
-}, { deep: true })
-
-// Deep watch filters to emit changes
+// Only emit upward — no watcher on initialFilters to avoid emit→prop→emit loop
 watch(filters, (newFilters) => {
   emit('filter', { ...newFilters })
 }, { deep: true })
@@ -34,6 +29,7 @@ const clearFilters = () => {
   filters.value = {
     type: '',
     materialId: '',
+    receptionPoint: '',
     startDate: '',
     endDate: ''
   }
@@ -41,7 +37,7 @@ const clearFilters = () => {
 </script>
 
 <template>
-  <div class="filters-container">
+  <div class="filters-container" :class="{ 'has-points': receptionPoints && receptionPoints.length > 0 }">
     <div class="filter-group">
       <label>Tipo</label>
       <select v-model="filters.type">
@@ -62,18 +58,28 @@ const clearFilters = () => {
       </select>
     </div>
 
+    <div v-if="receptionPoints && receptionPoints.length > 0" class="filter-group">
+      <label>Bodega</label>
+      <select v-model="filters.receptionPoint">
+        <option value="">Todas las bodegas</option>
+        <option v-for="p in receptionPoints" :key="p.name" :value="p.name">
+          {{ p.name }}
+        </option>
+      </select>
+    </div>
+
     <div class="filter-group date-filter">
-      <CustomDatePicker 
-        v-model="filters.startDate" 
-        label="Desde" 
+      <CustomDatePicker
+        v-model="filters.startDate"
+        label="Desde"
         placeholder="Inicio"
       />
     </div>
 
     <div class="filter-group date-filter">
-      <CustomDatePicker 
-        v-model="filters.endDate" 
-        label="Hasta" 
+      <CustomDatePicker
+        v-model="filters.endDate"
+        label="Hasta"
         placeholder="Fin"
       />
     </div>
@@ -96,20 +102,26 @@ const clearFilters = () => {
   border-radius: 12px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
   border: 1px solid $border-light;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   align-items: flex-end;
 
-  @media (max-width: 900px) {
-    grid-template-columns: 1fr 1fr;
+  &.has-points {
+    grid-template-columns: 1fr 1fr 1fr 1.5fr 1.5fr auto;
+  }
+
+  @media (max-width: 1100px) {
+    grid-template-columns: 1fr 1fr 1fr;
+    &.has-points { grid-template-columns: 1fr 1fr 1fr; }
 
     .filter-actions {
-      grid-column: span 2;
+      grid-column: span 3;
       justify-content: flex-end;
     }
   }
 
   @media (max-width: 600px) {
     grid-template-columns: 1fr;
+    &.has-points { grid-template-columns: 1fr; }
 
     .filter-actions {
       grid-column: span 1;

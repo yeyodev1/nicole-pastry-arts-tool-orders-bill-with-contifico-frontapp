@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import WarehouseService from '@/services/warehouse.service'
 import SupplierOrderService from '@/services/supplier-order.service'
+import WarehouseSettingsService from '@/services/warehouse-settings.service'
 import { useWarehouse } from '@/composables/useWarehouse'
 
 // Components
@@ -17,6 +18,18 @@ const {
   success, showError
 } = useWarehouse()
 
+// Warehouse Settings (dynamic points)
+const receptionPoints = ref<{ _id?: string; name: string; isActive: boolean }[]>([])
+const dispatchPoints = ref<{ _id?: string; name: string; isActive: boolean }[]>([])
+
+const fetchWarehouseSettings = async () => {
+  try {
+    const data = await WarehouseSettingsService.getSettings()
+    receptionPoints.value = data.receptionPoints.filter(p => p.isActive)
+    dispatchPoints.value = data.dispatchPoints.filter(p => p.isActive)
+  } catch { /* non-critical */ }
+}
+
 // View State
 const activeTab = ref<'movements' | 'in' | 'out' | 'loss'>('movements')
 const isSubmitting = ref(false)
@@ -28,18 +41,20 @@ const activeFilters = ref({
   type: '',
   materialId: '',
   startDate: getEcuadorMonthStart(),
-  endDate: getEcuadorDate()
+  endDate: getEcuadorDate(),
+  receptionPoint: ''
 })
+const aggregates = ref<{ _id: { type: string; receptionPoint: string }; totalValue: number; count: number }[]>([])
 
 // --- Forms Initialization ---
 const inForm = ref({
   date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0,
-  unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: ''
+  unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '', receptionPoint: ''
 })
 
 const outForm = ref({
   date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0,
-  responsible: '', entity: '', observation: '', expectedSaleValue: 0
+  responsible: '', entity: '', observation: '', expectedSaleValue: 0, receptionPoint: ''
 })
 
 const lossForm = ref({
@@ -52,6 +67,7 @@ const holdProgress = ref(0)
 const isHolding = ref(false)
 let holdTimer: any = null
 const HOLD_DURATION = 1200
+const locationStocks = ref<{ location: string; stock: number }[]>([])
 
 // --- Shared Computed / Options ---
 const materialOptions = computed(() => materials.value.map(m => ({
@@ -70,10 +86,13 @@ const filteredProviderOptions = computed(() => {
   return providers.value.map(p => ({ value: p._id, label: p.name }))
 })
 
-const entityOptions = [
-  "Nicole Pastry Arts - San marino", "Nicole Pastry Arts - Mall del sol", "Finestra - CDP",
-  "Delacrem - Mall del sol", "Casa mía - Mall del sol", "Sucreenda - CDP", "Sucree - Vivantino"
-].map(e => ({ value: e, label: e }))
+const entityOptions = computed(() =>
+  dispatchPoints.value.map(p => ({ value: p.name, label: p.name }))
+)
+
+const receptionPointOptions = computed(() =>
+  receptionPoints.value.map(p => ({ value: p.name, label: p.name }))
+)
 
 // --- Logic Coordination ---
 const handlePageChange = (page: number) => {
@@ -91,6 +110,7 @@ const runFetchMovements = async () => {
   const data = await fetchMovements({ page: currentPage.value, ...activeFilters.value })
   if (data) {
     totalPages.value = data.pages
+    aggregates.value = data.aggregates || []
   }
 }
 
@@ -116,7 +136,7 @@ const onInSubmit = async () => {
     }
     resetInForm()
     activeTab.value = 'movements'
-    runFetchMovements()
+    await Promise.all([runFetchMovements(), fetchDependencies()])
   } catch (e: any) { showError(e.message || 'Error al guardar') }
   finally { isSubmitting.value = false }
 }
@@ -131,12 +151,12 @@ const onOutSubmit = async () => {
   try {
     await WarehouseService.createMovement({
       type: 'OUT', ...outForm.value, quantity: backendQty, date: combinedDate, user: user._id,
-      totalValue: outForm.value.quantity * (selMat?.cost * ((selMat?.unit === 'g' || selMat?.unit === 'ml') ? 1000 : 1))
+      totalValue: selMat ? outForm.value.quantity * getCostPerDisplayUnit(selMat) : 0
     })
     success('Despacho registrado')
     resetOutForm()
     activeTab.value = 'movements'
-    runFetchMovements()
+    await Promise.all([runFetchMovements(), fetchDependencies()])
   } catch (e: any) { showError(e.message) }
   finally { isSubmitting.value = false; stopHold() }
 }
@@ -157,7 +177,7 @@ const onLossSubmit = async () => {
     success('Baja registrada')
     resetLossForm()
     activeTab.value = 'movements'
-    runFetchMovements()
+    await Promise.all([runFetchMovements(), fetchDependencies()])
   } catch (e: any) { showError(e.message) }
   finally { isSubmitting.value = false }
 }
@@ -169,7 +189,7 @@ const applySuggestion = (order: any, item: any) => {
   inForm.value.suggestedOrderId = order._id
   inForm.value.observation = `[O.COMPRA #${order._id.slice(-4)}]`
   const mat = materials.value.find(m => m._id === inForm.value.rawMaterial)
-  if (mat) inForm.value.unitCost = mat.cost * ((mat.unit === 'g' || mat.unit === 'ml') ? 1000 : 1)
+  if (mat) inForm.value.unitCost = getCostPerDisplayUnit(mat)
 }
 
 // --- Hold Logic ---
@@ -184,23 +204,43 @@ const startHold = () => {
 const stopHold = () => { isHolding.value = false; holdProgress.value = 0; clearInterval(holdTimer) }
 
 // --- Helpers ---
-const resetInForm = () => { inForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '' } }
-const resetOutForm = () => { outForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: '', entity: '', observation: '', expectedSaleValue: 0 } }
+const resetInForm = () => { inForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '', receptionPoint: '' } }
+const resetOutForm = () => { outForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: '', entity: '', observation: '', expectedSaleValue: 0, receptionPoint: '' }; locationStocks.value = [] }
 const resetLossForm = () => { lossForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: 'Danny', observation: '', reason: 'CADUCIDAD' } }
 
 // --- Lifecycle ---
-onMounted(() => { fetchDependencies(); runFetchMovements() })
+onMounted(() => { fetchDependencies(); runFetchMovements(); fetchWarehouseSettings() })
+
+// Compute cost per display unit ($/kg or $/lt or $/u) from a material
+// Uses presentationPrice/presentationQuantity as source of truth (avoids unit ambiguity in stored cost field)
+const getCostPerDisplayUnit = (mat: typeof materials.value[0]) => {
+  const isWeight = mat.unit === 'g' || mat.unit === 'ml'
+  if (mat.presentationPrice && mat.presentationQuantity && mat.presentationQuantity > 0) {
+    const displayQty = isWeight ? mat.presentationQuantity / 1000 : mat.presentationQuantity
+    return displayQty > 0 ? mat.presentationPrice / displayQty : 0
+  }
+  // Fallback: cost field (assumed $/g for weight materials)
+  return isWeight ? mat.cost * 1000 : mat.cost
+}
 
 // Auto-fill cost when material changes in Reception
 watch(() => inForm.value.rawMaterial, (id) => {
   const mat = materials.value.find(m => m._id === id)
   if (mat) {
-    inForm.value.unitCost = mat.cost * ((mat.unit === 'g' || mat.unit === 'ml') ? 1000 : 1)
+    inForm.value.unitCost = getCostPerDisplayUnit(mat)
     if (mat.provider) inForm.value.provider = typeof mat.provider === 'object' ? mat.provider._id : mat.provider
   }
 })
 
 watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
+
+watch(() => outForm.value.rawMaterial, async (id) => {
+  locationStocks.value = []
+  outForm.value.receptionPoint = ''
+  if (id) {
+    try { locationStocks.value = await WarehouseService.getStockByLocation(id) } catch { /* non-critical */ }
+  }
+})
 
 </script>
 
@@ -237,7 +277,7 @@ watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
       <WarehouseHistoryTable v-if="activeTab === 'movements'"
         :materials="materials" :movements="movements" :isLoading="isLoading"
         :activeFilters="activeFilters" :currentPage="currentPage" :totalPages="totalPages"
-        :totalInValue="movements.filter(m => m.type === 'IN').reduce((s, m) => s + (m.quantity * (m.rawMaterial?.cost || 0)), 0)"
+        :aggregates="aggregates" :receptionPoints="receptionPoints"
         @filter="handleFilter" @page-change="handlePageChange"
       />
 
@@ -245,6 +285,7 @@ watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
         v-model:form="inForm" :materials="materials" :providers="providers"
         :suggestedOrders="suggestedOrders" :isSubmitting="isSubmitting"
         :materialOptions="materialOptions" :filteredProviderOptions="filteredProviderOptions"
+        :receptionPointOptions="receptionPointOptions"
         @submit="onInSubmit" @apply-suggestion="applySuggestion"
       />
 
@@ -252,6 +293,7 @@ watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
         v-model:form="outForm" :materials="materials" :materialOptions="materialOptions"
         :entityOptions="entityOptions" :isSubmitting="isSubmitting"
         :holdProgress="holdProgress" :isHolding="isHolding"
+        :locationStocks="locationStocks"
         @submit="onOutSubmit" @start-hold="startHold" @cancel-hold="stopHold"
       />
 
