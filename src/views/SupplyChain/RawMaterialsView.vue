@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import RawMaterialService from '@/services/raw-material.service'
 import ProviderService from '@/services/provider.service'
 import ProviderCategoryService from '@/services/provider-category.service'
 import type { IProviderCategory } from '@/services/provider-category.service'
 import { useToast } from '@/composables/useToast'
 import RawMaterialModal from '@/components/SupplyChain/RawMaterialModal.vue'
+import SelectProviderModal from '@/components/SupplyChain/SelectProviderModal.vue'
 
 const route = useRoute()
+const router = useRouter()
 const { success, error: showError } = useToast()
 
 const materials = ref<any[]>([])
@@ -17,7 +19,9 @@ const categories = ref<IProviderCategory[]>([])
 const isLoading = ref(false)
 const isSaving = ref(false)
 const showModal = ref(false)
+const showProviderSelectModal = ref(false)
 const materialToEdit = ref<any>(null)
+const selectedProviderForCreate = ref<any>(null)
 const searchQuery = ref('')
 const filterProvider = ref('')
 const filterCategory = ref('')
@@ -87,16 +91,35 @@ const getDisplayQuantity = (quantity: number, unit: string) => {
 
 const openModal = (material: any) => {
   materialToEdit.value = material
+  selectedProviderForCreate.value = null
+  showModal.value = true
+}
+
+const openCreateFlow = () => {
+  showProviderSelectModal.value = true
+}
+
+const handleProviderSelected = (provider: any) => {
+  selectedProviderForCreate.value = provider
+  materialToEdit.value = null
+  showProviderSelectModal.value = false
   showModal.value = true
 }
 
 const handleSave = async (payload: any) => {
   isSaving.value = true
   try {
-    await RawMaterialService.updateRawMaterial(materialToEdit.value._id, payload)
-    success('Registro actualizado')
-    showModal.value = false
-    fetchData()
+    if (materialToEdit.value) {
+      await RawMaterialService.updateRawMaterial(materialToEdit.value._id, payload)
+      success('Registro actualizado')
+      showModal.value = false
+      fetchData()
+    } else {
+      await RawMaterialService.createRawMaterial({ ...payload, provider: selectedProviderForCreate.value._id })
+      success('Material creado')
+      showModal.value = false
+      router.push(`/supply-chain/providers/${selectedProviderForCreate.value._id}`)
+    }
   } catch (err: any) {
     showError(err.response?.data?.message || 'Error al guardar')
   } finally {
@@ -148,6 +171,11 @@ onMounted(() => {
             placeholder="Buscar por nombre o código..."
             type="text"
           />
+        </div>
+        <div class="header-actions">
+          <button class="btn-primary" @click="openCreateFlow">
+            <i class="fas fa-plus"></i> Nueva Materia Prima
+          </button>
         </div>
       </div>
     </div>
@@ -267,13 +295,22 @@ onMounted(() => {
       </template>
     </div>
 
-    <!-- Edit Material Modal (edit only — create is from provider) -->
+    <!-- Select Provider Step (required before creating a material) -->
+    <SelectProviderModal
+      :is-open="showProviderSelectModal"
+      :providers="providers"
+      @close="showProviderSelectModal = false"
+      @select="handleProviderSelected"
+    />
+
+    <!-- Material Modal (edit existing or create after provider selection) -->
     <RawMaterialModal
       :is-open="showModal"
       :material-to-edit="materialToEdit"
       :providers="providers"
       :categories="categories"
       :is-saving="isSaving"
+      :default-provider-id="selectedProviderForCreate?._id"
       @close="showModal = false"
       @save="handleSave"
       @delete="handleDeleteItem"
