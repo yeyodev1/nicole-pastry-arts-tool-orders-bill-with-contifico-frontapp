@@ -41,8 +41,10 @@ const activeFilters = ref({
   type: '',
   materialId: '',
   startDate: getEcuadorMonthStart(),
-  endDate: getEcuadorDate()
+  endDate: getEcuadorDate(),
+  receptionPoint: ''
 })
+const aggregates = ref<{ _id: { type: string; receptionPoint: string }; totalValue: number; count: number }[]>([])
 
 // --- Forms Initialization ---
 const inForm = ref({
@@ -108,6 +110,7 @@ const runFetchMovements = async () => {
   const data = await fetchMovements({ page: currentPage.value, ...activeFilters.value })
   if (data) {
     totalPages.value = data.pages
+    aggregates.value = data.aggregates || []
   }
 }
 
@@ -274,7 +277,7 @@ watch(() => outForm.value.rawMaterial, async (id) => {
       <WarehouseHistoryTable v-if="activeTab === 'movements'"
         :materials="materials" :movements="movements" :isLoading="isLoading"
         :activeFilters="activeFilters" :currentPage="currentPage" :totalPages="totalPages"
-        :totalInValue="movements.filter(m => m.type === 'IN').reduce((s, m) => s + (m.quantity * (m.rawMaterial?.cost || 0)), 0)"
+        :aggregates="aggregates" :receptionPoints="receptionPoints"
         @filter="handleFilter" @page-change="handlePageChange"
       />
 
