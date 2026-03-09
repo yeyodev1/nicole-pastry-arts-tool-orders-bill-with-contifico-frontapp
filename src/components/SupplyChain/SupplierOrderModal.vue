@@ -72,40 +72,16 @@ watch(() => props.isOpen, async (newVal) => {
           return pId === providerId
         })
 
-        // NEW: Fetch pending orders to show what's already on the way
-        let pendingMap: Record<string, number> = {}
-        const pendingData = await SupplierOrderService.getOrders({
-          provider: providerId,
-          status: 'PENDING',
-          limit: 100
-        })
-        const sentData = await SupplierOrderService.getOrders({
-          provider: providerId,
-          status: 'SENT',
-          limit: 100
-        })
-
-        const allPending = [...(pendingData.orders || []), ...(sentData.orders || [])]
-
-        allPending.forEach((order: any) => {
-          order.items.forEach((item: any) => {
-            const mId = item.material?._id || item.material
-            pendingMap[mId] = (pendingMap[mId] || 0) + item.quantity
-          })
-        })
-
         orderItems.value = providerMaterials.map((m: any) => {
           let suggestedQty = 0
           const current = m.quantity || 0
           const min = m.minStock || 0
           const max = m.maxStock || 0
 
-          const pending = pendingMap[m._id] || 0
-
           if (max > 0) {
-            suggestedQty = Math.max(0, max - (current + pending))
+            suggestedQty = Math.max(0, max - current)
           } else if (min > 0) {
-            suggestedQty = Math.max(0, (min * 2) - (current + pending))
+            suggestedQty = Math.max(0, (min * 2) - current)
           }
 
           const displayQty = (m.unit === 'g' || m.unit === 'ml') ? suggestedQty / 1000 : suggestedQty
@@ -115,7 +91,6 @@ watch(() => props.isOpen, async (newVal) => {
             name: m.name,
             unit: m.unit,
             currentStock: m.quantity,
-            pendingStock: pending,
             suggested: displayQty > 0 ? parseFloat(displayQty.toFixed(2)) : 0,
             orderQty: 0
           }
@@ -200,8 +175,7 @@ const saveOrder = async () => {
       }),
     deliveryDate: deliveryDate.value,
     user: user._id,
-    whatsappMessage: generatedMessage.value,
-    status: 'PENDING'
+    whatsappMessage: generatedMessage.value
   }
 
   try {
@@ -306,9 +280,6 @@ watch([deliveryDate, orderItems], () => {
                   <span class="name">{{ item.name }}</span>
                   <div class="stock-info">
                     <span class="stock" v-if="item.currentStock > 0">Stock: {{ getDisplayQuantity(item.currentStock, item.unit) }} {{ getDisplayUnit(item.unit) }}</span>
-                    <span class="pending-stock" v-if="item.pendingStock > 0">
-                      <i class="fas fa-truck-ramp-box"></i> Pedido solicitado: {{ getDisplayQuantity(item.pendingStock, item.unit) }} {{ getDisplayUnit(item.unit) }}
-                    </span>
                     <span class="suggested-hint" v-if="item.suggested > 0 && item.orderQty === 0">
                       <i class="fas fa-lightbulb"></i> Sugerido: {{ item.suggested }} {{ getDisplayUnit(item.unit) }}
                     </span>

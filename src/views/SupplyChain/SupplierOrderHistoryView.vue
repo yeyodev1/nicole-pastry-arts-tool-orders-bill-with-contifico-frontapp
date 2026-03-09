@@ -50,26 +50,6 @@ const fetchOrders = async () => {
   }
 }
 
-const getStatusBadgeClass = (status: string) => {
-  switch (status) {
-    case 'PENDING': return 'status-pending'
-    case 'SENT': return 'status-sent'
-    case 'RECEIVED': return 'status-received'
-    case 'CANCELLED': return 'status-cancelled'
-    default: return ''
-  }
-}
-
-const translateStatus = (status: string) => {
-  switch (status) {
-    case 'PENDING': return 'PENDIENTE'
-    case 'SENT': return 'ENVIADO'
-    case 'RECEIVED': return 'RECIBIDO'
-    case 'CANCELLED': return 'CANCELADO'
-    default: return status
-  }
-}
-
 const formatDate = (date: string) => {
   return new Intl.DateTimeFormat('es-EC', { dateStyle: 'medium' }).format(new Date(date))
 }
@@ -158,7 +138,6 @@ onMounted(() => {
               <th>Proveedor</th>
               <th>Insumos</th>
               <th>Entrega Requerida</th>
-              <th>Estado</th>
               <th class="text-right">Acciones</th>
             </tr>
           </thead>
@@ -176,11 +155,6 @@ onMounted(() => {
                 </div>
               </td>
               <td class="fw-600">{{ formatDate(order.deliveryDate) }}</td>
-              <td>
-                <span class="status-badge" :class="getStatusBadgeClass(order.status)">
-                  {{ translateStatus(order.status) }}
-                </span>
-              </td>
               <td class="text-right">
                 <div class="actions-group">
                   <button class="btn-icon" @click="handleEdit(order)" title="Editar">
@@ -346,34 +320,6 @@ onMounted(() => {
     font-size: 0.8rem;
     color: #94a3b8;
     margin-left: 0.5rem;
-  }
-}
-
-.status-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-
-  &.status-pending {
-    background: #fef9c3;
-    color: #854d0e;
-  }
-
-  &.status-sent {
-    background: #dcfce7;
-    color: #166534;
-  }
-
-  &.status-received {
-    background: #dbeafe;
-    color: #1e40af;
-  }
-
-  &.status-cancelled {
-    background: #fee2e2;
-    color: #991b1b;
   }
 }
 
