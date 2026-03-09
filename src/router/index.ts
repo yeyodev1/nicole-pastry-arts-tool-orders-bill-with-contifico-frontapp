@@ -14,6 +14,7 @@ const router = createRouter({
           try {
             const user = JSON.parse(userInfoStr)
             if (user?.role === 'production') return { name: 'production-summary' }
+            if (user?.role === 'KITCHEN_DISPLAY') return { name: 'kitchen-display' }
             if (user?.role === 'RetailManager') return { name: 'pos-shipments' }
             if (user?.role === 'SUPPLY_CHAIN_MANAGER') return { name: 'providers-list' }
             return { name: 'create-order' }
@@ -92,6 +93,12 @@ const router = createRouter({
       name: 'production-reports',
       component: () => import('../views/production/ProductionReportsView.vue'),
       meta: { requiresAuth: true, role: 'production', title: 'Reportes de Producción' }
+    },
+    {
+      path: '/production/kitchen',
+      name: 'kitchen-display',
+      component: () => import('../views/production/KitchenDisplayView.vue'),
+      meta: { requiresAuth: true, role: 'KITCHEN_DISPLAY', title: 'Pantalla Cocina' }
     },
     // Supply Chain Routes
     {
@@ -196,6 +203,7 @@ router.beforeEach((to, from, next) => {
   // 2. Redirect authenticated users away from login page
   if (to.name === 'login' && isAuthenticated) {
     if (role === 'production') next({ name: 'production-summary' })
+    else if (role === 'KITCHEN_DISPLAY') next({ name: 'kitchen-display' })
     else if (role === 'RetailManager') next({ name: 'pos-shipments' })
     else if (role === 'SUPPLY_CHAIN_MANAGER') next({ name: 'providers-list' })
     else next({ name: 'create-order' })
@@ -225,6 +233,12 @@ router.beforeEach((to, from, next) => {
     // Production guard
     if (role === 'production' && !to.path.startsWith('/production')) {
       next({ name: 'production-summary' })
+      return
+    }
+
+    // Kitchen Display guard — only /production/kitchen
+    if (role === 'KITCHEN_DISPLAY' && to.name !== 'kitchen-display') {
+      next({ name: 'kitchen-display' })
       return
     }
 

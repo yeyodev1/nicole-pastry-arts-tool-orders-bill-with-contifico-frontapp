@@ -4,6 +4,8 @@ export interface RawMaterial {
   unit: string;
   quantity: number;
   cost: number;
+  presentationPrice?: number;
+  presentationQuantity?: number;
   provider?: string | { _id: string; name: string };
 }
 

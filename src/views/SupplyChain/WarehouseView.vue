@@ -116,7 +116,7 @@ const onInSubmit = async () => {
     }
     resetInForm()
     activeTab.value = 'movements'
-    runFetchMovements()
+    await Promise.all([runFetchMovements(), fetchDependencies()])
   } catch (e: any) { showError(e.message || 'Error al guardar') }
   finally { isSubmitting.value = false }
 }
@@ -131,12 +131,12 @@ const onOutSubmit = async () => {
   try {
     await WarehouseService.createMovement({
       type: 'OUT', ...outForm.value, quantity: backendQty, date: combinedDate, user: user._id,
-      totalValue: outForm.value.quantity * (selMat?.cost * ((selMat?.unit === 'g' || selMat?.unit === 'ml') ? 1000 : 1))
+      totalValue: selMat ? outForm.value.quantity * getCostPerDisplayUnit(selMat) : 0
     })
     success('Despacho registrado')
     resetOutForm()
     activeTab.value = 'movements'
-    runFetchMovements()
+    await Promise.all([runFetchMovements(), fetchDependencies()])
   } catch (e: any) { showError(e.message) }
   finally { isSubmitting.value = false; stopHold() }
 }
@@ -157,7 +157,7 @@ const onLossSubmit = async () => {
     success('Baja registrada')
     resetLossForm()
     activeTab.value = 'movements'
-    runFetchMovements()
+    await Promise.all([runFetchMovements(), fetchDependencies()])
   } catch (e: any) { showError(e.message) }
   finally { isSubmitting.value = false }
 }
@@ -169,7 +169,7 @@ const applySuggestion = (order: any, item: any) => {
   inForm.value.suggestedOrderId = order._id
   inForm.value.observation = `[O.COMPRA #${order._id.slice(-4)}]`
   const mat = materials.value.find(m => m._id === inForm.value.rawMaterial)
-  if (mat) inForm.value.unitCost = mat.cost * ((mat.unit === 'g' || mat.unit === 'ml') ? 1000 : 1)
+  if (mat) inForm.value.unitCost = getCostPerDisplayUnit(mat)
 }
 
 // --- Hold Logic ---
@@ -191,11 +191,23 @@ const resetLossForm = () => { lossForm.value = { date: getEcuadorDate(), time: g
 // --- Lifecycle ---
 onMounted(() => { fetchDependencies(); runFetchMovements() })
 
+// Compute cost per display unit ($/kg or $/lt or $/u) from a material
+// Uses presentationPrice/presentationQuantity as source of truth (avoids unit ambiguity in stored cost field)
+const getCostPerDisplayUnit = (mat: typeof materials.value[0]) => {
+  const isWeight = mat.unit === 'g' || mat.unit === 'ml'
+  if (mat.presentationPrice && mat.presentationQuantity && mat.presentationQuantity > 0) {
+    const displayQty = isWeight ? mat.presentationQuantity / 1000 : mat.presentationQuantity
+    return displayQty > 0 ? mat.presentationPrice / displayQty : 0
+  }
+  // Fallback: cost field (assumed $/g for weight materials)
+  return isWeight ? mat.cost * 1000 : mat.cost
+}
+
 // Auto-fill cost when material changes in Reception
 watch(() => inForm.value.rawMaterial, (id) => {
   const mat = materials.value.find(m => m._id === id)
   if (mat) {
-    inForm.value.unitCost = mat.cost * ((mat.unit === 'g' || mat.unit === 'ml') ? 1000 : 1)
+    inForm.value.unitCost = getCostPerDisplayUnit(mat)
     if (mat.provider) inForm.value.provider = typeof mat.provider === 'object' ? mat.provider._id : mat.provider
   }
 })

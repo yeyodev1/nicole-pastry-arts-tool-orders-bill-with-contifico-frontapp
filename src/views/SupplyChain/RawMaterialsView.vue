@@ -231,7 +231,7 @@ onMounted(() => {
                   <th>Nombre / Marca</th>
                   <th>Descripción General</th>
                   <th>Presentación</th>
-                  <th>Costo U.</th>
+                  <th>Costo / {{ 'kg/lt/u' }}</th>
                   <th>Inv. Actual</th>
                   <th>Última Ent.</th>
                   <th class="date-col">Fecha</th>
@@ -254,7 +254,7 @@ onMounted(() => {
                     </span>
                     <span v-else>-</span>
                   </td>
-                  <td class="cost-cell">${{ m.cost?.toFixed(4) }}</td>
+                  <td class="cost-cell">${{ ((m.unit === 'g' || m.unit === 'ml') ? m.cost * 1000 : m.cost)?.toFixed(2) }}/{{ getDisplayUnit(m.unit) }}</td>
                   <td class="stock-cell">
                     <span class="quantity">{{ getDisplayQuantity(m.quantity, m.unit) }}</span>
                     <span class="unit-tag">{{ getDisplayUnit(m.unit) }}</span>
@@ -286,7 +286,7 @@ onMounted(() => {
                 </div>
                 <div class="meta-item">
                   <i class="fas fa-tag"></i>
-                  <span>${{ m.cost?.toFixed(3) }}/{{ getDisplayUnit(m.unit) }}</span>
+                  <span>${{ ((m.unit === 'g' || m.unit === 'ml') ? m.cost * 1000 : m.cost)?.toFixed(2) }}/{{ getDisplayUnit(m.unit) }}</span>
                 </div>
               </div>
             </div>

@@ -11,8 +11,8 @@ const route = useRoute()
 
 <template>
   <div class="app-shell">
-    <AppSidebar v-if="route.name !== 'login'" />
-    <div class="content-area" :class="{ 'full-width': route.name === 'login' }">
+    <AppSidebar v-if="route.name !== 'login' && route.name !== 'kitchen-display'" />
+    <div class="content-area" :class="{ 'full-width': route.name === 'login' || route.name === 'kitchen-display' }">
       <RouterView />
     </div>
     <ToastContainer />
