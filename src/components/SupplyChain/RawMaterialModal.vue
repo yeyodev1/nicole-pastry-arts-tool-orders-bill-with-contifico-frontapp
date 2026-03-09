@@ -10,7 +10,8 @@ const props = defineProps({
   materialToEdit: { type: Object, default: null },
   providers: { type: Array as () => any[], required: true },
   categories: { type: Array as () => any[], required: true },
-  isSaving: { type: Boolean, default: false }
+  isSaving: { type: Boolean, default: false },
+  defaultProviderId: { type: String, default: '' }
 })
 
 const emit = defineEmits(['close', 'save', 'delete', 'category-created'])
@@ -92,6 +93,9 @@ watch(() => props.isOpen, (newVal) => {
       }
     } else {
       resetForm()
+      if (props.defaultProviderId) {
+        form.value.provider = props.defaultProviderId
+      }
     }
   }
 }, { immediate: true })
