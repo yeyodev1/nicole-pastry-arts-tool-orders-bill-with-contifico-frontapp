@@ -4,6 +4,7 @@ import WarehouseService from '@/services/warehouse.service'
 import SupplierOrderService from '@/services/supplier-order.service'
 import WarehouseSettingsService from '@/services/warehouse-settings.service'
 import { useWarehouse } from '@/composables/useWarehouse'
+import type { WarehouseInForm, WarehouseOutForm, ReceptionItem, DispatchItem } from '@/types/warehouse'
 
 // Components
 import WarehouseHistoryTable from './components/WarehouseHistoryTable.vue'
@@ -46,15 +47,30 @@ const activeFilters = ref({
 })
 const aggregates = ref<{ _id: { type: string; receptionPoint: string }; totalValue: number; count: number }[]>([])
 
+// Expiring invoices banner
+const expiringInvoiceCount = ref(0)
+
 // --- Forms Initialization ---
-const inForm = ref({
-  date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0,
-  unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '', receptionPoint: ''
+const inForm = ref<WarehouseInForm>({
+  date: getEcuadorDate(),
+  time: getEcuadorTime(),
+  provider: '',
+  receptionPoint: '',
+  invoiceRef: '',
+  invoiceDueDate: '',
+  responsible: 'Danny',
+  observation: '',
+  suggestedOrderId: '',
+  items: [{ rawMaterial: '', quantity: 0, unitCost: 0 }]
 })
 
-const outForm = ref({
-  date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0,
-  responsible: '', entity: '', observation: '', expectedSaleValue: 0, receptionPoint: ''
+const outForm = ref<WarehouseOutForm>({
+  date: getEcuadorDate(),
+  time: getEcuadorTime(),
+  entity: '',
+  responsible: '',
+  observation: '',
+  items: [{ rawMaterial: '', sourceReceptionPoint: '', quantity: 0 }]
 })
 
 const lossForm = ref({
@@ -67,24 +83,18 @@ const holdProgress = ref(0)
 const isHolding = ref(false)
 let holdTimer: any = null
 const HOLD_DURATION = 1200
-const locationStocks = ref<{ location: string; stock: number }[]>([])
+const locationStocksMap = ref<Record<string, { location: string; stock: number }[]>>({})
 
 // --- Shared Computed / Options ---
 const materialOptions = computed(() => materials.value.map(m => ({
   value: m._id, label: m.name, subtitle: `Stock: ${(m.quantity / (m.unit === 'u' ? 1 : 1000)).toFixed(2)} ${m.unit === 'u' ? 'u' : (m.unit === 'ml' ? 'lt' : 'kg')}`
 })))
 
-const filteredProviderOptions = computed(() => {
-  const selMat = materials.value.find(m => m._id === inForm.value.rawMaterial)
-  if (selMat?.provider) {
-    const mainId = typeof selMat.provider === 'object' ? selMat.provider._id : selMat.provider
-    const main = providers.value.find(p => p._id === mainId)
-    if (main) {
-      return [{ value: main._id, label: `${main.name} ⭐ (Principal)` }, ...providers.value.filter(p => p._id !== mainId).map(p => ({ value: p._id, label: p.name }))]
-    }
-  }
-  return providers.value.map(p => ({ value: p._id, label: p.name }))
-})
+const providerOptions = computed(() =>
+  providers.value.map(p => ({ value: p._id, label: p.name }))
+)
+
+const filteredProviderOptions = computed(() => providerOptions.value)
 
 const entityOptions = computed(() =>
   dispatchPoints.value.map(p => ({ value: p.name, label: p.name }))
@@ -93,6 +103,22 @@ const entityOptions = computed(() =>
 const receptionPointOptions = computed(() =>
   receptionPoints.value.map(p => ({ value: p.name, label: p.name }))
 )
+
+// Provider mismatch detection for reception items
+const providerMismatchIndices = computed(() => {
+  const indices: number[] = []
+  if (!inForm.value.provider) return indices
+  inForm.value.items.forEach((item, idx) => {
+    if (!item.rawMaterial) return
+    const mat = materials.value.find(m => m._id === item.rawMaterial)
+    if (!mat?.provider) return
+    const matProviderId = typeof mat.provider === 'object' ? mat.provider._id : mat.provider
+    if (matProviderId !== inForm.value.provider) {
+      indices.push(idx)
+    }
+  })
+  return indices
+})
 
 // --- Logic Coordination ---
 const handlePageChange = (page: number) => {
@@ -114,20 +140,72 @@ const runFetchMovements = async () => {
   }
 }
 
+// --- Helpers ---
+const getCostPerDisplayUnit = (mat: typeof materials.value[0]) => {
+  const isWeight = mat.unit === 'g' || mat.unit === 'ml'
+  if (mat.presentationPrice && mat.presentationQuantity && mat.presentationQuantity > 0) {
+    const displayQty = isWeight ? mat.presentationQuantity / 1000 : mat.presentationQuantity
+    return displayQty > 0 ? mat.presentationPrice / displayQty : 0
+  }
+  return isWeight ? mat.cost * 1000 : mat.cost
+}
+
+const resetInForm = () => {
+  inForm.value = {
+    date: getEcuadorDate(), time: getEcuadorTime(),
+    provider: '', receptionPoint: '', invoiceRef: '', invoiceDueDate: '',
+    responsible: 'Danny', observation: '', suggestedOrderId: '',
+    items: [{ rawMaterial: '', quantity: 0, unitCost: 0 }]
+  }
+}
+
+const resetOutForm = () => {
+  outForm.value = {
+    date: getEcuadorDate(), time: getEcuadorTime(),
+    entity: '', responsible: '', observation: '',
+    items: [{ rawMaterial: '', sourceReceptionPoint: '', quantity: 0 }]
+  }
+  locationStocksMap.value = {}
+}
+
+const resetLossForm = () => {
+  lossForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: 'Danny', observation: '', reason: 'CADUCIDAD' }
+}
+
 // --- Submit Actions ---
 const onInSubmit = async () => {
   isSubmitting.value = true
   const combinedDate = `${inForm.value.date}T${inForm.value.time}:00-05:00`
   const user = JSON.parse(localStorage.getItem('user_info') || '{}')
 
-  const selMat = materials.value.find(m => m._id === inForm.value.rawMaterial)
-  const backendQty = (selMat?.unit === 'g' || selMat?.unit === 'ml') ? inForm.value.quantity * 1000 : inForm.value.quantity
-  const backendCost = (selMat?.unit === 'g' || selMat?.unit === 'ml') ? inForm.value.unitCost / 1000 : inForm.value.unitCost
+  // Build items payload
+  const items = inForm.value.items
+    .filter(item => item.rawMaterial && item.quantity > 0)
+    .map(item => {
+      const mat = materials.value.find(m => m._id === item.rawMaterial)
+      const isWeight = mat?.unit === 'g' || mat?.unit === 'ml'
+      const backendQty = isWeight ? item.quantity * 1000 : item.quantity
+      const backendCost = isWeight ? item.unitCost / 1000 : item.unitCost
+      return {
+        rawMaterial: item.rawMaterial,
+        quantity: backendQty,
+        unitCost: backendCost,
+        totalValue: item.quantity * item.unitCost,
+      }
+    })
 
   try {
-    await WarehouseService.createMovement({
-      type: 'IN', ...inForm.value, quantity: backendQty, unitCost: backendCost,
-      totalValue: inForm.value.quantity * inForm.value.unitCost, date: combinedDate, user: user._id
+    await WarehouseService.createBatch({
+      type: 'IN',
+      date: combinedDate,
+      user: user._id,
+      responsible: inForm.value.responsible,
+      observation: inForm.value.observation,
+      provider: inForm.value.provider || undefined,
+      invoiceRef: inForm.value.invoiceRef,
+      invoiceDueDate: inForm.value.invoiceDueDate,
+      receptionPoint: inForm.value.receptionPoint || undefined,
+      items,
     })
     success('Recepción registrada exitosamente')
     if (inForm.value.suggestedOrderId) {
@@ -137,6 +215,7 @@ const onInSubmit = async () => {
     resetInForm()
     activeTab.value = 'movements'
     await Promise.all([runFetchMovements(), fetchDependencies()])
+    fetchExpiringInvoices()
   } catch (e: any) { showError(e.message || 'Error al guardar') }
   finally { isSubmitting.value = false }
 }
@@ -145,25 +224,40 @@ const onOutSubmit = async () => {
   isSubmitting.value = true
   const combinedDate = `${outForm.value.date}T${outForm.value.time}:00-05:00`
   const user = JSON.parse(localStorage.getItem('user_info') || '{}')
-  const selMat = materials.value.find(m => m._id === outForm.value.rawMaterial)
-  const backendQty = (selMat?.unit === 'g' || selMat?.unit === 'ml') ? outForm.value.quantity * 1000 : outForm.value.quantity
+
+  const items = outForm.value.items
+    .filter(item => item.rawMaterial && item.quantity > 0)
+    .map(item => {
+      const mat = materials.value.find(m => m._id === item.rawMaterial)
+      const isWeight = mat?.unit === 'g' || mat?.unit === 'ml'
+      const backendQty = isWeight ? item.quantity * 1000 : item.quantity
+      return {
+        rawMaterial: item.rawMaterial,
+        quantity: backendQty,
+        receptionPoint: item.sourceReceptionPoint || undefined,
+      }
+    })
 
   try {
-    await WarehouseService.createMovement({
-      type: 'OUT', ...outForm.value, quantity: backendQty, date: combinedDate, user: user._id,
-      totalValue: selMat ? outForm.value.quantity * getCostPerDisplayUnit(selMat) : 0
+    await WarehouseService.createBatch({
+      type: 'OUT',
+      date: combinedDate,
+      user: user._id,
+      entity: outForm.value.entity,
+      responsible: outForm.value.responsible,
+      observation: outForm.value.observation,
+      items,
     })
     success('Despacho registrado')
     resetOutForm()
     activeTab.value = 'movements'
     await Promise.all([runFetchMovements(), fetchDependencies()])
-  } catch (e: any) { showError(e.message) }
+  } catch (e: any) { showError(e.message || 'Error al guardar') }
   finally { isSubmitting.value = false; stopHold() }
 }
 
 const onLossSubmit = async () => {
   isSubmitting.value = true
-  // Similar implementation... skipped for brevity in this draft but fully implemented in final
   const selMat = materials.value.find(m => m._id === lossForm.value.rawMaterial)
   const backendQty = (selMat?.unit === 'g' || selMat?.unit === 'ml') ? lossForm.value.quantity * 1000 : lossForm.value.quantity
   const combinedDate = `${lossForm.value.date}T${lossForm.value.time}:00-05:00`
@@ -183,13 +277,48 @@ const onLossSubmit = async () => {
 }
 
 const applySuggestion = (order: any, item: any) => {
-  inForm.value.rawMaterial = item.material._id || item.material
-  inForm.value.quantity = item.quantity
-  inForm.value.provider = order.provider?._id || order.provider
-  inForm.value.suggestedOrderId = order._id
-  inForm.value.observation = `[O.COMPRA #${order._id.slice(-4)}]`
-  const mat = materials.value.find(m => m._id === inForm.value.rawMaterial)
-  if (mat) inForm.value.unitCost = getCostPerDisplayUnit(mat)
+  // Fill the first empty item slot or add a new one
+  const emptyIdx = inForm.value.items.findIndex(i => !i.rawMaterial)
+  const mat = materials.value.find(m => m._id === (item.material?._id || item.material))
+  const unitCost = mat ? getCostPerDisplayUnit(mat) : 0
+
+  const newItem: ReceptionItem = {
+    rawMaterial: item.material._id || item.material,
+    quantity: item.quantity,
+    unitCost,
+  }
+
+  if (emptyIdx >= 0) {
+    const items = [...inForm.value.items]
+    items[emptyIdx] = newItem
+    inForm.value = { ...inForm.value, items }
+  } else {
+    inForm.value = { ...inForm.value, items: [...inForm.value.items, newItem] }
+  }
+
+  if (!inForm.value.provider) {
+    inForm.value.provider = order.provider?._id || order.provider || ''
+  }
+  if (!inForm.value.suggestedOrderId) {
+    inForm.value.suggestedOrderId = order._id
+  }
+  if (!inForm.value.observation) {
+    inForm.value.observation = `[O.COMPRA #${order._id.slice(-4)}]`
+  }
+}
+
+// --- Fetch Expiring Invoices ---
+const fetchExpiringInvoices = async () => {
+  try {
+    const data = await WarehouseService.getInvoices(false)
+    const invoices: any[] = data.data || []
+    const now = new Date()
+    expiringInvoiceCount.value = invoices.filter(inv => {
+      const due = new Date(inv.invoiceDueDate)
+      const daysLeft = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      return daysLeft <= 7
+    }).length
+  } catch { /* non-critical */ }
 }
 
 // --- Hold Logic ---
@@ -203,44 +332,43 @@ const startHold = () => {
 }
 const stopHold = () => { isHolding.value = false; holdProgress.value = 0; clearInterval(holdTimer) }
 
-// --- Helpers ---
-const resetInForm = () => { inForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, unitCost: 0, provider: '', responsible: 'Danny', observation: '', suggestedOrderId: '', receptionPoint: '' } }
-const resetOutForm = () => { outForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: '', entity: '', observation: '', expectedSaleValue: 0, receptionPoint: '' }; locationStocks.value = [] }
-const resetLossForm = () => { lossForm.value = { date: getEcuadorDate(), time: getEcuadorTime(), rawMaterial: '', quantity: 0, responsible: 'Danny', observation: '', reason: 'CADUCIDAD' } }
-
 // --- Lifecycle ---
-onMounted(() => { fetchDependencies(); runFetchMovements(); fetchWarehouseSettings() })
-
-// Compute cost per display unit ($/kg or $/lt or $/u) from a material
-// Uses presentationPrice/presentationQuantity as source of truth (avoids unit ambiguity in stored cost field)
-const getCostPerDisplayUnit = (mat: typeof materials.value[0]) => {
-  const isWeight = mat.unit === 'g' || mat.unit === 'ml'
-  if (mat.presentationPrice && mat.presentationQuantity && mat.presentationQuantity > 0) {
-    const displayQty = isWeight ? mat.presentationQuantity / 1000 : mat.presentationQuantity
-    return displayQty > 0 ? mat.presentationPrice / displayQty : 0
-  }
-  // Fallback: cost field (assumed $/g for weight materials)
-  return isWeight ? mat.cost * 1000 : mat.cost
-}
-
-// Auto-fill cost when material changes in Reception
-watch(() => inForm.value.rawMaterial, (id) => {
-  const mat = materials.value.find(m => m._id === id)
-  if (mat) {
-    inForm.value.unitCost = getCostPerDisplayUnit(mat)
-    if (mat.provider) inForm.value.provider = typeof mat.provider === 'object' ? mat.provider._id : mat.provider
-  }
+onMounted(() => {
+  fetchDependencies()
+  runFetchMovements()
+  fetchWarehouseSettings()
+  fetchExpiringInvoices()
 })
+
+// Auto-fill cost when rawMaterial changes in each reception item
+watch(() => inForm.value.items, (items) => {
+  items.forEach((item, idx) => {
+    if (item.rawMaterial) {
+      const mat = materials.value.find(m => m._id === item.rawMaterial)
+      if (mat && item.unitCost === 0) {
+        const newItems = [...inForm.value.items]
+        newItems[idx] = { ...item, unitCost: getCostPerDisplayUnit(mat) }
+        inForm.value = { ...inForm.value, items: newItems }
+      }
+    }
+  })
+}, { deep: true })
 
 watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
 
-watch(() => outForm.value.rawMaterial, async (id) => {
-  locationStocks.value = []
-  outForm.value.receptionPoint = ''
-  if (id) {
-    try { locationStocks.value = await WarehouseService.getStockByLocation(id) } catch { /* non-critical */ }
+// Watch outForm items for rawMaterial changes to fetch locationStocks per item
+watch(() => outForm.value.items.map(i => i.rawMaterial), async (rawMaterialIds, oldIds) => {
+  for (let idx = 0; idx < rawMaterialIds.length; idx++) {
+    const id = rawMaterialIds[idx]
+    const oldId = oldIds?.[idx]
+    if (id && id !== oldId && !locationStocksMap.value[id]) {
+      try {
+        const stocks = await WarehouseService.getStockByLocation(id)
+        locationStocksMap.value = { ...locationStocksMap.value, [id]: stocks }
+      } catch { /* non-critical */ }
+    }
   }
-})
+}, { deep: true })
 
 </script>
 
@@ -272,6 +400,16 @@ watch(() => outForm.value.rawMaterial, async (id) => {
       </button>
     </div>
 
+    <!-- Expiring invoice banner -->
+    <div v-if="activeTab === 'movements' && expiringInvoiceCount > 0" class="invoice-alert-banner">
+      <i class="fas fa-exclamation-triangle"></i>
+      <span>
+        Tienes <strong>{{ expiringInvoiceCount }} factura{{ expiringInvoiceCount !== 1 ? 's' : '' }}</strong>
+        que vence{{ expiringInvoiceCount !== 1 ? 'n' : '' }} pronto o ya venci{{ expiringInvoiceCount !== 1 ? 'eron' : 'ó' }}.
+      </span>
+      <router-link to="/supply-chain/invoices" class="invoice-alert-link">Ver facturas</router-link>
+    </div>
+
     <!-- Content -->
     <div class="wh-content">
       <WarehouseHistoryTable v-if="activeTab === 'movements'"
@@ -286,6 +424,7 @@ watch(() => outForm.value.rawMaterial, async (id) => {
         :suggestedOrders="suggestedOrders" :isSubmitting="isSubmitting"
         :materialOptions="materialOptions" :filteredProviderOptions="filteredProviderOptions"
         :receptionPointOptions="receptionPointOptions"
+        :providerMismatchIndices="providerMismatchIndices"
         @submit="onInSubmit" @apply-suggestion="applySuggestion"
       />
 
@@ -293,7 +432,7 @@ watch(() => outForm.value.rawMaterial, async (id) => {
         v-model:form="outForm" :materials="materials" :materialOptions="materialOptions"
         :entityOptions="entityOptions" :isSubmitting="isSubmitting"
         :holdProgress="holdProgress" :isHolding="isHolding"
-        :locationStocks="locationStocks"
+        :locationStocksMap="locationStocksMap"
         @submit="onOutSubmit" @start-hold="startHold" @cancel-hold="stopHold"
       />
 
@@ -399,6 +538,38 @@ watch(() => outForm.value.rawMaterial, async (id) => {
   &.tab-in.active   { color: #059669; border-bottom-color: #059669; background: rgba(#059669, 0.04); }
   &.tab-out.active  { color: #dc2626; border-bottom-color: #dc2626; background: rgba(#dc2626, 0.04); }
   &.tab-loss.active { color: #d97706; border-bottom-color: #d97706; background: rgba(#d97706, 0.04); }
+}
+
+// ─── Invoice alert banner ─────────────────────────────────────────────────────
+
+.invoice-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1.5rem;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+  font-size: 0.88rem;
+  color: #92400e;
+
+  @media (min-width: 768px) { padding: 0.75rem 2.5rem; }
+
+  i { color: #d97706; flex-shrink: 0; }
+  span { flex: 1; }
+}
+
+.invoice-alert-link {
+  font-weight: 700;
+  color: $NICOLE-PURPLE;
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba($NICOLE-PURPLE, 0.08);
+  border-radius: 6px;
+  transition: background 0.15s;
+
+  &:hover { background: rgba($NICOLE-PURPLE, 0.16); }
 }
 
 // ─── Content ──────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import OrderService from '@/services/order.service'
 import { useToast } from '@/composables/useToast'
@@ -26,6 +26,10 @@ const showInvoiceModal = ref(false)
 const showPaymentModal = ref(false)
 const showInvoiceConfirmModal = ref(false)
 const showDeleteModal = ref(false)
+const authStatus = ref<string | null>(null)
+const isAuthLoading = ref(false)
+const isPollingAuth = ref(false)
+let authPollTimer: ReturnType<typeof setTimeout> | null = null
 
 const fetchOrder = async () => {
   const id = route.params.id as string
@@ -35,11 +39,67 @@ const fetchOrder = async () => {
   try {
     const data = await OrderService.getOrder(id)
     order.value = data
+    if (data.invoiceStatus === 'PROCESSED') {
+      fetchAuthStatus()
+    }
   } catch (error) {
     console.error('Error fetching order:', error)
   } finally {
     isLoading.value = false
   }
+}
+
+const fetchAuthStatus = async () => {
+  const id = route.params.id as string
+  if (!id) return
+  isAuthLoading.value = true
+  try {
+    const data = await OrderService.getInvoiceAuthStatus(id)
+    authStatus.value = data.estado
+  } catch {
+    authStatus.value = null
+  } finally {
+    isAuthLoading.value = false
+  }
+}
+
+// Poll every 6s for up to 20 attempts (2 min total) — SRI can be slow
+const pollAuthStatus = (maxAttempts = 20, intervalMs = 6000) => {
+  if (authPollTimer) clearTimeout(authPollTimer)
+  let attempts = 0
+  isPollingAuth.value = true
+  const poll = async () => {
+    if (attempts >= maxAttempts) {
+      isPollingAuth.value = false
+      return
+    }
+    attempts++
+    await fetchAuthStatus()
+    if (authStatus.value === 'Autorizado') {
+      isPollingAuth.value = false
+      success('¡Factura autorizada por el SRI!')
+    } else {
+      authPollTimer = setTimeout(poll, intervalMs)
+    }
+  }
+  poll()
+}
+
+const handleTriggerAuth = async () => {
+  const id = route.params.id as string
+  isAuthLoading.value = true
+  try {
+    await OrderService.triggerInvoiceAuth(id)
+    success('Enviado al SRI. Verificando autorización (puede tomar 1-2 min)...')
+    pollAuthStatus()
+  } catch (e: any) {
+    showError(e.data?.message || e.message || 'Error al enviar al SRI')
+    isAuthLoading.value = false
+  }
+}
+
+const handleRefreshAuthStatus = () => {
+  fetchAuthStatus()
 }
 
 const totalPaid = computed(() => {
@@ -93,8 +153,10 @@ const executeInvoiceGeneration = async () => {
   isLoading.value = true
   try {
     await OrderService.generateInvoice(order.value._id)
-    success("Factura generada y autorizada exitosamente.")
+    success("Factura generada. Verificando autorización SRI...")
     fetchOrder()
+    authStatus.value = null
+    pollAuthStatus()
   } catch (e: any) {
     const data = e.data
     const contificoMsg = data?.contificoMessage
@@ -175,6 +237,10 @@ const handleReturnOrder = async () => {
 onMounted(() => {
   fetchOrder()
 })
+
+onUnmounted(() => {
+  if (authPollTimer) clearTimeout(authPollTimer)
+})
 </script>
 
 <template>
@@ -254,10 +320,15 @@ onMounted(() => {
             :invoiceNeeded="order.invoiceNeeded"
             :invoiceData="order.invoiceData"
             :generatedInvoice="order.invoiceInfo"
+            :authStatus="authStatus"
+            :isAuthLoading="isAuthLoading"
+            :isPollingAuth="isPollingAuth"
             @open-invoice-modal="showInvoiceModal = true"
             @open-payment-modal="showPaymentModal = true"
             @generate-invoice="handleGenerateInvoice"
             @view-invoice="handleViewInvoice"
+            @trigger-auth="handleTriggerAuth"
+            @refresh-auth="handleRefreshAuthStatus"
           />
         </section>
       </div>

@@ -153,6 +153,12 @@ const router = createRouter({
       component: () => import('../views/SupplyChain/SupplierOrderHistoryView.vue'),
       meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Historial de Pedidos' }
     },
+    {
+      path: '/supply-chain/invoices',
+      name: 'supply-chain-invoices',
+      component: () => import('../views/SupplyChain/InvoicesView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Facturas de Compra' }
+    },
     // POS / RetailManager Routes
     {
       path: '/pos/shipments',

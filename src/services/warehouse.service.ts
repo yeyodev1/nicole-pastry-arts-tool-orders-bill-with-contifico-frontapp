@@ -23,6 +23,21 @@ class WarehouseService extends APIBase {
     const response = await this.get<{ data: { location: string; stock: number }[] }>(`warehouse/stock-by-location/${rawMaterialId}`)
     return response.data.data
   }
+
+  async createBatch(payload: any) {
+    const response = await this.post<any>('warehouse/batch', payload);
+    return response.data;
+  }
+
+  async getInvoices(paid = false) {
+    const response = await this.get<any>(`warehouse/invoices?paid=${paid}`);
+    return response.data;
+  }
+
+  async markInvoicePaid(invoiceRef: string) {
+    const response = await this.patch<any>(`warehouse/invoices/${encodeURIComponent(invoiceRef)}/pay`, {});
+    return response.data;
+  }
 }
 
 export default new WarehouseService();
