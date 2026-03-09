@@ -28,6 +28,10 @@ export interface Movement {
   entity?: string;
   provider?: Provider;
   user?: { _id: string; name: string };
+  invoiceRef?: string;
+  invoiceDueDate?: string;
+  isPaid?: boolean;
+  batchId?: string;
 }
 
 export interface Option {
@@ -38,29 +42,38 @@ export interface Option {
   rawItem?: any;
 }
 
-export interface WarehouseInForm {
-  date: string;
-  time: string;
+export interface ReceptionItem {
   rawMaterial: string;
   quantity: number;
   unitCost: number;
+}
+
+export interface DispatchItem {
+  rawMaterial: string;
+  sourceReceptionPoint: string;
+  quantity: number;
+}
+
+export interface WarehouseInForm {
+  date: string;
+  time: string;
   provider: string;
+  receptionPoint: string;
+  invoiceRef: string;
+  invoiceDueDate: string;
   responsible: string;
   observation: string;
   suggestedOrderId: string;
-  receptionPoint: string;
+  items: ReceptionItem[];
 }
 
 export interface WarehouseOutForm {
   date: string;
   time: string;
-  rawMaterial: string;
-  quantity: number;
-  responsible: string;
   entity: string;
+  responsible: string;
   observation: string;
-  expectedSaleValue: number;
-  receptionPoint: string;
+  items: DispatchItem[];
 }
 
 export interface LocationStock {
@@ -76,4 +89,15 @@ export interface WarehouseLossFormState {
   responsible: string;
   observation: string;
   reason: string;
+}
+
+export interface InvoiceGroup {
+  _id: string;
+  invoiceDueDate: string;
+  isPaid: boolean;
+  provider?: Provider;
+  totalValue: number;
+  count: number;
+  materials: string[];
+  batchId?: string;
 }

@@ -180,6 +180,26 @@ class OrderService extends APIBase {
     }
   }
 
+  async getInvoiceAuthStatus(id: string): Promise<{ documento_id: string; tipo_registro: string; tipo_documento: string; estado: string }> {
+    try {
+      const response = await this.get<any>(`orders/${id}/invoice/auth-status`)
+      return response.data
+    } catch (error) {
+      console.error('Error fetching invoice auth status:', error)
+      throw error
+    }
+  }
+
+  async triggerInvoiceAuth(id: string): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/invoice/authorize`, {})
+      return response.data
+    } catch (error) {
+      console.error('Error triggering invoice auth:', error)
+      throw error
+    }
+  }
+
   async triggerBatchInvoice(): Promise<{ remaining: number; results: { processed: number; failed: number } }> {
     try {
       const response = await this.post<any>('orders/batch-invoice', {})
