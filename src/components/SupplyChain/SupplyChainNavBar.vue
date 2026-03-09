@@ -32,6 +32,7 @@ const handleLogout = () => {
     </div>
     <nav class="sub-nav">
       <router-link to="/supply-chain/summary" class="nav-item" active-class="active">Inventario</router-link>
+      <router-link to="/supply-chain/orders" class="nav-item" active-class="active">Compras</router-link>
       <router-link to="/supply-chain/providers" class="nav-item" active-class="active">Proveedores</router-link>
       <router-link to="/supply-chain/materials" class="nav-item" active-class="active">Materia Prima</router-link>
       <router-link to="/supply-chain/categories" class="nav-item" active-class="active">Categorías</router-link>
@@ -144,7 +145,10 @@ const handleLogout = () => {
 
   span {
     display: none;
-    @media (min-width: 640px) { display: inline; }
+
+    @media (min-width: 640px) {
+      display: inline;
+    }
   }
 
   &:hover {
