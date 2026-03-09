@@ -280,18 +280,6 @@ const cancelHold = () => {
           </span>
         </div>
 
-        <div class="field half">
-          <label>Venta esperada <span class="optional">(Opcional)</span></label>
-          <div class="input-with-prefix">
-            <span class="prefix">$</span>
-            <input
-              type="number"
-              :value="form.expectedSaleValue"
-              @input="e => emit('update:form', { ...form, expectedSaleValue: Number((e.target as HTMLInputElement).value) })"
-              min="0" step="0.01" placeholder="0.00"
-            />
-          </div>
-        </div>
 
         <div class="field full">
           <label>Destino <span class="unit-hint">(punto de despacho)</span></label>
@@ -470,14 +458,6 @@ const cancelHold = () => {
         </div>
       </div>
 
-      <!-- Alerta rentabilidad -->
-      <div v-if="showRentabilityAlert" class="alert-card alert-card--rent">
-        <div class="alert-card__icon">⚠️</div>
-        <div>
-          <strong>Alerta de Rentabilidad</strong>
-          <p>El costo supera o iguala la venta esperada.</p>
-        </div>
-      </div>
 
       <!-- Empty state -->
       <div v-if="!selectedMaterial" class="summary-empty">

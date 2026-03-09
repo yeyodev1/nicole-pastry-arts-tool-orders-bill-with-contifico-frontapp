@@ -173,14 +173,16 @@ const confirmIn = () => {
 
         <div class="field half" v-if="selectedMaterial">
           <label>Precio de compra / {{ getDisplayUnit(selectedMaterial.unit) }} <span class="unit-hint">(USD)</span></label>
-          <div class="input-with-prefix">
+          <div class="input-with-prefix input-readonly">
             <span class="prefix">$</span>
             <input
               type="number"
               :value="form.unitCost"
-              @input="e => emit('update:form', { ...form, unitCost: Number((e.target as HTMLInputElement).value) })"
-              min="0" step="0.0001" placeholder="0.0000"
+              readonly
+              tabindex="-1"
+              placeholder="0.0000"
             />
+            <span class="readonly-badge"><i class="fas fa-lock"></i></span>
           </div>
         </div>
 
@@ -440,6 +442,7 @@ const confirmIn = () => {
 
 .input-with-prefix {
   display: flex;
+  align-items: center;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   overflow: hidden;
@@ -464,6 +467,39 @@ const confirmIn = () => {
     border: none !important;
     box-shadow: none !important;
     padding-left: 0.5rem !important;
+  }
+
+  // ─── Read-only state ─────────────────────────────────────────────────────
+  &.input-readonly {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    border-style: dashed;
+    cursor: not-allowed;
+
+    &:focus-within {
+      border-color: #e2e8f0;
+      box-shadow: none;
+    }
+
+    .prefix {
+      background: #f1f5f9;
+      color: #94a3b8;
+    }
+
+    input {
+      background: #f8fafc;
+      color: #64748b;
+      font-weight: 600;
+      cursor: not-allowed;
+    }
+  }
+
+  .readonly-badge {
+    padding: 0 0.65rem;
+    color: #94a3b8;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
   }
 }
 

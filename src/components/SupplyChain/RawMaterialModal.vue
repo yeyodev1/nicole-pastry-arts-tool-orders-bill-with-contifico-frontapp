@@ -349,12 +349,6 @@ const categoryOptions = computed(() => {
           </div>
 
           <div class="modal-footer pro-footer">
-            <div v-if="materialToEdit" class="delete-section">
-              <button class="btn-delete" @click="openDeleteModal">
-                <i class="fas fa-trash-alt"></i> ELIMINAR REGISTRO
-              </button>
-            </div>
-            
             <div class="main-actions">
               <button class="btn-cancel" @click="$emit('close')">Cerrar</button>
               <HoldConfirmButton 
