@@ -36,11 +36,26 @@ const itemTotal = (item: ReceptionItem) => item.quantity * (item.unitCost || 0)
 
 const grandTotal = computed(() => props.form.items.reduce((s, i) => s + itemTotal(i), 0))
 
+const itemsWithZeroQty = computed(() =>
+  props.form.items.filter(i => i.rawMaterial && i.quantity <= 0).length
+)
+
 const isValid = computed(() =>
   props.form.invoiceRef.trim() !== '' &&
   props.form.invoiceDueDate !== '' &&
-  props.form.items.some(i => i.rawMaterial && i.quantity > 0)
+  props.form.items.some(i => i.rawMaterial && i.quantity > 0) &&
+  itemsWithZeroQty.value === 0 &&
+  props.providerMismatchIndices.length === 0
 )
+
+const submitBlockReason = computed(() => {
+  if (!props.form.invoiceRef.trim()) return 'Falta el N° de factura'
+  if (!props.form.invoiceDueDate) return 'Falta la fecha límite de la factura'
+  if (props.providerMismatchIndices.length > 0) return 'Hay materiales de proveedores distintos'
+  if (itemsWithZeroQty.value > 0) return 'Hay materias primas con cantidad 0'
+  if (!props.form.items.some(i => i.rawMaterial && i.quantity > 0)) return 'Agrega al menos un material'
+  return null
+})
 
 const addItem = () =>
   emit('update:form', { ...props.form, items: [...props.form.items, { rawMaterial: '', quantity: 0, unitCost: 0 }] })
@@ -178,18 +193,22 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
             <!-- Provider mismatch alert -->
             <div v-if="providerMismatchIndices.includes(idx)" class="alert-mismatch">
               <i class="fas fa-exclamation-triangle"></i>
-              Este material pertenece a un proveedor distinto al seleccionado.
+              <span>Este material pertenece a un proveedor distinto. <strong>Elimínalo o cambia el proveedor.</strong> No se puede guardar con materiales de distintos proveedores.</span>
             </div>
 
             <div class="item-row__amounts">
-              <div class="field">
+              <div class="field" :class="{ 'field--error': item.rawMaterial && item.quantity <= 0 }">
                 <label>Cantidad <span class="unit-hint">{{ getMaterialById(item.rawMaterial) ? `(${getDisplayUnit(getMaterialById(item.rawMaterial)?.unit)})` : '' }}</span></label>
                 <input
                   type="number"
                   :value="item.quantity"
                   @input="e => updateItem(idx, { quantity: Number((e.target as HTMLInputElement).value) })"
                   min="0" step="0.01" placeholder="0.00"
+                  :class="{ 'input-error': item.rawMaterial && item.quantity <= 0 }"
                 />
+                <span v-if="item.rawMaterial && item.quantity <= 0" class="field-error-msg">
+                  <i class="fas fa-exclamation-circle"></i> La cantidad debe ser mayor a 0
+                </span>
               </div>
               <div class="field">
                 <label>Precio / {{ getMaterialById(item.rawMaterial) ? getDisplayUnit(getMaterialById(item.rawMaterial)?.unit) : 'u' }} <span class="unit-hint">(USD)</span></label>
@@ -217,10 +236,21 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
         </div>
       </div>
 
-      <button class="btn-submit" @click="trySubmit" :disabled="isSubmitting">
-        <i class="fas fa-check"></i>
-        {{ isSubmitting ? 'Registrando...' : 'Registrar Entrada' }}
-      </button>
+      <div class="submit-area">
+        <button
+          class="btn-submit"
+          @click="trySubmit"
+          :disabled="isSubmitting || !isValid"
+          :class="{ 'btn-submit--blocked': !isValid }"
+        >
+          <i class="fas" :class="isSubmitting ? 'fa-spinner fa-spin' : !isValid ? 'fa-lock' : 'fa-check'"></i>
+          {{ isSubmitting ? 'Registrando...' : 'Registrar Entrada' }}
+        </button>
+        <p v-if="submitBlockReason && !isSubmitting" class="submit-block-reason">
+          <i class="fas fa-exclamation-triangle"></i>
+          {{ submitBlockReason }}
+        </p>
+      </div>
     </div>
 
     <!-- RIGHT: Summary -->
@@ -475,6 +505,24 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
   text-transform: none; letter-spacing: 0; margin-left: 2px;
 }
 
+.submit-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.submit-block-reason {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #dc2626;
+  i { font-size: 0.75rem; }
+}
+
 .btn-submit {
   width: 100%; padding: 0.9rem; border: none; border-radius: 10px;
   background: #059669; color: white;
@@ -483,7 +531,13 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
   transition: all 0.2s;
 
   &:hover:not(:disabled) { background: #047857; }
-  &:disabled { opacity: 0.6; cursor: not-allowed; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &--blocked { background: #94a3b8; }
+}
+
+.input-error {
+  border-color: #dc2626 !important;
+  &:focus { box-shadow: 0 0 0 3px rgba(220,38,38,0.1) !important; }
 }
 
 // Summary panel
