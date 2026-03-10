@@ -64,7 +64,9 @@ const formData = reactive<OrderFormData>({
     tipo_ping: 'D'
   },
   globalDiscountPercentage: 0,
-  isGlobalCourtesy: false
+  isGlobalCourtesy: false,
+  skipProduction: false,
+  exitPoint: ''
 })
 
 // Cart
@@ -215,6 +217,12 @@ const executeOrderAction = async () => {
           fecha: new Date().toISOString().split('T')[0]
         }
       } : {}),
+      // Si es retiro directo de tienda, marcar producción como finalizada
+      ...(formData.skipProduction ? {
+        productionStage: 'FINISHED' as const,
+        skipProduction: true,
+        exitPoint: formData.exitPoint
+      } : {}),
       products: cart.value.map(item => ({
         contifico_id: item.contifico_id,
         name: item.name,
@@ -275,7 +283,9 @@ const resetForm = () => {
       tipo_ping: 'D'
     },
     globalDiscountPercentage: 0,
-    isGlobalCourtesy: false
+    isGlobalCourtesy: false,
+    skipProduction: false,
+    exitPoint: ''
   })
 
   // Clear Cart & State
@@ -322,6 +332,8 @@ onMounted(async () => {
         settledIslandName: order.settledIslandName || 'San Marino',
         globalDiscountPercentage: order.globalDiscountPercentage || 0,
         isGlobalCourtesy: order.isGlobalCourtesy || false,
+        skipProduction: order.skipProduction || false,
+        exitPoint: order.exitPoint || '',
         payments: order.payments || []
       })
 

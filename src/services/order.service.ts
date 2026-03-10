@@ -27,6 +27,9 @@ interface OrderData {
   responsible: string
   salesChannel: string
   paymentMethod: string
+  skipProduction?: boolean
+  exitPoint?: string
+  productionStage?: 'PENDING' | 'IN_PROCESS' | 'FINISHED' | 'VOID'
 }
 
 interface OrderResponse {

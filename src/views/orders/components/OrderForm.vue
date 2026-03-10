@@ -274,6 +274,28 @@ const selectTime = (time: string) => {
       <textarea v-model="props.modelValue.comments" rows="3" placeholder="Detalles adicionales del pedido..."></textarea>
     </div>
 
+    <!-- No enviar a producción -->
+    <div class="production-skip-toggle">
+      <label>
+        <input type="checkbox" v-model="props.modelValue.skipProduction" />
+        <span class="toggle-text">
+          <i class="fa-solid fa-store"></i>
+          No enviar a producción (disponible hoy)
+        </span>
+      </label>
+    </div>
+
+    <div v-if="props.modelValue.skipProduction" class="exit-point-fields">
+      <h3><i class="fa-solid fa-location-dot"></i> Punto de Salida</h3>
+      <p class="exit-point-hint">Indica desde qué local o punto se entregará este postre.</p>
+      <div class="radio-group">
+        <label v-for="branch in BRANCHES" :key="branch" class="radio-label">
+          <input type="radio" v-model="props.modelValue.exitPoint" :value="branch" />
+          {{ branch }}
+        </label>
+      </div>
+    </div>
+
     <div class="invoice-toggle">
       <label>
         <input type="checkbox" v-model="props.modelValue.invoiceNeeded" />
@@ -756,6 +778,91 @@ const selectTime = (time: string) => {
       &:hover {
         background: #fee2e2;
       }
+    }
+  }
+}
+
+.production-skip-toggle {
+  margin: 2rem 0 0;
+  padding: 1rem;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #f59e0b;
+  }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    width: 100%;
+
+    input[type="checkbox"] {
+      width: 1.2rem;
+      height: 1.2rem;
+      accent-color: #d97706;
+      cursor: pointer;
+    }
+
+    .toggle-text {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #92400e;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+
+      i {
+        color: #d97706;
+      }
+    }
+  }
+}
+
+.exit-point-fields {
+  padding: 1.5rem;
+  background: #fef3c7;
+  border-radius: 0 0 12px 12px;
+  margin-top: -1rem;
+  border: 1px solid #fde68a;
+  border-top: none;
+  margin-bottom: 2rem;
+  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #92400e;
+    margin: 0 0 0.25rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    i {
+      color: #d97706;
+    }
+  }
+
+  .exit-point-hint {
+    font-size: 0.85rem;
+    color: #b45309;
+    margin: 0 0 1rem 0;
+  }
+
+  .radio-group .radio-label {
+    &:has(input:checked) {
+      background: rgba(#d97706, 0.1);
+      border-color: #d97706;
+      color: #92400e;
+      box-shadow: 0 4px 12px rgba(#d97706, 0.15);
+    }
+
+    input {
+      accent-color: #d97706;
     }
   }
 }

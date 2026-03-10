@@ -87,6 +87,20 @@ const deliveryBadgeClass = computed(() => ({
               <span class="item-value">{{ branchLabel }}</span>
             </div>
           </div>
+          <div v-if="order.skipProduction" class="store-pickup-indicator">
+            <i class="fa-solid fa-store"></i>
+            <div>
+              <span class="item-label">Tipo de despacho</span>
+              <span class="item-value store-value">Retiro directo de tienda</span>
+            </div>
+          </div>
+          <div v-if="order.skipProduction && order.exitPoint" class="info-item">
+            <i class="fa-solid fa-location-dot"></i>
+            <div>
+              <span class="item-label">Punto de Salida</span>
+              <span class="item-value">{{ order.exitPoint }}</span>
+            </div>
+          </div>
         </div>
 
         <div v-else class="delivery-info">
@@ -227,6 +241,39 @@ const deliveryBadgeClass = computed(() => ({
       font-size: 1rem;
       font-weight: 700;
       color: $text-dark;
+    }
+  }
+
+  .store-pickup-indicator {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+
+    i {
+      margin-top: 0.25rem;
+      color: #d97706;
+      font-size: 1rem;
+    }
+
+    div {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .item-label {
+      font-size: 0.7rem;
+      color: #b45309;
+      font-weight: 600;
+    }
+
+    .store-value {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: #92400e;
     }
   }
 

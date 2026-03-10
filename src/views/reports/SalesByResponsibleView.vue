@@ -67,6 +67,22 @@ const isManager = computed(() => {
   return role === 'SALES_MANAGER' || role === 'ADMIN' || role === 'SALES'
 })
 
+const currentUserName = computed(() => {
+  const userInfoStr = localStorage.getItem('user_info')
+  if (!userInfoStr) return ''
+  const user = JSON.parse(userInfoStr)
+  return user.name || ''
+})
+
+const currentUserGoal = computed(() => {
+  const name = currentUserName.value
+  const myStat = stats.value.find((s: any) => s._id.toLowerCase() === name.toLowerCase())
+  if (myStat) {
+    return getIndividualGoal(myStat)
+  }
+  return sellerGoal.value
+})
+
 const initDates = () => {
   const now = new Date()
   const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -138,14 +154,17 @@ const commissionExampleSales = computed(() => {
 const commissionExampleBreakdown = computed(() => {
   if (!commissionTiers.value.length) return []
   const sorted = [...commissionTiers.value].sort((a, b) => a.threshold - b.threshold)
-  const sales = commissionExampleSales.value
+
+  // As requested, always show a clear, static example of $14,000 in sales
+  const exampleSalesValue = 14000
+
   return sorted.reduce((acc: any[], tier, i) => {
-    if (sales > tier.threshold) {
+    if (exampleSalesValue > tier.threshold) {
       const next = sorted[i + 1]
-      const inTier = Math.min(sales - tier.threshold, next ? next.threshold - tier.threshold : Infinity)
+      const inTier = Math.min(exampleSalesValue - tier.threshold, next ? next.threshold - tier.threshold : Infinity)
       acc.push({
         from: tier.threshold,
-        to: next ? next.threshold : sales,
+        to: next ? next.threshold : exampleSalesValue,
         rate: tier.rate,
         salesInTier: inTier,
         amount: Math.round(inTier * (tier.rate / 100) * 100) / 100
@@ -218,6 +237,7 @@ onMounted(async () => {
           <div class="nav-section">
             <span class="section-label">Herramientas</span>
             <button
+              v-if="isManager"
               class="nav-pill"
               :class="{ active: showGoalEditor }"
               @click="showGoalEditor ? showGoalEditor = false : openEditor()"
@@ -272,6 +292,7 @@ onMounted(async () => {
             Actualizar
           </button>
           <button
+            v-if="isManager"
             class="btn-goal-inline"
             :class="{ active: showGoalEditor }"
             @click="showGoalEditor ? showGoalEditor = false : openEditor()"
@@ -430,7 +451,7 @@ onMounted(async () => {
         <div v-if="commissionExampleBreakdown.length" class="commission-example">
           <div class="example-header">
             <i class="fas fa-calculator"></i>
-            <span>Ejemplo con <strong>${{ commissionExampleSales.toLocaleString() }}</strong> en ventas (meta = <strong>${{ sellerGoal.toLocaleString() }}</strong>):</span>
+            <span>Ejemplo con <strong>$14,000</strong> en ventas (meta = <strong>${{ sellerGoal.toLocaleString() }}</strong>):</span>
           </div>
           <div class="example-rows">
             <div v-for="(bracket, i) in commissionExampleBreakdown" :key="i" class="example-row">
@@ -477,7 +498,7 @@ onMounted(async () => {
             <h3>Meta del Equipo</h3>
             <div class="goal-header-right">
               <span class="goal-value">${{ teamGoal.toLocaleString() }}</span>
-              <button class="btn-edit-goal" @click="openEditor" title="Editar metas">
+              <button v-if="isManager" class="btn-edit-goal" @click="openEditor" title="Editar metas">
                 <i class="fas fa-pen"></i>
               </button>
             </div>
@@ -536,6 +557,25 @@ onMounted(async () => {
               &gt;${{ (tier.threshold / 1000).toFixed(0) }}k: <strong>{{ tier.rate }}%</strong>
             </template>
           </span>
+        </div>
+      </div>
+
+      <!-- Live commission example shown for everyone -->
+      <div v-if="commissionExampleBreakdown.length && !isManager" class="commission-example public-view">
+        <div class="example-header">
+          <i class="fas fa-calculator"></i>
+          <span>Ejemplo de cómo se calcula la comisión con <strong>$14,000</strong> en ventas (tu meta = <strong>${{ currentUserGoal.toLocaleString() }}</strong>):</span>
+        </div>
+        <div class="example-rows">
+          <div v-for="(bracket, i) in commissionExampleBreakdown" :key="i" class="example-row">
+            <span class="example-range">${{ bracket.from.toLocaleString() }} → ${{ bracket.to.toLocaleString() }}</span>
+            <span class="example-calc">${{ bracket.salesInTier.toLocaleString() }} × {{ bracket.rate }}%</span>
+            <span class="example-result">= <strong>${{ bracket.amount.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong></span>
+          </div>
+          <div class="example-total">
+            <span>Comisión total estimada en el ejemplo:</span>
+            <strong>${{ commissionExampleTotal.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</strong>
+          </div>
         </div>
       </div>
 
@@ -1313,6 +1353,68 @@ onMounted(async () => {
   color: $text-light;
 }
 
+// --- Live Commission Example (Shared) ---
+.commission-example {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1.5rem;
+
+  &.public-view {
+    margin: 0 0 1.5rem 0; // Removed horizontal margin to align with table/grid
+  }
+
+  .example-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: #92400e;
+    margin-bottom: 0.75rem;
+
+    i { color: #d97706; }
+  }
+
+  .example-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .example-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: $text-dark;
+    padding: 0.3rem 0.5rem;
+    background: rgba(255,255,255,0.6);
+    border-radius: 6px;
+
+    .example-range { color: $text-light; }
+    .example-calc { text-align: center; color: #b45309; }
+    .example-result { text-align: right; }
+  }
+
+  .example-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed #fbbf24;
+    font-size: 0.85rem;
+    color: #92400e;
+    font-weight: 600;
+
+    strong {
+      font-size: 1rem;
+      color: #d97706;
+    }
+  }
+}
+
 // --- Goal Editor Panel ---
 .goal-editor-panel {
   background: white;
@@ -1754,63 +1856,6 @@ onMounted(async () => {
     }
   }
 
-  // Live commission example
-  .commission-example {
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    border-radius: 10px;
-    padding: 0.9rem 1rem;
-    margin-bottom: 1.5rem;
-
-    .example-header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.82rem;
-      color: #92400e;
-      margin-bottom: 0.75rem;
-
-      i { color: #d97706; }
-    }
-
-    .example-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-    }
-
-    .example-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 0.5rem;
-      font-size: 0.8rem;
-      color: $text-dark;
-      padding: 0.3rem 0.5rem;
-      background: rgba(255,255,255,0.6);
-      border-radius: 6px;
-
-      .example-range { color: $text-light; }
-      .example-calc { text-align: center; color: #b45309; }
-      .example-result { text-align: right; }
-    }
-
-    .example-total {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 0.5rem;
-      padding-top: 0.5rem;
-      border-top: 1px dashed #fbbf24;
-      font-size: 0.85rem;
-      color: #92400e;
-      font-weight: 600;
-
-      strong {
-        font-size: 1rem;
-        color: #d97706;
-      }
-    }
-  }
 
   // Footer with total + save
   .editor-footer {
