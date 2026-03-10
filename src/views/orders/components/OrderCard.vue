@@ -1,7 +1,7 @@
 <script setup lang="ts">
 
 
-import { parseECTDate } from '@/utils/dateUtils'
+import { parseECTDate, formatECT } from '@/utils/dateUtils'
 
 const props = defineProps<{
   order: any
@@ -22,24 +22,35 @@ const emit = defineEmits<{
   (e: 'return'): void
 }>()
 
-// Helper Logic moved from ListView
-const formatOrderTime = (order: any) => {
+const MONTHS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+
+const formatDelivery = (order: any) => {
+  if (!order.deliveryDate) return { date: '—', time: '--:--' }
+
+  const d = parseECTDate(order.deliveryDate)
+  const day = d.getDate().toString().padStart(2, '0')
+  const month = MONTHS[d.getMonth()]
+  const dateStr = `${day} ${month}`
+
   if (order.deliveryTime && order.deliveryTime.includes(':')) {
-    return order.deliveryTime
+    return { date: dateStr, time: order.deliveryTime }
   }
-  if (!order.deliveryDate) return '--:--'
 
-  const date = parseECTDate(order.deliveryDate)
-  const isMidnight = date.getHours() === 0 && date.getMinutes() === 0
+  const isMidnight = d.getHours() === 0 && d.getMinutes() === 0
+  if (isMidnight) return { date: dateStr, time: '--:--' }
 
-  if (isMidnight) return '--:--'
+  const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false }
+  return { date: dateStr, time: new Intl.DateTimeFormat('es-EC', timeOpts).format(d) }
+}
 
-  const timeOpts: Intl.DateTimeFormatOptions = {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }
-  return new Intl.DateTimeFormat('es-EC', timeOpts).format(date).toUpperCase()
+const formatCreatedAt = (order: any) => {
+  if (!order.createdAt) return null
+  const d = new Date(order.createdAt)
+  const day = d.getDate().toString().padStart(2, '0')
+  const month = MONTHS[d.getMonth()]
+  const hours = d.getHours().toString().padStart(2, '0')
+  const mins = d.getMinutes().toString().padStart(2, '0')
+  return { date: `${day} ${month}`, time: `${hours}:${mins}` }
 }
 
 const getPaymentStatus = (order: any) => {
@@ -89,27 +100,56 @@ const handleRetry = () => emit('retry-invoice')
 
     <!-- Header -->
     <div class="card-header">
-       <div class="date-badge">
-         <i class="far fa-clock"></i>
-         <span class="date-label">Entrega:</span>
-         {{ formatOrderTime(order) }}
-       </div>
-       <span class="type-badge" :class="order.deliveryType">
-          {{ order.deliveryType === 'delivery' ? 'Delivery' : 'Retiro' }}
-       </span>
+      <div class="header-left">
+        <!-- Fecha de entrega -->
+        <div class="date-pill delivery-pill">
+          <i class="fa-solid fa-calendar-check"></i>
+          <span class="pill-label">Entrega</span>
+          <span class="pill-date">{{ formatDelivery(order).date }}</span>
+          <span class="pill-sep">·</span>
+          <span class="pill-time">{{ formatDelivery(order).time }}</span>
+        </div>
+        <!-- Fecha de registro -->
+        <div v-if="formatCreatedAt(order)" class="date-pill registered-pill">
+          <i class="fa-regular fa-calendar-plus"></i>
+          <span class="pill-label">Registro</span>
+          <span class="pill-date">{{ formatCreatedAt(order)!.date }}</span>
+          <span class="pill-sep">·</span>
+          <span class="pill-time">{{ formatCreatedAt(order)!.time }}</span>
+        </div>
+      </div>
+      <span class="type-badge" :class="order.deliveryType">
+        {{ order.deliveryType === 'delivery' ? 'Delivery' : 'Retiro' }}
+      </span>
     </div>
 
     <!-- Client Info -->
     <div class="client-section">
-       <h3 class="client-name" :title="order.customerName">{{ order.customerName }}</h3>
-       <p class="client-detail">
-          <i class="fas fa-user-circle"></i> {{ order.responsible }}
-       </p>
-       
-       <div v-if="order.comments" class="order-comments" :title="order.comments">
-          <i class="far fa-comment-dots"></i>
-          <span>{{ order.comments }}</span>
-       </div>
+      <h3 class="client-name" :title="order.customerName">{{ order.customerName }}</h3>
+      <p class="client-detail">
+        <i class="fas fa-user-circle"></i> {{ order.responsible }}
+      </p>
+
+      <!-- Sucursal / Punto de retiro -->
+      <div class="location-row">
+        <template v-if="order.skipProduction">
+          <span class="location-chip store">
+            <i class="fa-solid fa-store"></i>
+            {{ order.exitPoint || 'Tienda' }}
+          </span>
+        </template>
+        <template v-else>
+          <span class="location-chip branch">
+            <i class="fa-solid fa-location-dot"></i>
+            {{ order.branch || 'Sin sucursal' }}
+          </span>
+        </template>
+      </div>
+
+      <div v-if="order.comments" class="order-comments" :title="order.comments">
+        <i class="far fa-comment-dots"></i>
+        <span>{{ order.comments }}</span>
+      </div>
     </div>
 
     <!-- Financials -->
@@ -282,22 +322,53 @@ const handleRetry = () => emit('retry-invoice')
   .card-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    gap: 0.5rem;
 
-    .date-badge {
-      font-size: 0.85rem;
-      color: #64748b;
+    .header-left {
       display: flex;
-      align-items: center;
+      flex-direction: column;
       gap: 0.4rem;
+      min-width: 0;
+    }
 
-      .date-label {
-        font-size: 0.7rem;
-        font-weight: 700;
+    .date-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      width: fit-content;
+
+      i { font-size: 0.75rem; }
+
+      .pill-label {
+        font-size: 0.65rem;
+        font-weight: 800;
         text-transform: uppercase;
-        color: #94a3b8;
-        letter-spacing: 0.4px;
+        letter-spacing: 0.5px;
+        opacity: 0.75;
       }
+
+      .pill-date { font-weight: 700; }
+
+      .pill-sep { opacity: 0.4; }
+
+      .pill-time { font-weight: 800; letter-spacing: 0.3px; }
+    }
+
+    .delivery-pill {
+      background: #ede9fe;
+      color: #5b21b6;
+      border: 1px solid #ddd6fe;
+    }
+
+    .registered-pill {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 1px solid #e2e8f0;
     }
 
     .type-badge {
@@ -306,6 +377,8 @@ const handleRetry = () => emit('retry-invoice')
       text-transform: uppercase;
       padding: 4px 8px;
       border-radius: 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
 
       &.delivery {
         background: #fee2e2;
@@ -342,6 +415,36 @@ const handleRetry = () => emit('retry-invoice')
       font-size: 0.85rem;
       color: #64748b;
       margin: 0 0 0.5rem 0;
+    }
+
+    .location-row {
+      margin: 0.35rem 0 0;
+    }
+
+    .location-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+
+      &.branch {
+        background: #eff6ff;
+        color: #1d4ed8;
+        border: 1px solid #bfdbfe;
+
+        i { color: #3b82f6; }
+      }
+
+      &.store {
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
+
+        i { color: #d97706; }
+      }
     }
 
     .order-comments {
