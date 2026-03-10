@@ -109,6 +109,8 @@ export interface OrderFormData {
   }
   globalDiscountPercentage?: number
   isGlobalCourtesy?: boolean
+  skipProduction?: boolean
+  exitPoint?: string
 }
 
 export interface Order extends OrderFormData {

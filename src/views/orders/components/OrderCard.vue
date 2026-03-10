@@ -72,6 +72,12 @@ const handleRetry = () => emit('retry-invoice')
       <span>Error de Facturación — Requiere atención</span>
     </div>
 
+    <!-- Retiro de Tienda Banner -->
+    <div v-if="order.skipProduction" class="store-pickup-banner">
+      <i class="fa-solid fa-store"></i>
+      <span>Retiro directo de tienda{{ order.exitPoint ? ` — ${order.exitPoint}` : '' }}</span>
+    </div>
+
     <!-- Batch Checkbox -->
     <div v-if="batchMode" class="batch-checkbox">
        <input 
@@ -610,6 +616,26 @@ const handleRetry = () => emit('retry-invoice')
   i {
     font-size: 0.85rem;
     flex-shrink: 0;
+  }
+}
+
+.store-pickup-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #fde68a;
+  margin: -0.25rem 0;
+
+  i {
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    color: #d97706;
   }
 }
 
