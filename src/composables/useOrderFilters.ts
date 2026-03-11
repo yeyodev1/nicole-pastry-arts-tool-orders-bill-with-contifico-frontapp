@@ -3,7 +3,7 @@ import OrderService from '@/services/order.service'
 import { getECTTodayString, getECTNow } from '@/utils/dateUtils'
 import { useToast } from '@/composables/useToast'
 
-export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError' | 'returns'
+export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError' | 'unbilled' | 'returns'
 export type DateType = 'deliveryDate' | 'createdAt'
 
 export function useOrderFilters() {
@@ -20,7 +20,7 @@ export function useOrderFilters() {
 
   // Check if we are in a mode that supports specific date selection
   const showDatePicker = computed(() => {
-    return filterMode.value === 'custom' || filterMode.value === 'invoiceError'
+    return filterMode.value === 'custom' || filterMode.value === 'invoiceError' || filterMode.value === 'unbilled' || filterMode.value === 'returns'
   })
 
   const fetchOrders = async () => {
@@ -41,6 +41,12 @@ export function useOrderFilters() {
 
       if (filterMode.value === 'invoiceError') {
         filters.invoiceStatus = 'ERROR'
+        if (!searchQuery.value && customDate.value) {
+          filters.startDate = customDate.value
+          filters.endDate = customDate.value
+        }
+      } else if (filterMode.value === 'unbilled') {
+        filters.invoiceStatus = 'UNBILLED'
         if (!searchQuery.value && customDate.value) {
           filters.startDate = customDate.value
           filters.endDate = customDate.value

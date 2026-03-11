@@ -17,6 +17,7 @@ const emit = defineEmits<{
   (e: 'invoice-edit'): void
   (e: 'retry-invoice'): void
   (e: 'settle'): void
+  (e: 'view-detail'): void
   (e: 'edit'): void
   (e: 'delete'): void
   (e: 'return'): void
@@ -247,6 +248,14 @@ const handleRetry = () => emit('retry-invoice')
             <i class="fa-solid fa-store"></i>
           </button>
           <span class="icon-label">Isla</span>
+        </div>
+
+        <!-- Ver -->
+        <div v-if="batchMode" class="icon-btn-wrap">
+          <button class="btn-icon btn-view" @click="emit('view-detail')">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+          <span class="icon-label">Ver</span>
         </div>
 
         <!-- Editar -->
@@ -680,6 +689,12 @@ const handleRetry = () => emit('retry-invoice')
         color: #ef4444;
         border-color: #ef4444;
         background: #fef2f2;
+      }
+
+      &.btn-view:hover {
+        color: #0284c7;
+        border-color: #0284c7;
+        background: #f0f9ff;
       }
 
       &.btn-return {

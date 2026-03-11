@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 
-export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError' | 'returns'
+export type FilterMode = 'today' | 'yesterday' | 'tomorrow' | 'all' | 'custom' | 'invoiceError' | 'unbilled' | 'returns'
 export type DateType = 'deliveryDate' | 'createdAt'
 
 const props = defineProps<{
@@ -75,6 +75,9 @@ const emit = defineEmits<{
           <button class="nav-pill pill-error" :class="{ active: filterMode === 'invoiceError' }" @click="emit('update:filterMode', 'invoiceError')">
             <i class="fas fa-exclamation-triangle"></i> Errores de facturación
           </button>
+          <button class="nav-pill pill-warning" :class="{ active: filterMode === 'unbilled' }" @click="emit('update:filterMode', 'unbilled')">
+            <i class="fas fa-file-invoice"></i> No facturados
+          </button>
           <button class="nav-pill pill-warning" :class="{ active: filterMode === 'returns' }" @click="emit('update:filterMode', 'returns')">
             <i class="fas fa-undo"></i> Devoluciones
           </button>
@@ -96,7 +99,7 @@ const emit = defineEmits<{
 
       <!-- Specific Date Picker -->
       <div v-if="showDatePicker" class="nav-section">
-        <span class="section-label">{{ filterMode === 'invoiceError' ? 'Fecha (opcional)' : 'Seleccionar fecha' }}</span>
+        <span class="section-label">{{ ['invoiceError', 'returns', 'unbilled'].includes(filterMode) ? 'Fecha (opcional)' : 'Seleccionar fecha' }}</span>
         <CustomDatePicker
           :model-value="customDate"
           @update:model-value="emit('update:customDate', $event)"

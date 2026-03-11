@@ -37,6 +37,10 @@ const emit = defineEmits<{
   padding: 0.75rem 1.25rem;
   border-radius: 12px;
   margin-bottom: 1rem;
+  position: sticky;
+  top: 1.5rem;
+  z-index: 100;
+  box-shadow: 0 10px 25px -5px rgba(124, 58, 237, 0.4), 0 8px 10px -6px rgba(124, 58, 237, 0.2);
   animation: slideDown 0.3s ease;
 
   .batch-info {
