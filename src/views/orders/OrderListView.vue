@@ -99,7 +99,7 @@ const goToDetail = (id: string) => {
 }
 
 const handleCardClick = (order: any) => {
-  if (filterMode.value === 'invoiceError') {
+  if (filterMode.value === 'invoiceError' || filterMode.value === 'unbilled') {
     toggleSelection(order._id)
   } else {
     goToDetail(order._id)
@@ -327,7 +327,7 @@ onMounted(() => {
         v-model:custom-date="customDate"
         v-model:search-query="searchQuery"
         :show-date-picker="showDatePicker"
-        :show-select-all="filterMode === 'invoiceError' && orders.length > 0"
+        :show-select-all="(filterMode === 'invoiceError' || filterMode === 'unbilled') && orders.length > 0"
         :is-select-all-active="selectedOrderIds.size === orders.length && orders.length > 0"
         @search="fetchOrders"
         @toggle-select-all="toggleSelectAll(orders)"
@@ -446,9 +446,10 @@ onMounted(() => {
           :key="order._id"
           :order="order"
           :is-selected="selectedOrderIds.has(order._id)"
-          :batch-mode="filterMode === 'invoiceError'"
+          :batch-mode="filterMode === 'invoiceError' || filterMode === 'unbilled'"
           @click="handleCardClick(order)"
           @toggle-select="toggleSelection(order._id)"
+          @view-detail="goToDetail(order._id)"
           @copy-summary="copySummary(order)"
           @payment="openPaymentModal(order)"
           @invoice-edit="openInvoiceEditModal(order)"
