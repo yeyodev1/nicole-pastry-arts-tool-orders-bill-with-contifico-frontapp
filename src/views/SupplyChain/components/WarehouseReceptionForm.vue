@@ -44,21 +44,19 @@ const isValid = computed(() =>
   props.form.invoiceRef.trim() !== '' &&
   props.form.invoiceDueDate !== '' &&
   props.form.items.some(i => i.rawMaterial && i.quantity > 0) &&
-  itemsWithZeroQty.value === 0 &&
-  props.providerMismatchIndices.length === 0
+  itemsWithZeroQty.value === 0
 )
 
 const submitBlockReason = computed(() => {
   if (!props.form.invoiceRef.trim()) return 'Falta el N° de factura'
   if (!props.form.invoiceDueDate) return 'Falta la fecha límite de la factura'
-  if (props.providerMismatchIndices.length > 0) return 'Hay materiales de proveedores distintos'
   if (itemsWithZeroQty.value > 0) return 'Hay materias primas con cantidad 0'
   if (!props.form.items.some(i => i.rawMaterial && i.quantity > 0)) return 'Agrega al menos un material'
   return null
 })
 
 const addItem = () =>
-  emit('update:form', { ...props.form, items: [...props.form.items, { rawMaterial: '', quantity: 0, unitCost: 0 }] })
+  emit('update:form', { ...props.form, items: [...props.form.items, { rawMaterial: '', quantity: 0, unitCost: 0, provider: '' }] })
 
 const removeItem = (idx: number) =>
   emit('update:form', { ...props.form, items: props.form.items.filter((_, i) => i !== idx) })
@@ -180,20 +178,45 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
         <div v-for="(item, idx) in form.items" :key="idx" class="item-row">
           <div class="item-row__number">{{ idx + 1 }}</div>
           <div class="item-row__fields">
-            <div class="field full">
-              <label>Materia Prima</label>
-              <SearchableSelect
-                :modelValue="item.rawMaterial"
-                @update:modelValue="val => updateItem(idx, { rawMaterial: val })"
-                :options="materialOptions"
-                placeholder="Buscar materia prima..."
-              />
+            <div class="field-row">
+              <div class="field material-select">
+                <label>Materia Prima</label>
+                <SearchableSelect
+                  :modelValue="item.rawMaterial"
+                  @update:modelValue="val => updateItem(idx, { rawMaterial: val, provider: '', unitCost: 0 })"
+                  :options="materialOptions"
+                  placeholder="Buscar materia prima..."
+                />
+              </div>
+
+              <!-- New: Provider selection per item -->
+              <div class="field provider-select" v-if="getMaterialById(item.rawMaterial)?.providers?.length">
+                <label>Proveedor <span class="optional">(Opcional)</span></label>
+                <select 
+                  :value="item.provider" 
+                  @change="e => {
+                    const provId = (e.target as HTMLSelectElement).value;
+                    const mat = getMaterialById(item.rawMaterial);
+                    const pInfo = mat?.providers?.find(p => (p.provider?._id || p.provider) === provId);
+                    updateItem(idx, { provider: provId, unitCost: pInfo ? (mat?.unit === 'g' || mat?.unit === 'ml' ? pInfo.price * 1000 : pInfo.price) : item.unitCost });
+                  }"
+                >
+                  <option value="">Proveedor general...</option>
+                  <option 
+                    v-for="p in getMaterialById(item.rawMaterial)?.providers" 
+                    :key="p.provider?._id || p.provider" 
+                    :value="p.provider?._id || p.provider"
+                  >
+                    {{ p.provider?.name || 'Prov. sin nombre' }} (${{ p.price }})
+                  </option>
+                </select>
+              </div>
             </div>
 
-            <!-- Provider mismatch alert -->
-            <div v-if="providerMismatchIndices.includes(idx)" class="alert-mismatch">
+            <!-- Provider mismatch alert (Legacy check, still useful but less strict) -->
+            <div v-if="providerMismatchIndices.includes(idx) && !item.provider" class="alert-mismatch">
               <i class="fas fa-exclamation-triangle"></i>
-              <span>Este material pertenece a un proveedor distinto. <strong>Elimínalo o cambia el proveedor.</strong> No se puede guardar con materiales de distintos proveedores.</span>
+              <span>Este material está configurado con otro proveedor. Puedes cambiar el proveedor de este ítem o el general de arriba.</span>
             </div>
 
             <div class="item-row__amounts">
@@ -212,10 +235,15 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
               </div>
               <div class="field">
                 <label>Precio / {{ getMaterialById(item.rawMaterial) ? getDisplayUnit(getMaterialById(item.rawMaterial)?.unit) : 'u' }} <span class="unit-hint">(USD)</span></label>
-                <div class="input-with-prefix input-readonly">
+                <div class="input-with-prefix">
                   <span class="prefix">$</span>
-                  <input type="number" :value="item.unitCost" readonly tabindex="-1" placeholder="0.0000" />
-                  <span class="readonly-badge"><i class="fas fa-lock"></i></span>
+                  <input 
+                    type="number" 
+                    :value="item.unitCost" 
+                    @input="e => updateItem(idx, { unitCost: Number((e.target as HTMLInputElement).value) })"
+                    step="0.0001" 
+                    placeholder="0.0000" 
+                  />
                 </div>
               </div>
               <div class="field field--total">
@@ -444,6 +472,39 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
   }
 
   &__fields { flex: 1; display: flex; flex-direction: column; gap: 0.75rem; }
+
+  .field-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+
+    @media (min-width: 640px) {
+      flex-direction: row;
+      align-items: flex-start;
+    }
+
+    .material-select { flex: 1.5; }
+    .provider-select { 
+      flex: 1; 
+      
+      select {
+        padding: 0.75rem 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        color: #1e293b;
+        background: white;
+        width: 100%;
+        margin-top: 0.1rem;
+        
+        &:focus {
+          outline: none;
+          border-color: #059669;
+          box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
+        }
+      }
+    }
+  }
 
   &__amounts {
     display: grid;

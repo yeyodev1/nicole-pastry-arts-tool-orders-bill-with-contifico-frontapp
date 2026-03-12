@@ -7,6 +7,7 @@ export interface RawMaterial {
   presentationPrice?: number;
   presentationQuantity?: number;
   provider?: string | { _id: string; name: string };
+  providers?: { provider: any; price: number; isMain: boolean }[];
 }
 
 export interface Provider {
@@ -46,6 +47,7 @@ export interface ReceptionItem {
   rawMaterial: string;
   quantity: number;
   unitCost: number;
+  provider?: string;
 }
 
 export interface DispatchItem {

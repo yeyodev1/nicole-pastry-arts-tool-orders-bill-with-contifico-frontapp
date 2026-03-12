@@ -226,13 +226,7 @@ const exportToExcel = async () => {
             </div>
           </div>
 
-          <!-- Progress bar: IN vs OUT -->
-          <div class="bc-bar" v-if="b.in > 0">
-            <div
-              class="bc-bar-fill"
-              :style="{ width: Math.min(100, b.in > 0 ? ((b.out + b.loss) / b.in) * 100 : 0) + '%' }"
-            ></div>
-          </div>
+
 
           <!-- Metrics row -->
           <div class="bc-metrics">
