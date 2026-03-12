@@ -119,6 +119,14 @@ export interface Order extends OrderFormData {
   products: CartItem[]
   totalValue: number // Required here
   deliveryValue: number
+  createdBy?: string
+  updatedBy?: string
+  auditLog?: Array<{
+    user: string
+    action: string
+    at: string
+    details?: string
+  }>
   invoiceStatus?: 'PENDING' | 'PROCESSED' | 'ERROR'
   productionStage: 'PENDING' | 'IN_PROCESS' | 'FINISHED' | 'VOID'
   productionNotes: string

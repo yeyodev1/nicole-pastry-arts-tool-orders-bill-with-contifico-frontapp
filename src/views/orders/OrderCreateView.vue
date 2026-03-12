@@ -361,15 +361,21 @@ onMounted(async () => {
 
 <template>
   <div class="order-page">
-    <div class="container page-header">
+    <header class="container page-header">
       <div class="header-content">
-        <h1>{{ isEditMode ? 'Editar Pedido' : 'Nuevo Pedido' }}</h1>
+          <router-link to="/orders" class="back-link">← Cancelar</router-link>
+          <h1>{{ isEditMode ? 'Actualizar Orden' : 'Nuevo Pedido' }}</h1>
         <div v-if="isEditMode" class="edit-badge">
            <i class="fa-solid fa-pen-to-square"></i>
            Modo Edición
         </div>
+        <div class="header-actions">
+           <div v-if="isEditMode" class="edit-mode-indicator">
+             <i class="fa-solid fa-lock"></i> Responsable: {{ formData.responsible }}
+           </div>
+        </div>
       </div>
-    </div>
+    </header>
 
     <!-- Warning for Paid Orders -->
     <div v-if="isEditMode && formData.payments && formData.payments.length > 0" class="container">
@@ -401,7 +407,7 @@ onMounted(async () => {
 
       <!-- Right Column: Order Details & Cart -->
       <section class="order-form-section">
-        <OrderForm v-model="formData" />
+        <OrderForm v-model="formData" :is-edit-mode="isEditMode" />
         
         <OrderCart 
           :cart="cart" 
@@ -485,8 +491,8 @@ onMounted(async () => {
   }
 
   .edit-badge {
-    background: #eff6ff;
-    color: #2563eb;
+    background: #fff7ed;
+    color: #c2410c;
     padding: 0.5rem 1rem;
     border-radius: 20px;
     font-weight: 700;
@@ -494,8 +500,25 @@ onMounted(async () => {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    border: 1px solid #dbeafe;
+    border: 1px solid #fed7aa;
     animation: fadeIn 0.3s ease;
+  }
+}
+
+.edit-mode-indicator {
+  font-size: 0.85rem;
+  color: #64748b;
+  background: white;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+
+  i {
+    color: #6366f1;
   }
 }
 

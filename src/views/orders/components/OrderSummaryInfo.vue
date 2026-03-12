@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { formatECT, parseECTDate } from '@/utils/dateUtils'
 
+const emit = defineEmits(['edit-branch', 'edit-exit-point', 'edit-address', 'edit-maps-link'])
+
 const props = defineProps({
   order: {
     type: Object,
@@ -65,8 +67,12 @@ const deliveryBadgeClass = computed(() => ({
         </span>
       </div>
       <div class="stat-card">
-        <span class="label">Responsable</span>
-        <span class="value">{{ order.responsible }}</span>
+        <span class="label">Responsable Original</span>
+        <span class="value">{{ order.createdBy || order.responsible }}</span>
+      </div>
+      <div v-if="order.updatedBy && order.updatedBy !== (order.createdBy || order.responsible)" class="stat-card highlight">
+        <span class="label">Última Edición</span>
+        <span class="value">{{ order.updatedBy }}</span>
       </div>
     </div>
 
@@ -83,7 +89,12 @@ const deliveryBadgeClass = computed(() => ({
           <div class="info-item">
             <i class="fas fa-map-marker-alt"></i>
             <div>
-              <span class="item-label">Local de Retiro</span>
+              <span class="item-label">
+                Local de Retiro
+                <button class="btn-edit-inline" @click="emit('edit-branch')">
+                  <i class="fas fa-pen"></i> Editar
+                </button>
+              </span>
               <span class="item-value">{{ branchLabel }}</span>
             </div>
           </div>
@@ -97,7 +108,12 @@ const deliveryBadgeClass = computed(() => ({
           <div v-if="order.skipProduction && order.exitPoint" class="info-item">
             <i class="fa-solid fa-location-dot"></i>
             <div>
-              <span class="item-label">Punto de Salida</span>
+              <span class="item-label">
+                Punto de Salida
+                <button class="btn-edit-inline" @click="emit('edit-exit-point')">
+                  <i class="fas fa-pen"></i> Editar
+                </button>
+              </span>
               <span class="item-value">{{ order.exitPoint }}</span>
             </div>
           </div>
@@ -107,15 +123,28 @@ const deliveryBadgeClass = computed(() => ({
           <div class="info-item">
             <i class="fas fa-map-pin"></i>
             <div>
-              <span class="item-label">Dirección de Entrega</span>
+              <span class="item-label">
+                Dirección de Entrega
+                <button class="btn-edit-inline" @click="emit('edit-address')">
+                  <i class="fas fa-pen"></i> Editar
+                </button>
+              </span>
               <span class="item-value">{{ order.deliveryAddress }}</span>
             </div>
           </div>
           <div v-if="order.googleMapsLink" class="info-item link-item">
             <i class="fas fa-external-link-alt"></i>
-            <a :href="order.googleMapsLink" target="_blank" class="maps-link">
-              Ver en Google Maps
-            </a>
+            <div class="link-label-wrapper">
+              <span class="item-label">
+                Ubicación
+                <button class="btn-edit-inline" @click="emit('edit-maps-link')">
+                  <i class="fas fa-pen"></i> Editar
+                </button>
+              </span>
+              <a :href="order.googleMapsLink" target="_blank" class="maps-link">
+                Ver en Google Maps
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -154,6 +183,13 @@ const deliveryBadgeClass = computed(() => ({
 
   &.primary {
     border-left: 4px solid $NICOLE-PURPLE;
+  }
+
+  &.highlight {
+    background: #f0f9ff;
+    border-color: #bae6fd;
+    .label { color: #0369a1; }
+    .value { color: #0c4a6e; }
   }
 
   .label {
@@ -289,6 +325,40 @@ const deliveryBadgeClass = computed(() => ({
       color: $purple-dark;
       border-bottom-color: $NICOLE-PURPLE;
     }
+  }
+}
+
+.item-label {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 1rem;
+}
+
+.btn-edit-inline {
+  background: #f1f5f9;
+  border: none;
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  transition: all 0.2s;
+  text-transform: uppercase;
+
+  &:hover {
+    background: $NICOLE-PURPLE;
+    color: white;
+  }
+
+  i {
+    font-size: 0.6rem !important;
+    margin: 0 !important;
   }
 }
 
