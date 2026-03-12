@@ -169,15 +169,6 @@ const generateCode = (category: string, name: string) => {
 }
 
 const handleSubmit = () => {
-  if (form.value.providers.length === 0) {
-     alert('Debe agregar al menos un proveedor')
-     return
-  }
-  if (!mainProvider.value) {
-    alert('Debe seleccionar un proveedor principal')
-    return
-  }
-
   const payload: any = { ...form.value }
 
   payload.minStock = toBackendQuantity(payload.minStock || 0, payload.unit)
@@ -392,7 +383,7 @@ const categoryOptions = computed(() => {
 
             <!-- SECTION 4: Análisis de Costos -->
             <div class="section-title">Resumen de Costos</div>
-            <div class="cost-summary" v-if="calculatedUnitCost > 0">
+            <div v-if="calculatedUnitCost > 0" class="cost-summary">
               <div class="cost-result">
                 <span class="cost-label">Costo Actual ({{ mainProvider?.isMain ? 'Principal' : 'Referencia' }})</span>
                 <span class="cost-value">${{ formatCost(calculatedUnitCost) }}<span class="cost-unit">/{{ getDisplayUnit(form.unit) }}</span></span>
@@ -402,6 +393,15 @@ const categoryOptions = computed(() => {
                 Este costo se utilizará para cálculos de inventario y despacho.
               </div>
             </div>
+            <div v-else class="cost-summary cost-summary--empty">
+              <div class="empty-message">
+                <i class="fas fa-calculator"></i>
+                <div class="text">
+                  <strong>Configuración pendiente</strong>
+                  <span>Asigna un proveedor principal con su precio para calcular el costo actual.</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="modal-footer pro-footer">
@@ -409,7 +409,7 @@ const categoryOptions = computed(() => {
               <button class="btn-cancel" @click="$emit('close')">Cerrar</button>
               <HoldConfirmButton 
                 :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CREAR MATERIAL'"
-                :disabled="isSaving || !form.name || form.providers.length === 0"
+                :disabled="isSaving || !form.name"
                 :hold-time="1200"
                 @confirmed="handleSubmit"
               />
@@ -583,6 +583,62 @@ const categoryOptions = computed(() => {
   border-radius: 24px;
   .cost-value { font-size: 2rem; font-weight: 950; color: $NICOLE-PURPLE; }
   .cost-total-hint { font-size: 0.85rem; font-weight: 600; color: #64748b; margin-top: 0.5rem; }
+
+  &--empty {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    
+    .empty-message {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      color: #94a3b8;
+
+      i {
+        font-size: 2rem;
+        opacity: 0.5;
+      }
+
+      .text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+
+        strong {
+          color: #64748b;
+          font-size: 0.95rem;
+        }
+
+        span {
+          font-size: 0.85rem;
+          line-height: 1.4;
+        }
+      }
+    }
+  }
+}
+
+.empty-providers {
+  padding: 2rem;
+  text-align: center;
+  background: #f8fafc;
+  border: 2px dashed #e2e8f0;
+  border-radius: 20px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+
+  &::before {
+    content: '\f0d1';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    font-size: 1.5rem;
+    opacity: 0.5;
+  }
 }
 
 .modal-footer {
@@ -603,5 +659,120 @@ const categoryOptions = computed(() => {
   .btn-delete { width: 100%; padding: 1rem; border-radius: 16px; border: 1px solid #fee2e2; background: #fff1f2; color: #ef4444; font-weight: 900; cursor: pointer; margin-top: 0.5rem; }
 }
 
-.category-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; .chip { padding: 0.3rem 0.75rem; border-radius: 99px; border: 2px solid #f1f5f9; font-size: 0.75rem; font-weight: 700; cursor: pointer; &.chip--active { border-color: $NICOLE-PURPLE; background: rgba($NICOLE-PURPLE, 0.05); color: $NICOLE-PURPLE; } } }
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+
+  .chip {
+    padding: 0.4rem 0.9rem;
+    border-radius: 99px;
+    border: 2px solid #f1f5f9;
+    background: white;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: #e2e8f0;
+      color: #334155;
+    }
+
+    &--active {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.05);
+      color: $NICOLE-PURPLE;
+    }
+  }
+}
+
+.new-cat-row {
+  margin-top: 0.5rem;
+}
+
+.btn-add-cat-inline {
+  background: transparent;
+  border: 2px dashed #e2e8f0;
+  color: #94a3b8;
+  padding: 0.5rem 1rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: $NICOLE-PURPLE;
+    color: $NICOLE-PURPLE;
+    background: rgba($NICOLE-PURPLE, 0.02);
+  }
+}
+
+.new-cat-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  animation: slideDown 0.2s ease-out;
+
+  .new-cat-input {
+    flex: 1;
+    padding: 0.6rem 0.9rem;
+    border: 2px solid $NICOLE-PURPLE;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: white;
+
+    &:focus { outline: none; }
+  }
+
+  .btn-cat-confirm {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: $NICOLE-PURPLE;
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+
+  .btn-cat-cancel {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: #f1f5f9;
+    color: #64748b;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cat-error {
+    position: absolute;
+    bottom: -1.25rem;
+    left: 0;
+    font-size: 0.7rem;
+    color: #ef4444;
+    font-weight: 600;
+  }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 </style>

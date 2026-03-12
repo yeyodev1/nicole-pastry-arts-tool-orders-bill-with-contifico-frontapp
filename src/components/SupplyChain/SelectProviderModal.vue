@@ -41,6 +41,23 @@ const filtered = computed(() => {
             </div>
 
             <div class="providers-list">
+              <!-- Option to skip provider selection -->
+              <button
+                class="provider-card provider-card--skip"
+                @click="$emit('select', null)"
+              >
+                <div class="provider-avatar provider-avatar--skip">
+                  <i class="fas fa-ghost"></i>
+                </div>
+                <div class="provider-info">
+                  <span class="name">Omitir por ahora</span>
+                  <span class="meta">Crear material sin asignar proveedor inicialmente</span>
+                </div>
+                <i class="fas fa-chevron-right arrow"></i>
+              </button>
+
+              <div class="divider-text" v-if="filtered.length > 0">O SELECCIONA UN PROVEEDOR EXISTENTE</div>
+
               <button
                 v-for="p in filtered"
                 :key="p._id"
@@ -262,6 +279,17 @@ const filtered = computed(() => {
   transition: all 0.2s;
   width: 100%;
 
+  &--skip {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    margin-bottom: 0.5rem;
+
+    &:hover {
+      background: white !important;
+      border-color: $NICOLE-PURPLE !important;
+    }
+  }
+
   &:active { transform: scale(0.99); }
 
   @media (hover: hover) {
@@ -289,9 +317,36 @@ const filtered = computed(() => {
   flex-shrink: 0;
   transition: background 0.2s, color 0.2s;
 
+  &--skip {
+    background: #94a3b8;
+    color: white;
+    font-size: 1rem;
+  }
+
   .provider-card:hover & {
     color: white;
   }
+}
+
+.divider-text {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: #94a3b8;
+  text-align: center;
+  margin: 1rem 0;
+  letter-spacing: 0.05em;
+  position: relative;
+  display: flex;
+  align-items: center;
+
+  &::before, &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e2e8f0;
+  }
+  &::before { margin-right: 1rem; }
+  &::after { margin-left: 1rem; }
 }
 
 .provider-info {
