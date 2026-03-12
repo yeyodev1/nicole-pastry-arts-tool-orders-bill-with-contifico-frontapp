@@ -16,6 +16,8 @@ import OrderInvoiceInfo from './components/OrderInvoiceInfo.vue'
 import InvoiceGenerationModal from './components/InvoiceGenerationModal.vue'
 import OrderDeleteModal from './components/OrderDeleteModal.vue'
 import OrderDeliveryAssign from './components/OrderDeliveryAssign.vue'
+import OrderAuditTimeline from './components/OrderAuditTimeline.vue'
+import OrderLocationEditModal from './components/OrderLocationEditModal.vue'
 import { useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -30,6 +32,7 @@ const authStatus = ref<string | null>(null)
 const isAuthLoading = ref(false)
 const isPollingAuth = ref(false)
 let authPollTimer: ReturnType<typeof setTimeout> | null = null
+
 
 const fetchOrder = async () => {
   const id = route.params.id as string
@@ -234,6 +237,54 @@ const handleReturnOrder = async () => {
   }
 }
 
+// Modal State
+const locationModal = ref({
+  isOpen: false,
+  title: '',
+  type: 'branch' as 'branch' | 'exitPoint' | 'deliveryAddress' | 'googleMapsLink',
+  currentValue: ''
+})
+
+const openLocationModal = (type: typeof locationModal.value.type) => {
+  const titles = {
+    branch: 'Editar Sucursal de Retiro',
+    exitPoint: 'Editar Punto de Salida',
+    deliveryAddress: 'Editar Dirección de Entrega',
+    googleMapsLink: 'Editar Link de Ubicación'
+  }
+
+  const values = {
+    branch: order.value?.branch || '',
+    exitPoint: order.value?.exitPoint || '',
+    deliveryAddress: order.value?.deliveryAddress || '',
+    googleMapsLink: order.value?.googleMapsLink || ''
+  }
+
+  locationModal.value = {
+    isOpen: true,
+    title: titles[type],
+    type,
+    currentValue: values[type]
+  }
+}
+
+const handleLocationSave = async (payload: { type: string, value: string }) => {
+  if (!order.value) return
+  
+  try {
+    const updateData: any = {}
+    updateData[payload.type] = payload.value
+    
+    await OrderService.updateOrder(order.value._id, updateData)
+    
+    success('Información actualizada correctamente')
+    locationModal.value.isOpen = false
+    await fetchOrder() // Refresh UI
+  } catch (error: any) {
+    showError('Error al actualizar la información')
+  }
+}
+
 onMounted(() => {
   fetchOrder()
 })
@@ -277,7 +328,13 @@ onUnmounted(() => {
       </div>
 
       <!-- Summary Grid -->
-      <OrderSummaryInfo :order="order" />
+      <OrderSummaryInfo 
+        :order="order" 
+        @edit-branch="openLocationModal('branch')" 
+        @edit-exit-point="openLocationModal('exitPoint')"
+        @edit-address="openLocationModal('deliveryAddress')"
+        @edit-maps-link="openLocationModal('googleMapsLink')"
+      />
 
       <div class="content-grid">
         <div class="main-column">
@@ -297,6 +354,16 @@ onUnmounted(() => {
             :totalPaid="totalPaid"
             :outstandingBalance="outstandingBalance"
             @open-modal="showPaymentModal = true"
+          />
+
+          <!-- Audit Timeline -->
+          <OrderAuditTimeline
+            v-if="order"
+            :audit-log="order.auditLog"
+            :created-by="order.createdBy"
+            :updated-by="order.updatedBy"
+            :created-at="order.createdAt"
+            :responsible="order.responsible"
           />
         </div>
 
@@ -408,6 +475,15 @@ onUnmounted(() => {
       :customer-name="order.customerName"
       @close="showDeleteModal = false"
       @confirm="executeDeleteOrder"
+    />
+
+    <OrderLocationEditModal
+      :is-open="locationModal.isOpen"
+      :title="locationModal.title"
+      :current-value="locationModal.currentValue"
+      :type="locationModal.type"
+      @close="locationModal.isOpen = false"
+      @save="handleLocationSave"
     />
     </main>
 

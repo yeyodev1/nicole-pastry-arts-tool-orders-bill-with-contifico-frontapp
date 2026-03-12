@@ -11,7 +11,8 @@ import OrderPaymentSelector from './OrderPaymentSelector.vue'
 import DeliveryPersonFormModal from '@/components/modals/DeliveryPersonFormModal.vue'
 
 const props = defineProps<{
-  modelValue: OrderFormData
+  modelValue: OrderFormData,
+  isEditMode?: boolean
 }>()
 
 const dialog = useDialog()
@@ -166,6 +167,14 @@ const selectTime = (time: string) => {
             <input type="radio" v-model="props.modelValue.branch" :value="branch" />
             {{ branch }}
           </label>
+        </div>
+      </div>
+
+      <div class="form-group" v-if="props.isEditMode">
+        <label>Responsable Original</label>
+        <div class="read-only-field">
+          <i class="fa-solid fa-user-shield"></i>
+          {{ props.modelValue.responsible }}
         </div>
       </div>
 
@@ -467,6 +476,25 @@ const selectTime = (time: string) => {
   textarea {
     resize: vertical;
     min-height: 100px;
+  }
+}
+
+.read-only-field {
+  padding: 0.85rem 1rem;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  cursor: not-allowed;
+
+  i {
+    color: #6366f1;
+    font-size: 1rem;
   }
 }
 
