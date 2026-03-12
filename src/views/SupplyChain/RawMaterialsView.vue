@@ -115,10 +115,17 @@ const handleSave = async (payload: any) => {
       showModal.value = false
       fetchData()
     } else {
-      await RawMaterialService.createRawMaterial({ ...payload, provider: selectedProviderForCreate.value._id })
+      const resp = await RawMaterialService.createRawMaterial({ 
+        ...payload, 
+        provider: selectedProviderForCreate.value?._id || undefined 
+      })
       success('Material creado')
       showModal.value = false
-      router.push(`/supply-chain/providers/${selectedProviderForCreate.value._id}`)
+      if (selectedProviderForCreate.value?._id) {
+        router.push(`/supply-chain/providers/${selectedProviderForCreate.value._id}`)
+      } else {
+        fetchData()
+      }
     }
   } catch (err: any) {
     showError(err.response?.data?.message || 'Error al guardar')
@@ -240,7 +247,12 @@ onMounted(() => {
               <tbody>
                 <tr v-for="m in group" :key="m._id" @click="openModal(m)" :class="{ 'low-stock': m.quantity <= m.minStock }">
                   <td class="sku-cell"><code>{{ m.code || '--' }}</code></td>
-                  <td class="provider-cell">{{ m.provider?.name || '-' }}</td>
+                  <td class="provider-cell">
+                    <span v-if="m.provider?.name">{{ m.provider.name }}</span>
+                    <span v-else class="no-provider-badge">
+                      <i class="fas fa-exclamation-circle"></i> Sin Proveedor
+                    </span>
+                  </td>
                   <td>
                     <div class="name-block">
                       <span class="brand-name">{{ m.name }}</span>
@@ -282,7 +294,8 @@ onMounted(() => {
               <div class="card-meta">
                 <div class="meta-item">
                   <i class="fas fa-truck"></i>
-                  <span>{{ m.provider?.name || 'Sin Proveedor' }}</span>
+                  <span v-if="m.provider?.name">{{ m.provider.name }}</span>
+                  <span v-else class="no-provider-text">Sin Proveedor</span>
                 </div>
                 <div class="meta-item">
                   <i class="fas fa-tag"></i>
@@ -1006,5 +1019,27 @@ onMounted(() => {
     font-size: 1.25rem;
     font-weight: 600;
   }
+}
+
+.no-provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  background: #fdf2f2;
+  color: #dc2626;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border: 1px solid #fecaca;
+  text-transform: uppercase;
+
+  i { font-size: 0.7rem; }
+}
+
+.no-provider-text {
+  color: #ef4444;
+  font-weight: 800;
+  font-style: italic;
 }
 </style>
