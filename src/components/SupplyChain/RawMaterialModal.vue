@@ -4,6 +4,7 @@ import HoldConfirmButton from '@/components/ui/HoldConfirmButton.vue'
 import DeleteMaterialModal from '@/views/SupplyChain/components/DeleteMaterialModal.vue'
 import SearchableSelect from '@/components/ui/SearchableSelect.vue'
 import ProviderCategoryService from '@/services/provider-category.service'
+import type { IRawMaterialProvider } from '@/types/raw-material-provider'
 
 const props = defineProps({
   isOpen: { type: Boolean, required: true },
@@ -23,10 +24,8 @@ const form = ref({
   quantity: 0,
   minStock: 0,
   maxStock: 0,
-  provider: '',
   category: '',
-  presentationPrice: 0,
-  presentationQuantity: 1,
+  providers: [] as IRawMaterialProvider[],
   wastePercentage: 0
 })
 
@@ -35,13 +34,6 @@ const units = [
   { value: 'g', label: 'Kilogramos (kg)' },
   { value: 'ml', label: 'Litros (lt)' }
 ]
-
-const calculatedUnitCost = computed(() => {
-  if (form.value.presentationPrice > 0 && form.value.presentationQuantity > 0) {
-    return form.value.presentationPrice / form.value.presentationQuantity
-  }
-  return 0
-})
 
 // Conversion: backend stores g/ml, user works in kg/lt
 const getDisplayQuantity = (quantity: number, unit: string) => {
@@ -58,6 +50,14 @@ const toBackendQuantity = (inputQty: number, unit: string) => {
   return inputQty
 }
 
+const mainProvider = computed(() => {
+  return form.value.providers.find(p => p.isMain)
+})
+
+const calculatedUnitCost = computed(() => {
+  return mainProvider.value ? mainProvider.value.price : 0
+})
+
 const resetForm = () => {
   form.value = {
     name: '',
@@ -66,10 +66,8 @@ const resetForm = () => {
     quantity: 0,
     minStock: 0,
     maxStock: 0,
-    provider: '',
     category: '',
-    presentationPrice: 0,
-    presentationQuantity: 1,
+    providers: [],
     wastePercentage: 0
   }
 }
@@ -85,45 +83,78 @@ watch(() => props.isOpen, (newVal) => {
         quantity: getDisplayQuantity(m.quantity || 0, m.unit),
         minStock: getDisplayQuantity(m.minStock || 0, m.unit),
         maxStock: getDisplayQuantity(m.maxStock || 0, m.unit),
-        provider: m.provider?._id || m.provider || '',
         category: m.category || '',
-        presentationPrice: m.presentationPrice || 0,
-        presentationQuantity: getDisplayQuantity(m.presentationQuantity || 1, m.unit),
+        providers: m.providers ? m.providers.map((p: any) => ({
+          provider: p.provider?._id || p.provider,
+          price: p.price,
+          isMain: p.isMain
+        })) : [],
         wastePercentage: m.wastePercentage || 0
+      }
+      
+      // Fallback for old materials without providers array
+      if (form.value.providers.length === 0 && m.provider) {
+        form.value.providers.push({
+          provider: m.provider?._id || m.provider,
+          price: m.cost || 0,
+          isMain: true
+        })
       }
     } else {
       resetForm()
       if (props.defaultProviderId) {
-        form.value.provider = props.defaultProviderId
+        form.value.providers = [{
+          provider: props.defaultProviderId,
+          price: 0,
+          isMain: true
+        }]
       }
     }
   }
 }, { immediate: true })
+
+const addProvider = () => {
+  if (form.value.providers.length < 3) {
+    form.value.providers.push({
+      provider: '',
+      price: 0,
+      isMain: form.value.providers.length === 0
+    })
+  }
+}
+
+const removeProvider = (index: number) => {
+  const removed = form.value.providers.splice(index, 1)[0]
+  if (removed && removed.isMain && form.value.providers.length > 0) {
+    const firstProvider = form.value.providers[0]
+    if (firstProvider) firstProvider.isMain = true
+  }
+}
+
+const setMainProvider = (index: number) => {
+  form.value.providers.forEach((p, i) => {
+    p.isMain = i === index
+  })
+}
 
 const stockStatus = computed(() => {
   const current = form.value.quantity || 0
   const min = form.value.minStock || 0
   const max = form.value.maxStock || 0
 
-  // Si no hay stock, siempre es urgente (sin importar configuración de límites)
   if (current === 0) return { label: 'URGENTE / INSUFICIENTE', class: 'status-urgent' }
+  if (min === 0 && max === 0) return { label: '---', class: '' as any }
 
-  // Si no se configuraron límites (min y max = 0) pero hay stock, no evaluar
-  if (min === 0 && max === 0) return { label: '---', class: '' }
-
-  // Lógica normal cuando hay límites configurados
   if (current < min) return { label: 'URGENTE / INSUFICIENTE', class: 'status-urgent' }
   if (current >= min && current < (min * 1.5)) return { label: 'ESCASO / ALERTA', class: 'status-warning' }
   if (current >= (min * 1.5) && (max === 0 || current <= max)) return { label: 'ÓPTIMO', class: 'status-optimal' }
   if (max > 0 && current > max) return { label: 'SOBRESTOCK', class: 'status-overstock' }
 
-  return { label: '---', class: '' }
+  return { label: '---', class: '' as any }
 })
 
-// Format a cost value removing unnecessary trailing zeros (up to 4 decimal places)
 const formatCost = (val: number): string => {
   if (!val || val === 0) return '0.00'
-  // Use up to 4 decimals but strip trailing zeros
   return parseFloat(val.toFixed(4)).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 4
@@ -138,23 +169,23 @@ const generateCode = (category: string, name: string) => {
 }
 
 const handleSubmit = () => {
+  if (form.value.providers.length === 0) {
+     alert('Debe agregar al menos un proveedor')
+     return
+  }
+  if (!mainProvider.value) {
+    alert('Debe seleccionar un proveedor principal')
+    return
+  }
+
   const payload: any = { ...form.value }
 
   payload.minStock = toBackendQuantity(payload.minStock || 0, payload.unit)
   payload.maxStock = toBackendQuantity(payload.maxStock || 0, payload.unit)
-  payload.presentationQuantity = toBackendQuantity(payload.presentationQuantity || 1, payload.unit)
-
-  // Store cost as price per BASE unit ($/g or $/ml), not per display unit ($/kg or $/lt)
-  // Warehouse auto-fill uses mat.cost * 1000 to get $/kg, so we must store $/g here
-  payload.cost = (payload.unit === 'g' || payload.unit === 'ml')
-    ? calculatedUnitCost.value / 1000
-    : calculatedUnitCost.value
 
   if (!payload.code) {
     payload.code = generateCode(payload.category, payload.name)
   }
-
-  if (!payload.provider) delete payload.provider
 
   emit('save', payload)
 }
@@ -184,11 +215,7 @@ const handleCreateCategory = async () => {
 
 // Delete Logic
 const isDeleteModalOpen = ref(false)
-
-const openDeleteModal = () => {
-  isDeleteModalOpen.value = true
-}
-
+const openDeleteModal = () => { isDeleteModalOpen.value = true }
 const handleConfirmDelete = () => {
   if (props.materialToEdit) {
     emit('delete', props.materialToEdit._id)
@@ -198,17 +225,11 @@ const handleConfirmDelete = () => {
 
 // Options for SearchableSelect
 const providerOptions = computed(() => {
-  return props.providers.map(p => ({
-    value: p._id,
-    label: p.name
-  }))
+  return props.providers.map(p => ({ value: p._id, label: p.name }))
 })
 
 const categoryOptions = computed(() => {
-  return props.categories.map(c => ({
-    value: c.name,
-    label: c.name
-  }))
+  return props.categories.map(c => ({ value: c.name, label: c.name }))
 })
 </script>
 
@@ -226,6 +247,7 @@ const categoryOptions = computed(() => {
           </div>
 
           <div class="modal-body">
+            <!-- SECTION 1: Información Básica -->
             <div class="section-title">Información Básica</div>
             <div class="form-group" style="margin-bottom: 1.25rem">
               <label>Nombre Comercial / Marca</label>
@@ -240,7 +262,6 @@ const categoryOptions = computed(() => {
                   :options="categoryOptions"
                   placeholder="Buscar o seleccionar categoría..."
                 />
-                <!-- Suggested category chips -->
                 <div class="category-chips" v-if="categories.length > 0">
                   <button
                     v-for="cat in categories"
@@ -254,7 +275,6 @@ const categoryOptions = computed(() => {
                   </button>
                 </div>
 
-                <!-- Inline new category -->
                 <div class="new-cat-row" v-if="!showNewCatInput">
                   <button type="button" class="btn-add-cat-inline" @click="showNewCatInput = true">
                     <i class="fas fa-plus"></i> Nueva categoría
@@ -280,15 +300,16 @@ const categoryOptions = computed(() => {
               </div>
               <div class="form-group">
                 <label>Unidad de Medida</label>
-                <select v-model="form.unit">
+                <select v-model="form.unit" :disabled="!!materialToEdit">
                   <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
                 </select>
               </div>
             </div>
 
             <div class="section-divider"></div>
-            <div class="section-title">Control de Inventario</div>
-            
+
+            <!-- SECTION 2: Control de Stock -->
+            <div class="section-title">Control de Stock</div>
             <div class="stock-status-bar" v-if="materialToEdit">
               <div class="status-indicator">
                 <span class="label">Estado Actual:</span>
@@ -314,36 +335,71 @@ const categoryOptions = computed(() => {
             </div>
 
             <div class="section-divider"></div>
-            <div class="section-title">Definición de Costo</div>
 
-            <div class="form-row highlight">
-              <div class="form-group flex-2">
-                <label>Unidad de Compra</label>
-                <select :value="form.unit" disabled class="disabled-select">
-                  <option v-for="u in units" :key="u.value" :value="u.value">{{ u.label }}</option>
-                </select>
+            <!-- SECTION 3: Gestión de Proveedores -->
+            <div class="section-title-row">
+              <div class="section-title">Lista de Proveedores (Máx. 3)</div>
+              <button 
+                v-if="form.providers.length < 3" 
+                @click="addProvider" 
+                class="btn-add-provider"
+                type="button"
+              >
+                <i class="fas fa-plus"></i> Añadir
+              </button>
+            </div>
+
+            <div class="providers-list">
+              <div v-if="form.providers.length === 0" class="empty-providers">
+                No hay proveedores asociados. Añada uno para definir el costo.
               </div>
-              <div class="form-group flex-1">
-                <label>Cantidad</label>
-                <input type="number" v-model.number="form.presentationQuantity" placeholder="0" min="0" step="any" />
-                <span class="input-hint" v-if="form.unit !== 'u'">
-                  Ingrese la cantidad en {{ getDisplayUnit(form.unit) }}
-                </span>
-              </div>
-              <div class="form-group flex-1">
-                <label>Costo Total ($)</label>
-                <input type="number" v-model.number="form.presentationPrice" step="0.01" placeholder="0.00" />
+              <div v-for="(p, index) in form.providers" :key="index" class="provider-row">
+                <div class="p-main-check">
+                  <input 
+                    type="radio" 
+                    :checked="p.isMain" 
+                    @change="setMainProvider(index)" 
+                    name="main_provider"
+                    :id="'main_' + index" 
+                  />
+                  <label :for="'main_' + index" title="Marcar como principal">
+                    <i class="fas fa-star" :class="{ 'active': p.isMain }"></i>
+                  </label>
+                </div>
+                <div class="p-select">
+                  <SearchableSelect
+                    v-model="p.provider"
+                    :options="providerOptions"
+                    placeholder="Proveedor..."
+                  />
+                </div>
+                <div class="p-price">
+                  <div class="price-input-wrapper">
+                    <span class="currency">$</span>
+                    <input type="number" v-model.number="p.price" step="0.0001" placeholder="0.00" />
+                    <span class="unit">/{{ getDisplayUnit(form.unit) }}</span>
+                  </div>
+                </div>
+                <div class="p-actions">
+                  <button @click="removeProvider(index)" class="btn-remove-p" type="button">
+                    <i class="fas fa-trash-alt"></i>
+                  </button>
+                </div>
               </div>
             </div>
 
+            <div class="section-divider"></div>
+
+            <!-- SECTION 4: Análisis de Costos -->
+            <div class="section-title">Resumen de Costos</div>
             <div class="cost-summary" v-if="calculatedUnitCost > 0">
               <div class="cost-result">
-                <span class="cost-label">Costo por {{ getDisplayUnit(form.unit) }}</span>
+                <span class="cost-label">Costo Actual ({{ mainProvider?.isMain ? 'Principal' : 'Referencia' }})</span>
                 <span class="cost-value">${{ formatCost(calculatedUnitCost) }}<span class="cost-unit">/{{ getDisplayUnit(form.unit) }}</span></span>
               </div>
-              <div class="cost-total-hint" v-if="form.unit !== 'u'">
+              <div class="cost-total-hint">
                 <i class="fas fa-info-circle"></i>
-                {{ form.presentationQuantity }} {{ getDisplayUnit(form.unit) }} &times; ${{ formatCost(calculatedUnitCost) }} = <strong>${{ formatCost(form.presentationPrice) }} total</strong>
+                Este costo se utilizará para cálculos de inventario y despacho.
               </div>
             </div>
           </div>
@@ -353,15 +409,19 @@ const categoryOptions = computed(() => {
               <button class="btn-cancel" @click="$emit('close')">Cerrar</button>
               <HoldConfirmButton 
                 :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CREAR MATERIAL'"
-                :disabled="isSaving || !form.name"
+                :disabled="isSaving || !form.name || form.providers.length === 0"
                 :hold-time="1200"
                 @confirmed="handleSubmit"
               />
             </div>
+            <div v-if="materialToEdit" class="delete-section">
+              <button class="btn-delete" @click="openDeleteModal">
+                <i class="fas fa-trash"></i> Eliminar Material
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Delete Confirmation Modal -->
         <DeleteMaterialModal
           :is-open="isDeleteModalOpen"
           :material-name="materialToEdit?.name || ''"
@@ -381,76 +441,24 @@ const categoryOptions = computed(() => {
   backdrop-filter: blur(8px);
   display: flex;
   justify-content: center;
-  align-items: end; // Mobile: aligned to bottom
+  align-items: end;
   z-index: 2000;
-  padding: 0; // Mobile: full width
-
-  @media (min-width: 640px) {
-    align-items: center;
-    padding: 1rem;
-  }
+  padding: 0;
+  @media (min-width: 640px) { align-items: center; padding: 1rem; }
 }
 
 .pro-modal {
   background: white;
   width: 100%;
-  max-width: 700px;
-  max-height: 90vh;
-  border-radius: 28px 28px 0 0; // Mobile top rounded
-  padding: 0;
+  max-width: 750px;
+  max-height: 95vh;
+  border-radius: 28px 28px 0 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 -25px 50px -12px rgba(0, 0, 0, 0.15);
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  @media (min-width: 640px) {
-    border-radius: 36px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
-  }
-}
-
-// Premium Modal Transition
-.modal-bounce-enter-active {
-  transition: opacity 0.4s ease-out;
-
-  .pro-modal {
-    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-}
-
-.modal-bounce-leave-active {
-  transition: opacity 0.3s ease-in;
-
-  .pro-modal {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-}
-
-.modal-bounce-enter-from {
-  opacity: 0;
-
-  .pro-modal {
-    transform: translateY(100%);
-
-    @media (min-width: 640px) {
-      transform: translateY(30px) scale(0.9);
-      opacity: 0;
-    }
-  }
-}
-
-.modal-bounce-leave-to {
-  opacity: 0;
-
-  .pro-modal {
-    transform: translateY(100%);
-
-    @media (min-width: 640px) {
-      transform: translateY(20px) scale(0.95);
-      opacity: 0;
-    }
-  }
+  @media (min-width: 640px) { border-radius: 36px; }
 }
 
 .modal-header {
@@ -459,79 +467,15 @@ const categoryOptions = computed(() => {
   border-bottom: 1px solid #f1f5f9;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start; // Better alignment for multiline titles
+  align-items: center;
   position: sticky;
   top: 0;
   z-index: 10;
+  @media (min-width: 640px) { padding: 2rem 2.5rem; }
 
-  @media (min-width: 640px) {
-    padding: 2rem 2.5rem;
-    align-items: center;
-  }
-
-  .header-info {
-    flex: 1;
-    padding-right: 1rem;
-  }
-
-  h2 {
-    font-size: 1.25rem;
-    font-weight: 900;
-    color: #1e293b;
-    margin: 0;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-
-    @media (min-width: 640px) {
-      font-size: 1.75rem;
-    }
-  }
-
-  .sku-subtitle {
-    font-size: 0.8rem;
-    font-weight: 800;
-    color: $NICOLE-PURPLE;
-    margin: 0.25rem 0 0;
-    text-transform: uppercase;
-
-    @media (min-width: 640px) {
-      font-size: 0.9rem;
-      margin-top: 0.5rem;
-    }
-  }
-
-  .btn-close {
-    background: #f1f5f9;
-    border: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 12px;
-    color: #64748b;
-    cursor: pointer;
-    font-size: 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    flex-shrink: 0;
-
-    @media (min-width: 640px) {
-      width: 44px;
-      height: 44px;
-      border-radius: 14px;
-    }
-
-    &:active {
-      transform: scale(0.95);
-    }
-
-    @media(hover: hover) {
-      &:hover {
-        background: #fee2e2;
-        color: #ef4444;
-      }
-    }
-  }
+  h2 { font-size: 1.25rem; font-weight: 900; color: #1e293b; margin: 0; letter-spacing: -0.02em; @media (min-width: 640px) { font-size: 1.75rem; } }
+  .sku-subtitle { font-size: 0.8rem; font-weight: 800; color: $NICOLE-PURPLE; margin-top: 0.25rem; text-transform: uppercase; }
+  .btn-close { background: #f1f5f9; border: none; width: 36px; height: 36px; border-radius: 12px; color: #64748b; cursor: pointer; font-size: 1.5rem; }
 }
 
 .modal-body {
@@ -539,10 +483,14 @@ const categoryOptions = computed(() => {
   overflow-y: auto;
   flex: 1;
   background: white;
+  @media (min-width: 640px) { padding: 2rem 2.5rem; }
+}
 
-  @media (min-width: 640px) {
-    padding: 2rem 2.5rem;
-  }
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
 }
 
 .section-title {
@@ -551,541 +499,109 @@ const categoryOptions = computed(() => {
   color: #94a3b8;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: 1rem;
-
-  @media (min-width: 640px) {
-    font-size: 0.8rem;
-    margin-bottom: 1.25rem;
-  }
+  @media (min-width: 640px) { font-size: 0.8rem; }
 }
 
-.section-divider {
-  height: 2px;
-  background: #f8fafc;
-  margin: 2rem -1.5rem; // Expand to full width mobile
+.section-divider { height: 2px; background: #f8fafc; margin: 2rem -1.5rem; @media (min-width: 640px) { margin: 2rem -2.5rem; } }
 
-  @media (min-width: 640px) {
-    margin: 2rem -2.5rem;
-  }
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  label { font-size: 0.75rem; font-weight: 800; color: #64748b; text-transform: uppercase; }
+  input, select { padding: 0.9rem; border: 2px solid #f1f5f9; border-radius: 14px; font-size: 1rem; font-weight: 600; background: #f8fafc; &:focus { outline: none; border-color: $NICOLE-PURPLE; } }
 }
+
+.form-row { display: flex; flex-direction: column; gap: 1.25rem; @media (min-width: 640px) { flex-direction: row; gap: 1.5rem; } .form-group { flex: 1; } }
 
 .stock-status-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: #f8fafc;
-  padding: 1rem;
-  border-radius: 16px;
+  padding: 1.25rem;
+  border-radius: 20px;
   margin-bottom: 1.5rem;
   border: 1px solid #f1f5f9;
-
-  .status-indicator {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-
-    .label {
-      font-size: 0.7rem;
-      font-weight: 700;
-      color: #94a3b8;
-      text-transform: uppercase;
-    }
-
-    .badge {
-      font-size: 0.85rem;
-      font-weight: 900;
-      padding: 0.35rem 0.75rem;
-      border-radius: 8px;
-      text-transform: uppercase;
-      display: inline-block;
-
-      &.status-urgent {
-        background: #fee2e2;
-        color: #ef4444;
-      }
-
-      &.status-warning {
-        background: #ffedd5;
-        color: #f97316;
-      }
-
-      &.status-optimal {
-        background: #dcfce7;
-        color: #16a34a;
-      }
-
-      &.status-overstock {
-        background: #dbeafe;
-        color: #2563eb;
-      }
-    }
-  }
-
-  .stock-level {
-    text-align: right;
-
-    .current {
-      display: block;
-      font-size: 1.25rem;
-      font-weight: 900;
-      color: #1e293b;
-    }
-
-    .label {
-      font-size: 0.75rem;
-      color: #64748b;
-    }
-  }
+  .badge { padding: 0.4rem 0.8rem; border-radius: 8px; font-weight: 900; font-size: 0.85rem; &.status-urgent { background: #fee2e2; color: #ef4444; } &.status-warning { background: #ffedd5; color: #f97316; } &.status-optimal { background: #dcfce7; color: #16a34a; } &.status-overstock { background: #dbeafe; color: #2563eb; } }
+  .stock-level { text-align: right; .current { display: block; font-size: 1.5rem; font-weight: 900; color: #1e293b; } .label { font-size: 0.8rem; color: #64748b; } }
 }
 
-.category-chips {
+.providers-list {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-
-  .chip {
-    padding: 0.35rem 0.85rem;
-    border-radius: 999px;
-    border: 2px solid #e2e8f0;
-    background: #f8fafc;
-    color: #64748b;
-    font-size: 0.75rem;
-    font-weight: 800;
-    cursor: pointer;
-    transition: all 0.15s;
-    white-space: nowrap;
-
-    &:active {
-      transform: scale(0.96);
-    }
-
-    @media(hover: hover) {
-      &:hover {
-        border-color: $NICOLE-PURPLE;
-        color: $NICOLE-PURPLE;
-        background: rgba($NICOLE-PURPLE, 0.06);
-      }
-    }
-
-    &--active {
-      border-color: $NICOLE-PURPLE;
-      background: rgba($NICOLE-PURPLE, 0.1);
-      color: $NICOLE-PURPLE;
-    }
-  }
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
-.new-cat-row {
-  margin-top: 0.5rem;
-}
-
-.btn-add-cat-inline {
-  display: inline-flex;
+.provider-row {
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
-  background: none;
-  border: 1.5px dashed #cbd5e1;
-  border-radius: 99px;
-  padding: 0.3rem 0.85rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #94a3b8;
-  cursor: pointer;
+  gap: 1rem;
+  background: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 18px;
+  border: 1px solid #f1f5f9;
   transition: all 0.2s;
-
-  &:hover {
-    border-color: $NICOLE-PURPLE;
-    color: $NICOLE-PURPLE;
+  &:hover { border-color: #e2e8f0; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+  .p-main-check { input { display: none; } label { cursor: pointer; font-size: 1.25rem; color: #cbd5e1; transition: all 0.2s; i.active { color: #f59e0b; } } }
+  .p-select { flex: 2; min-width: 0; }
+  .p-price { flex: 1.5; }
+  .price-input-wrapper {
+    display: flex;
+    align-items: center;
+    background: white;
+    border: 2px solid #f1f5f9;
+    border-radius: 12px;
+    padding: 0 0.75rem;
+    &:focus-within { border-color: $NICOLE-PURPLE; }
+    .currency { color: #94a3b8; font-weight: 700; margin-right: 0.4rem; }
+    input { border: none; padding: 0.6rem 0; width: 100%; font-weight: 700; background: transparent; &:focus { outline: none; } }
+    .unit { font-size: 0.75rem; color: #94a3b8; font-weight: 600; margin-left: 0.4rem; }
   }
+  .btn-remove-p { background: #fee2e2; border: none; width: 36px; height: 36px; border-radius: 10px; color: #ef4444; cursor: pointer; transition: all 0.2s; &:hover { background: #ef4444; color: white; } }
 }
 
-.new-cat-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-}
-
-.new-cat-input {
-  flex: 1;
-  min-width: 140px;
-  padding: 0.45rem 0.75rem;
-  border: 2px solid $NICOLE-PURPLE;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  outline: none;
-  background: white;
-}
-
-.btn-cat-confirm {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: none;
+.btn-add-provider {
   background: $NICOLE-PURPLE;
   color: white;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 12px;
+  font-weight: 800;
   font-size: 0.8rem;
-  flex-shrink: 0;
-  transition: opacity 0.2s;
-
-  &:disabled { opacity: 0.4; cursor: not-allowed; }
-}
-
-.btn-cat-cancel {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  color: #94a3b8;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
-  flex-shrink: 0;
-  transition: all 0.2s;
-
-  &:hover { background: #fee2e2; color: #ef4444; border-color: #fecaca; }
-}
-
-.cat-error {
-  width: 100%;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #ef4444;
-}
-
-.highlight-title {
-  color: $NICOLE-PURPLE;
-}
-
-.form-row {
-  display: flex;
-  flex-direction: column; // Mobile: Stack
-  gap: 1.25rem;
-  margin-bottom: 1.25rem;
-
-  @media (min-width: 640px) {
-    flex-direction: row;
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
-  }
-
-  &.highlight {
-    background: #f8fafc;
-    padding: 1.25rem;
-    border-radius: 20px;
-    border: 2px dashed #e2e8f0;
-
-    @media (min-width: 640px) {
-      padding: 1.5rem;
-    }
-  }
-
-  .flex-2 {
-    flex: 2;
-  }
-
-  .flex-1 {
-    flex: 1;
-  }
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  flex: 1;
-
-  label {
-    font-size: 0.75rem;
-    font-weight: 800;
-    color: #64748b;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-
-    @media (min-width: 640px) {
-      font-size: 0.85rem;
-    }
-  }
-
-  input,
-  select {
-    padding: 0.9rem;
-    border: 2px solid #f1f5f9;
-    border-radius: 14px;
-    font-size: 1rem;
-    font-weight: 600;
-    background: #f8fafc;
-    transition: all 0.2s;
-    width: 100%;
-    appearance: none; // Remove system styles
-
-    @media (min-width: 640px) {
-      padding: 1rem;
-    }
-
-    &:focus {
-      outline: none;
-      border-color: $NICOLE-PURPLE;
-      background: white;
-      box-shadow: 0 0 0 4px rgba($NICOLE-PURPLE, 0.1);
-    }
-
-    &:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-  }
-}
-
-.cost-summary {
-  margin-top: 0;
-  margin-bottom: 1.5rem;
-  background: #f8f5ff;
-  padding: 1rem 1.25rem;
-  border-radius: 16px;
-  border: 1.5px solid rgba($NICOLE-PURPLE, 0.15);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-
-  @media (min-width: 640px) {
-    margin-bottom: 2rem;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-}
-
-.cost-result {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-
-  .cost-label {
-    font-size: 0.75rem;
-    font-weight: 800;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-  }
-
-  .cost-value {
-    font-size: 1.5rem;
-    font-weight: 900;
-    color: $NICOLE-PURPLE;
-    font-family: 'JetBrains Mono', monospace;
-    letter-spacing: -0.02em;
-
-    @media (min-width: 640px) {
-      font-size: 1.75rem;
-    }
-
-    .cost-unit {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: #94a3b8;
-      margin-left: 0.1rem;
-      font-family: inherit;
-    }
-  }
-}
-
-.cost-total-hint {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #64748b;
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  flex-wrap: wrap;
-
-  i {
-    color: $NICOLE-PURPLE;
-    opacity: 0.6;
-    font-size: 0.72rem;
-  }
-
-  strong {
-    color: $NICOLE-PURPLE;
-    font-weight: 800;
-  }
 }
 
-.stock-action-box {
-  display: grid;
-  grid-template-columns: 1fr; // Mobile: 1 column
-  gap: 1.5rem;
+.cost-summary {
+  background: #f5f3ff;
+  border: 2px dashed rgba($NICOLE-PURPLE, 0.2);
   padding: 1.5rem;
-  background: #fafafa;
   border-radius: 24px;
-  border: 2px solid #f1f5f9;
-
-  @media (min-width: 640px) {
-    grid-template-columns: repeat(3, 1fr);
-    padding: 2rem;
-  }
-
-  .stock-current,
-  .stock-incoming,
-  .stock-total {
-    text-align: center;
-    background: white; // Mobile card look
-    padding: 1rem;
-    border-radius: 16px;
-    border: 1px solid #f1f5f9;
-
-    @media (min-width: 640px) {
-      background: transparent;
-      padding: 0;
-      border: none;
-    }
-
-    label {
-      display: block;
-      font-size: 0.7rem;
-      font-weight: 900;
-      color: #94a3b8;
-      text-transform: uppercase;
-      margin-bottom: 0.5rem;
-
-      @media (min-width: 640px) {
-        margin-bottom: 0.75rem;
-      }
-    }
-
-    .value {
-      font-size: 1.25rem;
-      font-weight: 900;
-      color: #475569;
-
-      @media (min-width: 640px) {
-        font-size: 1.5rem;
-      }
-    }
-
-    .total {
-      color: $NICOLE-PURPLE;
-      font-size: 1.5rem;
-
-      @media (min-width: 640px) {
-        font-size: 1.75rem;
-      }
-    }
-
-    .entry-field {
-      width: 100%;
-      text-align: center;
-      font-size: 1.5rem;
-      font-weight: 900;
-      color: #0f172a;
-      background: white;
-      border: 3px solid $NICOLE-PURPLE;
-      padding: 0.75rem;
-      border-radius: 16px;
-      appearance: none; // Remove spinner
-
-      &:focus {
-        box-shadow: 0 0 0 5px rgba($NICOLE-PURPLE, 0.15);
-        outline: none;
-      }
-    }
-  }
+  .cost-value { font-size: 2rem; font-weight: 950; color: $NICOLE-PURPLE; }
+  .cost-total-hint { font-size: 0.85rem; font-weight: 600; color: #64748b; margin-top: 0.5rem; }
 }
 
-.pro-footer {
+.modal-footer {
   padding: 1.5rem;
-  background: #fff; // Sticky footer often looks better white on mobile
   border-top: 1px solid #f1f5f9;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-
-  // Safe area for iPhone home bar
-  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
-
-  @media (min-width: 640px) {
-    padding: 2rem 2.5rem;
-  }
-
-  .delete-section {
-    width: 100%;
-
-    .btn-delete {
-      width: 100%;
-      height: 52px;
-      border-radius: 18px;
-      background: #fee2e2;
-      color: #ef4444;
-      font-weight: 900;
-      border: 1px solid #fca5a5;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      transition: all 0.2s;
-
-      &:active {
-        transform: scale(0.98);
-      }
-
-      @media(hover: hover) {
-        &:hover {
-          background: #fecaca;
-        }
-      }
-    }
-  }
-
   .main-actions {
     display: flex;
-    flex-direction: column-reverse; // Mobile: Cancel on bottom
+    flex-direction: column-reverse;
     gap: 0.75rem;
     width: 100%;
-
-    @media (min-width: 640px) {
-      flex-direction: row;
-      gap: 1rem;
-    }
-
-    .btn-cancel {
-      width: 100%;
-      height: 52px;
-      background: white;
-      border: 2px solid #f1f5f9;
-      border-radius: 18px;
-      font-weight: 800;
-      color: #64748b;
-      cursor: pointer;
-
-      @media (min-width: 640px) {
-        flex: 0 0 120px;
-      }
-
-      &:active {
-        transform: scale(0.98);
-      }
-    }
-
-    .hold-confirm-btn {
-      flex: 1;
-      height: 56px;
-      border-radius: 18px;
-    }
+    @media (min-width: 640px) { flex-direction: row; gap: 1rem; }
+    .btn-cancel { width: 100%; height: 52px; background: white; border: 2px solid #f1f5f9; border-radius: 18px; font-weight: 800; color: #64748b; cursor: pointer; @media (min-width: 640px) { flex: 0 0 120px; } }
+    .hold-confirm-btn { flex: 1; height: 56px; border-radius: 18px; }
   }
+  .btn-delete { width: 100%; padding: 1rem; border-radius: 16px; border: 1px solid #fee2e2; background: #fff1f2; color: #ef4444; font-weight: 900; cursor: pointer; margin-top: 0.5rem; }
 }
+
+.category-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; .chip { padding: 0.3rem 0.75rem; border-radius: 99px; border: 2px solid #f1f5f9; font-size: 0.75rem; font-weight: 700; cursor: pointer; &.chip--active { border-color: $NICOLE-PURPLE; background: rgba($NICOLE-PURPLE, 0.05); color: $NICOLE-PURPLE; } } }
 </style>

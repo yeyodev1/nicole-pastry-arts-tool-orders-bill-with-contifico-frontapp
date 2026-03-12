@@ -191,6 +191,7 @@ const onInSubmit = async () => {
         quantity: backendQty,
         unitCost: backendCost,
         totalValue: item.quantity * item.unitCost,
+        provider: item.provider || undefined
       }
     })
 
