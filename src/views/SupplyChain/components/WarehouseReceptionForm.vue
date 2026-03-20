@@ -74,6 +74,8 @@ watch(() => props.form.provider, (newProvider) => {
 const itemTotal = (item: ReceptionItem) => item.quantity * (item.unitCost || 0)
 
 const grandTotal = computed(() => props.form.items.reduce((s, i) => s + itemTotal(i), 0))
+const iva = computed(() => grandTotal.value * 0.15)
+const totalWithIva = computed(() => grandTotal.value * 1.15)
 
 const itemsWithZeroQty = computed(() =>
   props.form.items.filter(i => i.rawMaterial && i.quantity <= 0).length
@@ -351,9 +353,19 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
         </div>
       </div>
 
-      <div v-if="grandTotal > 0" class="summary-total">
-        <span>Total Recepción</span>
-        <span class="summary-total__amount">${{ fmt(grandTotal) }}</span>
+      <div v-if="grandTotal > 0" class="summary-totals">
+        <div class="summary-total summary-total--sub">
+          <span>Total Recepción</span>
+          <span class="summary-total__amount">${{ fmt(grandTotal) }}</span>
+        </div>
+        <div class="summary-total summary-total--iva">
+          <span>IVA 15%</span>
+          <span class="summary-total__amount">${{ fmt(iva) }}</span>
+        </div>
+        <div class="summary-total summary-total--final">
+          <span>Total + IVA</span>
+          <span class="summary-total__amount">${{ fmt(totalWithIva) }}</span>
+        </div>
       </div>
 
       <div v-if="!form.items.some(i => i.rawMaterial)" class="summary-empty">
@@ -687,13 +699,31 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
   &__val  { font-weight: 700; color: #059669; white-space: nowrap; min-width: 70px; text-align: right; }
 }
 
+.summary-totals {
+  display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem;
+}
+
 .summary-total {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 0.85rem; margin-top: 0.5rem;
-  background: #f0fdf4; border-radius: 10px;
-  font-size: 0.85rem; font-weight: 700; color: #065f46;
+  padding: 0.65rem 0.85rem; border-radius: 10px;
+  font-size: 0.85rem; font-weight: 700;
 
-  &__amount { font-size: 1.2rem; font-weight: 800; }
+  &__amount { font-weight: 800; }
+
+  &--sub {
+    background: #f8fafc; color: #475569;
+    .summary-total__amount { font-size: 1rem; }
+  }
+
+  &--iva {
+    background: #fffbeb; color: #92400e;
+    .summary-total__amount { font-size: 1rem; }
+  }
+
+  &--final {
+    background: #f0fdf4; color: #065f46;
+    .summary-total__amount { font-size: 1.2rem; }
+  }
 }
 
 .summary-empty {
