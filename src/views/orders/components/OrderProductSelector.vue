@@ -165,7 +165,7 @@ onMounted(() => {
           :key="`${product.source}-${product.id}`"
           :product="product"
           :is-blocked="isProductBlocked(product)"
-          @add="handleAddAttempt(product)"
+          @add="handleAddAttempt"
         />
       </div>
 

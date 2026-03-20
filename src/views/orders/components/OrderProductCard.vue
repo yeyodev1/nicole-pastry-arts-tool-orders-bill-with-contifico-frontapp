@@ -36,7 +36,7 @@ const handleAdd = () => {
   }
 
   if (isDelivery.value) {
-    const priceToUse = manualPrice.value ? Number(manualPrice.value) : Number(props.product.pvp1 || 0)
+    const priceToUse = Number(manualPrice.value) || 0
     emit('add', {
       ...props.product,
       pvp1: priceToUse.toString()

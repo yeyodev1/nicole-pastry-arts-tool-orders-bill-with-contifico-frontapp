@@ -125,22 +125,24 @@ watch(isCourtesyMode, (newVal) => {
 
 const addToCart = (product: Product) => {
   const existing = cart.value.find(item => item.contifico_id === product.id)
+  const price = isCourtesyMode.value ? 0 : parseFloat(product.pvp1 || '0')
 
   if (existing) {
-    existing.quantity++
+    if (product.pvp_manual) {
+      // Precio manual (ej. Delivery): actualizar precio sin cambiar cantidad
+      existing.price = price
+    } else {
+      existing.quantity++
+    }
   } else {
-    // Determine price and courtesy status based on mode
-    const price = isCourtesyMode.value ? 0 : parseFloat(product.pvp1 || '0')
-    const isCourtesy = isCourtesyMode.value
-
     cart.value.push({
       id: product.id,
       contifico_id: product.id,
       name: product.nombre,
       price: price,
       quantity: 1,
-      isCourtesy: isCourtesy,
-      source: product.source // Fuente para control de mezcla de facturas
+      isCourtesy: isCourtesyMode.value,
+      source: product.source
     })
   }
 }
@@ -178,22 +180,17 @@ const onCartSubmit = () => {
   if (!formData.deliveryTime) { showError("Hora de entrega es obligatoria"); return; }
   if (!formData.branch) { showError("Sucursal de origen es obligatoria"); return; }
 
-  if (formData.deliveryType === 'delivery') {
-    if (!formData.deliveryAddress) { showError("Dirección de entrega es obligatoria para Delivery"); return; }
-    if (!formData.googleMapsLink) { showError("Link de Google Maps es obligatorio para Delivery"); return; }
-    if (!formData.deliveryPerson?.personId) { showError("Debe seleccionar un motorizado para pedidos con envío."); return; }
-  }
-
   // Double check if there's a delivery product but type is pickup
   const hasDeliveryProduct = cart.value.find(item =>
     item.name.toLowerCase().includes('delivery') || item.name.toLowerCase().includes('envío')
   )
   if (hasDeliveryProduct && formData.deliveryType !== 'delivery') {
     formData.deliveryType = 'delivery'
-    if (!formData.deliveryPerson?.personId) {
-      showError("Se detectó un costo de envío. Por favor asigne un motorizado.")
-      return
-    }
+  }
+  if (formData.deliveryType === 'delivery') {
+    if (!formData.deliveryAddress) { showError("Dirección de entrega es obligatoria para Delivery"); return; }
+    if (!formData.googleMapsLink) { showError("Link de Google Maps es obligatorio para Delivery"); return; }
+    if (!formData.deliveryPerson?.personId) { showError("Debe seleccionar un motorizado para pedidos con envío."); return; }
   }
 
   if (formData.invoiceNeeded) {
