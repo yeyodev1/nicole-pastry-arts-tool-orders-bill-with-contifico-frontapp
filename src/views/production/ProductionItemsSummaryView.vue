@@ -16,6 +16,9 @@ const {
   rawBucketFilter,
   rawFilteredOrders,
   rawStatsByDestinationAndRound,
+  rawStatsByDestRoundCategory,
+  collapsedProductCategories,
+  toggleProductCategory,
   selectedRawProducts,
   toggleRawProductSelection,
   clearRawSelection,
@@ -189,8 +192,10 @@ onMounted(() => {
 
     <!-- MAIN: Destination Grid -->
     <div v-else class="content-wrapper">
-      <div class="destination-grid" v-if="Object.keys(rawStatsByDestinationAndRound).length > 0">
-        <div v-for="(rounds, destination) in rawStatsByDestinationAndRound" :key="destination" class="destination-card">
+      <div class="destination-grid" v-if="Object.keys(rawStatsByDestRoundCategory).length > 0">
+        <div v-for="(rounds, destination) in rawStatsByDestRoundCategory" :key="destination" class="destination-card">
+
+          <!-- Destination header -->
           <div class="dest-title">
             <div class="dest-icon-box">
               <i v-if="destination === 'San Marino'" class="fas fa-store"></i>
@@ -202,49 +207,64 @@ onMounted(() => {
             <div class="dest-info">
               <h3>{{ destination }}</h3>
               <span class="dest-total">
-                {{ Object.values(rounds).reduce((acc, products) => acc + Object.values(products).reduce((a, b) => a + b, 0), 0) }} unids
+                {{ Object.values(rounds).reduce((acc, cats) => acc + Object.values(cats).reduce((a2, prods) => a2 + Object.values(prods).reduce((a3, b3) => a3 + b3, 0), 0), 0) }} unids
               </span>
             </div>
           </div>
 
-          <div v-for="(products, roundLabel) in rounds" :key="roundLabel" class="round-section">
+          <!-- Each round (despacho) -->
+          <div v-for="(categories, roundLabel) in rounds" :key="roundLabel" class="round-section">
             <div v-if="roundLabel" class="round-badge-header">
               <i class="fas fa-clock"></i>
               <span>{{ roundLabel }}</span>
-              <span class="round-total">{{ Object.values(products).reduce((a, b) => a + b, 0) }} unids</span>
+              <span class="round-total">
+                {{ Object.values(categories).reduce((a, prods) => a + Object.values(prods).reduce((a2, b2) => a2 + b2, 0), 0) }} unids
+              </span>
             </div>
 
-            <div class="dest-table-container">
-              <table class="raw-table">
-                <thead>
-                  <tr>
-                    <th class="col-sel"></th>
-                    <th>Producto</th>
-                    <th class="col-qty">Total</th>
-                    <th class="col-qty">Pendiente</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(qty, productName) in products"
-                    :key="productName"
-                    class="raw-row"
-                    :class="{ selected: selectedRawProducts.has(productName) }"
-                    @click="toggleRawProductSelection(productName)"
-                  >
-                    <td class="col-check">
-                      <div class="custom-checkbox" :class="{ checked: selectedRawProducts.has(productName) }">
-                        <i v-if="selectedRawProducts.has(productName)" class="fas fa-check"></i>
-                      </div>
-                    </td>
-                    <td>{{ productName }}</td>
-                    <td class="col-qty"><strong>{{ qty }}</strong></td>
-                    <td class="col-qty pending-qty">
-                      <strong>{{ totalByProduct[productName] ?? qty }}</strong>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <!-- Each category (collapsible) -->
+            <div v-for="(products, catName) in categories" :key="catName" class="cat-section">
+              <button
+                class="cat-header"
+                :class="`cat--${catName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}`"
+                @click="toggleProductCategory(`${destination}|||${roundLabel}|||${catName}`)"
+              >
+                <span class="cat-name">
+                  <i class="fas fa-chevron-right cat-chevron"
+                    :class="{ open: !collapsedProductCategories.has(`${destination}|||${roundLabel}|||${catName}`) }">
+                  </i>
+                  {{ catName }}
+                </span>
+                <span class="cat-qty">{{ Object.values(products).reduce((a, b) => a + b, 0) }} unids</span>
+              </button>
+
+              <Transition name="cat-collapse">
+                <table
+                  v-if="!collapsedProductCategories.has(`${destination}|||${roundLabel}|||${catName}`)"
+                  class="raw-table"
+                >
+                  <tbody>
+                    <tr
+                      v-for="(qty, productName) in products"
+                      :key="productName"
+                      class="raw-row"
+                      :class="{ selected: selectedRawProducts.has(productName) }"
+                      @click="toggleRawProductSelection(productName)"
+                    >
+                      <td class="col-check">
+                        <div class="custom-checkbox" :class="{ checked: selectedRawProducts.has(productName) }">
+                          <i v-if="selectedRawProducts.has(productName)" class="fas fa-check"></i>
+                        </div>
+                      </td>
+                      <td class="col-name">{{ productName }}</td>
+                      <td class="col-qty"><strong>{{ qty }}</strong></td>
+                      <td class="col-qty pending-qty" v-if="totalByProduct[productName]">
+                        <strong>{{ totalByProduct[productName] }}</strong>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </Transition>
             </div>
           </div>
         </div>
@@ -727,6 +747,80 @@ $color-delayed: #e67e22;
   }
 }
 
+// ── Category collapsible sections ──────────────────────────────────
+.cat-section {
+  border-bottom: 1px solid #f1f5f9;
+
+  &:last-child { border-bottom: none; }
+}
+
+.cat-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.9rem;
+  border: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: filter 0.15s;
+  border-radius: 0;
+
+  &:hover { filter: brightness(0.96); }
+
+  .cat-name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .cat-chevron {
+    font-size: 0.65rem;
+    transition: transform 0.2s;
+    &.open { transform: rotate(90deg); }
+  }
+
+  .cat-qty {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.08);
+  }
+
+  // Colors per category
+  &.cat--tortas           { background: #ede9fe; color: #5b21b6; }
+  &.cat--tortas-porción   { background: #e0e7ff; color: #3730a3; }
+  &.cat--joyitas          { background: #fce7f3; color: #9d174d; }
+  &.cat--bollería         { background: #fef3c7; color: #92400e; }
+  &.cat--galletería       { background: #ffedd5; color: #9a3412; }
+  &.cat--siropes          { background: #ccfbf1; color: #134e4a; }
+  &.cat--vegetales        { background: #dcfce7; color: #14532d; }
+  &.cat--heladería        { background: #dbeafe; color: #1e3a5f; }
+  &.cat--casa-mia         { background: #ffe4e6; color: #9f1239; }
+  &.cat--otros            { background: #f1f5f9; color: #475569; }
+}
+
+// Collapse animation
+.cat-collapse-enter-active,
+.cat-collapse-leave-active {
+  transition: all 0.22s ease;
+  overflow: hidden;
+}
+.cat-collapse-enter-from,
+.cat-collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+.cat-collapse-enter-to,
+.cat-collapse-leave-from {
+  opacity: 1;
+  max-height: 1000px;
+}
+
 .raw-table {
   width: 100%;
   border-collapse: collapse;
@@ -742,12 +836,14 @@ $color-delayed: #e67e22;
   }
 
   td {
-    padding: 1rem 0.75rem;
-    font-size: 0.95rem;
+    padding: 0.75rem 0.75rem;
+    font-size: 0.9rem;
     color: #334155;
     border-bottom: 1px solid #f8fafc;
     font-weight: 500;
   }
+
+  .col-name { flex: 1; }
 
   .col-sel {
     width: 32px;
@@ -755,12 +851,12 @@ $color-delayed: #e67e22;
 
   .col-qty {
     text-align: right;
-    width: 80px;
+    width: 70px;
 
     strong {
       color: $color-info;
       font-weight: 800;
-      font-size: 1.1rem;
+      font-size: 1rem;
     }
   }
 
