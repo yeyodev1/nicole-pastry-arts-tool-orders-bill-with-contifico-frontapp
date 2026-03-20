@@ -14,9 +14,12 @@ class ProductionService extends APIBase {
     }
   }
 
-  async getAllOrders(date?: string): Promise<ProductionTask[]> {
+  async getAllOrders(date?: string, source?: 'nicole' | 'sucree'): Promise<ProductionTask[]> {
     try {
-      const query = date ? `?date=${date}` : ''
+      const params = new URLSearchParams()
+      if (date) params.set('date', date)
+      if (source) params.set('source', source)
+      const query = params.toString() ? `?${params.toString()}` : ''
       const response = await this.get<{ data: ProductionTask[] }>(`production/all-orders${query}`)
       return response.data.data
     } catch (error) {
@@ -97,8 +100,11 @@ class ProductionService extends APIBase {
     await this.post('production/progress/batch', { items })
   }
 
-  async getSummary(bucket?: 'delayed' | 'today' | 'tomorrow' | 'future'): Promise<any> {
-    const query = bucket ? `?bucket=${bucket}` : ''
+  async getSummary(bucket?: 'delayed' | 'today' | 'tomorrow' | 'future', source?: 'nicole' | 'sucree'): Promise<any> {
+    const params = new URLSearchParams()
+    if (bucket) params.set('bucket', bucket)
+    if (source) params.set('source', source)
+    const query = params.toString() ? `?${params.toString()}` : ''
     const response = await this.get<{ dashboard: any }>(`production/summary${query}`)
     return response.data.dashboard
   }

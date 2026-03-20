@@ -11,6 +11,7 @@ export interface OrderDetail {
 
 export interface SummaryItem {
   _id: string
+  uid?: string   // composite key: bucket + ':' + _id
   totalQuantity: number
   urgency: string
   category?: string

@@ -11,6 +11,7 @@ interface OrderDetail {
 
 interface Item {
   _id: string
+  uid?: string
   totalQuantity: number
   urgency: string
   category?: string
@@ -90,7 +91,7 @@ const leave = (el: Element) => {
                         :key="item._id" 
                         :item="item"
                         :urgency-type="urgencyType"
-                        :is-selected="selectedIds ? selectedIds.has(item._id) : false"
+                        :is-selected="selectedIds ? selectedIds.has(item.uid || item._id) : false"
                         @toggle-expand="(itm) => emit('toggle-item', itm)"
                         @register="(itm) => emit('register-item', itm)"
                         @void-item="handleVoidItem"
