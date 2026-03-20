@@ -685,6 +685,7 @@ onMounted(fetchUsers)
   justify-content: center;
   z-index: 2000;
   padding: 1.5rem;
+  overflow-y: auto; // permite scroll del overlay en pantallas muy pequeñas
 }
 
 .premium-modal {
@@ -692,9 +693,14 @@ onMounted(fetchUsers)
   width: 100%;
   max-width: 550px;
   border-radius: 24px;
+  overflow: hidden; // clip the scrollable child to the rounded corners
   position: relative;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   animation: modalEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  // Limitar altura y permitir scroll interno
+  max-height: calc(100vh - 3rem); // descuenta el padding del overlay (1.5rem × 2)
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes modalEnter {
@@ -716,6 +722,7 @@ onMounted(fetchUsers)
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0; // nunca se comprime — siempre visible
 
   .modal-title-group {
     display: flex;
@@ -751,7 +758,10 @@ onMounted(fetchUsers)
 
 .premium-form {
   padding: 2rem;
-  padding-bottom: 3rem; // Added more space at the bottom
+  padding-bottom: 2rem;
+  overflow-y: auto; // el formulario hace scroll si no cabe
+  flex: 1;          // ocupa el espacio restante del modal
+  min-height: 0;    // necesario para que flex + overflow funcionen correctamente
 
   .form-row {
     margin-bottom: 1.5rem;
