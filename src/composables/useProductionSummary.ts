@@ -77,6 +77,97 @@ export function useProductionSummary() {
     return stats
   })
 
+  // ── Category mapping helper ─────────────────────────────────────────
+  const mapCategory = (productName: string, rawCategory?: string): string => {
+    if (rawCategory) {
+      const c = rawCategory.toUpperCase()
+      if (c.includes('ENTERO') || c.includes('TORTA'))               return 'TORTAS'
+      if (c.includes('PORCION') || c.includes('PORCIÓN'))            return 'TORTAS PORCIÓN'
+      if (c.includes('INDIVIDUAL') || c.includes('JOYITA'))          return 'JOYITAS'
+      if (c.includes('PANADER') || c.includes('BOLLERÍA') || c.includes('BOLLERIA')) return 'BOLLERÍA'
+      if (c.includes('GALLETA') || c.includes('COOKIE') || c.includes('GALLAT'))     return 'GALLETERÍA'
+      if (c.includes('SIROPE') || c.includes('SYRUP'))               return 'SIROPES'
+      if (c.includes('VEGETAL') || c.includes('FRUTA'))              return 'VEGETALES'
+      if (c.includes('HELAD') || c.includes('GIANDUJA'))             return 'HELADERÍA'
+    }
+    const n = productName.toUpperCase()
+    if (n.includes('TORTA') || n.includes('CAKE'))                           return 'TORTAS'
+    if (n.includes('PORCION') || n.includes('PORCIÓN'))                      return 'TORTAS PORCIÓN'
+    if (n.includes('JOYITA') || n.includes('MINI CAKE'))                     return 'JOYITAS'
+    if (n.includes('BRIOCHE') || n.includes('CROISSANT') || n.includes('ROLL') || n.includes('PAN SUIZO') || n.includes('PLUM')) return 'BOLLERÍA'
+    if (n.includes('COOKIE') || n.includes('GALLETA') || n.includes('BIZCOCHO') || n.includes('BROWNIE')) return 'GALLETERÍA'
+    if (n.includes('SIROPE') || n.includes('POLVO CHAI') || n.includes('MATCHA')) return 'SIROPES'
+    if (n.includes('FRUTILLA') || n.includes('ARANDANO') || n.includes('FRAMBUESA') || n.includes('VEGETAL')) return 'VEGETALES'
+    if (n.includes('HELADO') || n.includes('GIANDUJA') || n.includes('CRUMBLE') || n.includes('MARSHMALLOW')) return 'HELADERÍA'
+    if (n.includes('MASA') || n.includes('ROAST') || n.includes('CAPRESSE') || n.includes('MEDITERRANEO')) return 'CASA MIA'
+    return 'OTROS'
+  }
+
+  const CATEGORY_ORDER = ['TORTAS', 'TORTAS PORCIÓN', 'JOYITAS', 'BOLLERÍA', 'GALLETERÍA', 'SIROPES', 'VEGETALES', 'HELADERÍA', 'CASA MIA', 'OTROS']
+
+  // Groups by Destination → Round Label → Category → Product → Quantity
+  const rawStatsByDestRoundCategory = computed(() => {
+    const stats: Record<string, Record<string, Record<string, Record<string, number>>>> = {}
+    if (!rawFilteredOrders.value.length) return stats
+
+    rawFilteredOrders.value.forEach(order => {
+      let dest = 'Otros / Sin Local'
+      if (order.deliveryType === 'delivery') {
+        dest = 'Delivery'
+      } else if (order.branch) {
+        const b = order.branch.toLowerCase()
+        if (b.includes('marino')) dest = 'San Marino'
+        else if (b.includes('mall') || b.includes('sol')) dest = 'Mall del Sol'
+        else if (b.includes('centro') || b.includes('producci')) dest = 'Centro Prod.'
+        else dest = order.branch
+      }
+
+      const isRestock = order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega'
+      const roundLabel = isRestock && order.comments ? order.comments : ''
+
+      if (!stats[dest]) stats[dest] = {}
+      if (!stats[dest]![roundLabel]) stats[dest]![roundLabel] = {}
+
+      order.products.forEach((p: any) => {
+        const cat = mapCategory(p.name, p.category)
+        if (!stats[dest]![roundLabel]![cat]) stats[dest]![roundLabel]![cat] = {}
+        const catGroup = stats[dest]![roundLabel]![cat] as Record<string, number>
+        catGroup[p.name] = (catGroup[p.name] || 0) + (p.quantity || 0)
+      })
+    })
+
+    // Sort categories within each round
+    const sorted: typeof stats = {}
+    Object.entries(stats).forEach(([dest, rounds]) => {
+      sorted[dest] = {}
+      Object.entries(rounds).forEach(([round, cats]) => {
+        const sortedCats: Record<string, Record<string, number>> = {}
+        Object.keys(cats)
+          .sort((a, b) => {
+            const ia = CATEGORY_ORDER.indexOf(a), ib = CATEGORY_ORDER.indexOf(b)
+            if (ia !== -1 && ib !== -1) return ia - ib
+            if (ia !== -1) return -1; if (ib !== -1) return 1
+            return a.localeCompare(b)
+          })
+          .forEach(cat => { sortedCats[cat] = cats[cat]! })
+        sorted[dest]![round] = sortedCats
+      })
+    })
+
+    return sorted
+  })
+
+  // Collapsed state for category sections in the raw view
+  const collapsedProductCategories = ref<Set<string>>(new Set())
+
+  const toggleProductCategory = (key: string) => {
+    if (collapsedProductCategories.value.has(key)) {
+      collapsedProductCategories.value.delete(key)
+    } else {
+      collapsedProductCategories.value.add(key)
+    }
+  }
+
   // Groups by Destination → Round Label → Product → Quantity
   const rawStatsByDestinationAndRound = computed(() => {
     const stats: Record<string, Record<string, Record<string, number>>> = {}
@@ -205,6 +296,9 @@ export function useProductionSummary() {
     rawFilteredOrders,
     rawStatsByDestination,
     rawStatsByDestinationAndRound,
+    rawStatsByDestRoundCategory,
+    collapsedProductCategories,
+    toggleProductCategory,
     selectedRawProducts,
     toggleRawProductSelection,
     clearRawSelection,
