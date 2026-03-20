@@ -12,173 +12,216 @@ export function useOrderExport() {
     XLSX.writeFile(workbook, `${filename}.xlsx`)
   }
 
-  // --- Production Export ---
+  // --- Production Export (Pivot format: Category × Destination/Round) ---
   const exportProductionOrder = async (
     orders: any[],
     responsibleName: string
   ) => {
     isExporting.value = true
     try {
-      // Aggregate products
-      const productAggregation: Record<string, { name: string, qty: number, category: string, comments: string[] }> = {}
+      // ── Colors ─────────────────────────────────────────────────────
+      const C_TITLE_BG   = 'BF8B00'  // dark amber — title row
+      const C_HEADER_BG  = 'FFC107'  // amber — column header row
+      const C_CAT_BG     = 'FFF3E0'  // light amber — category rows
+      const C_TOTAL_BG   = 'E65100'  // deep orange — totals row
+      const C_EVEN       = 'FFFFFF'
+      const C_ODD        = 'FAFAFA'
+      const C_BORDER     = 'DDDDDD'
+      const C_CAT_BORDER = 'FFA726'
+
+      // ── 1. Category mapping ─────────────────────────────────────────
+      const mapCategory = (productName: string, rawCategory?: string): string => {
+        if (rawCategory) {
+          const c = rawCategory.toUpperCase()
+          if (c.includes('ENTERO') || c.includes('TORTA'))   return 'TORTAS'
+          if (c.includes('PORCION') || c.includes('PORCIÓN')) return 'TORTAS PORCIÓN'
+          if (c.includes('INDIVIDUAL') || c.includes('JOYITA')) return 'JOYITAS'
+          if (c.includes('PANADER') || c.includes('BOLLERÍA') || c.includes('BOLLERIA')) return 'BOLLERÍA'
+          if (c.includes('GALLETA') || c.includes('COOKIE') || c.includes('GALLAT')) return 'GALLETERÍA'
+          if (c.includes('SIROPE') || c.includes('SYRUP'))   return 'SIROPES'
+          if (c.includes('VEGETAL') || c.includes('FRUTA'))  return 'VEGETALES'
+          if (c.includes('HELAD') || c.includes('GIANDUJA')) return 'HELADERÍA'
+        }
+        const n = productName.toUpperCase()
+        if (n.includes('TORTA') || n.includes('CAKE'))                         return 'TORTAS'
+        if (n.includes('PORCION') || n.includes('PORCIÓN'))                    return 'TORTAS PORCIÓN'
+        if (n.includes('JOYITA') || n.includes('MINI CAKE'))                   return 'JOYITAS'
+        if (n.includes('BRIOCHE') || n.includes('CROISSANT') || n.includes('ROLL') || n.includes('PAN SUIZO') || n.includes('PLUM')) return 'BOLLERÍA'
+        if (n.includes('COOKIE') || n.includes('GALLETA') || n.includes('BIZCOCHO') || n.includes('BROWNIE')) return 'GALLETERÍA'
+        if (n.includes('SIROPE') || n.includes('POLVO CHAI') || n.includes('MATCHA')) return 'SIROPES'
+        if (n.includes('FRUTILLA') || n.includes('ARANDANO') || n.includes('FRAMBUESA') || n.includes('VEGETAL')) return 'VEGETALES'
+        if (n.includes('HELADO') || n.includes('GIANDUJA') || n.includes('CRUMBLE') || n.includes('SALSA') || n.includes('MARSHMALLOW')) return 'HELADERÍA'
+        if (n.includes('MASA') || n.includes('ROAST') || n.includes('CAPRESSE') || n.includes('MEDITERRANEO')) return 'CASA MIA'
+        return 'OTROS'
+      }
+
+      // ── 2. Determine destination key per order ──────────────────────
+      const getDestInfo = (order: any): { dest: string; round: string; sortKey: number } => {
+        let dest = 'Otros'; let sortKey = 99
+        if (order.deliveryType === 'delivery') {
+          dest = 'Delivery'; sortKey = 10
+        } else if (order.branch) {
+          const b = (order.branch as string).toLowerCase()
+          if (b.includes('marino'))                              { dest = 'San Marino';  sortKey = 1 }
+          else if (b.includes('mall') || b.includes('sol'))     { dest = 'Mall del Sol'; sortKey = 2 }
+          else if (b.includes('centro') || b.includes('producci') || b.includes('cdp')) { dest = 'CDP'; sortKey = 5 }
+          else                                                   { dest = order.branch;  sortKey = 8 }
+        }
+        const isRestock = order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega'
+        const round = isRestock && order.comments ? String(order.comments) : ''
+        return { dest, round, sortKey }
+      }
+
+      // ── 3. Build pivot ──────────────────────────────────────────────
+      // pivot[productName] = { category, destQty: { columnKey → qty } }
+      const pivot: Record<string, { category: string; destQty: Record<string, number> }> = {}
+      // destColumns: ordered list of { key, dest, round, sortKey }
+      const destColMap = new Map<string, { dest: string; round: string; sortKey: number }>()
 
       orders.forEach(order => {
-        const products = order.products || []
-        const orderComment = order.comments ? `${order.customerName}: ${order.comments}` : null
+        const { dest, round, sortKey } = getDestInfo(order)
+        const colKey = round ? `${dest}||${round}` : dest
+        if (!destColMap.has(colKey)) destColMap.set(colKey, { dest, round, sortKey })
 
-        products.forEach((p: any) => {
-          const name = p.name || 'Unknown'
-          const key = name.trim().toUpperCase()
-          const qty = p.quantity || 0
-          const cat = p.category || ''
-
-          if (!productAggregation[key]) {
-            productAggregation[key] = {
-              name: name,
-              qty: 0,
-              category: cat,
-              comments: []
-            }
-          }
-          productAggregation[key].qty += qty
-
-          if (!productAggregation[key].category && cat) {
-            productAggregation[key].category = cat
-          }
-
-          if (orderComment) {
-            productAggregation[key].comments.push(orderComment)
-          }
+        ;(order.products || []).forEach((p: any) => {
+          const name = (p.name || '').trim()
+          if (!name) return
+          const qty = Number(p.quantity) || 0
+          if (qty <= 0) return
+          if (!pivot[name]) pivot[name] = { category: mapCategory(name, p.category), destQty: {} }
+          pivot[name].destQty[colKey] = (pivot[name].destQty[colKey] || 0) + qty
         })
       })
 
-      // Dynamic Grouping Logic
-      // Define preferred order for known categories
-      const preferredOrder = [
-        'TORTAS',
-        'INDIVIDUALES',
-        'BOLLERIA',
-        'GALLETAS',
-        'SYROPES',
-        'VEGETALES',
-        'HELADERIA',
-        'CASA MIA',
-        'PACK PEQUEÑO', // Added from user image example
-        'OTROS'
-      ]
+      // Sort destination columns
+      const sortedCols = Array.from(destColMap.entries())
+        .sort(([, a], [, b]) => a.sortKey !== b.sortKey ? a.sortKey - b.sortKey : a.round.localeCompare(b.round))
+        .map(([key, info]) => ({ key, ...info }))
 
-      const groupedProducts: Record<string, any[]> = {}
-
-      Object.values(productAggregation).forEach(item => {
-        if (item.qty <= 0) return
-
-        let cat = (item.category || '').toUpperCase().trim()
-        const name = item.name.toUpperCase()
-
-        // Mapping Logic (can be expanded)
-        if (!cat) {
-          if (name.includes('TORTA')) cat = 'TORTAS'
-          else if (name.includes('INDIVIDUAL')) cat = 'INDIVIDUALES'
-          else if (name.includes('PAN') || name.includes('CROISSANT')) cat = 'BOLLERIA'
-          else if (name.includes('GALLETA') || name.includes('COOKIE')) cat = 'GALLETAS'
-          else cat = 'OTROS'
-        }
-
-        if (!groupedProducts[cat]) {
-          groupedProducts[cat] = []
-        }
-
-        const currentGroup = groupedProducts[cat] as any[]
-        currentGroup.push({
-          name: item.name,
-          unit: 'UNI',
-          qty: item.qty,
-          comments: item.comments.join('; ')
-        })
+      // ── 4. Group & sort products by category ────────────────────────
+      const CATEGORY_ORDER = ['TORTAS', 'TORTAS PORCIÓN', 'JOYITAS', 'BOLLERÍA', 'GALLETERÍA', 'SIROPES', 'VEGETALES', 'HELADERÍA', 'CASA MIA', 'OTROS']
+      const grouped: Record<string, string[]> = {}
+      Object.entries(pivot).forEach(([name, { category }]) => {
+        if (!grouped[category]) grouped[category] = []
+        grouped[category].push(name)
       })
-
-      // Sort categories based on preferred order, putting unknown ones at the end (before OTROS if possible)
-      const sortedCategories = Object.keys(groupedProducts).sort((a, b) => {
-        const indexA = preferredOrder.indexOf(a)
-        const indexB = preferredOrder.indexOf(b)
-
-        if (indexA !== -1 && indexB !== -1) return indexA - indexB
-        if (indexA !== -1) return -1
-        if (indexB !== -1) return 1
-
-        // Both unknown, sort alphabetically
+      Object.values(grouped).forEach(list => list.sort())
+      const sortedCategories = Object.keys(grouped).sort((a, b) => {
+        const ia = CATEGORY_ORDER.indexOf(a), ib = CATEGORY_ORDER.indexOf(b)
+        if (ia !== -1 && ib !== -1) return ia - ib
+        if (ia !== -1) return -1; if (ib !== -1) return 1
         return a.localeCompare(b)
       })
 
-      // Create Worksheet Data with Styling
+      // ── 5. Build sheet data ─────────────────────────────────────────
       const wsData: any[][] = []
-      // We will track cell styles
+      const wsStyle: Record<string, any> = {}
       const wsMerges: any[] = []
-      const wsStyle: any = {} // Cell address -> style object
 
-      // Helper to set style
-      const setStyle = (row: number, col: number, style: any) => {
-        const cellRef = XLSX.utils.encode_cell({ r: row, c: col })
-        wsStyle[cellRef] = style
+      const S = (row: number, col: number, style: any) => {
+        wsStyle[XLSX.utils.encode_cell({ r: row, c: col })] = style
+      }
+      const today = formatECT(new Date().toISOString(), false)
+      const totalCols = 2 + sortedCols.length + 1  // category + product + dest cols + TOTAL
+      const lastCol = totalCols - 1
+
+      const border = (color = C_BORDER, weight = 'thin') => ({
+        top: { style: weight, color: { rgb: color } },
+        bottom: { style: weight, color: { rgb: color } },
+        left: { style: weight, color: { rgb: color } },
+        right: { style: weight, color: { rgb: color } }
+      })
+
+      // Row 0: Title
+      wsData.push([`ORDEN DE PRODUCCIÓN — ${today}`, ...Array(totalCols - 1).fill('')])
+      wsMerges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } })
+      for (let c = 0; c < totalCols; c++) {
+        S(0, c, { font: { bold: true, sz: 14, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: C_TITLE_BG } }, alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center' } })
       }
 
-      // Header Info
-      wsData.push(['PRODUCTO', 'FECHA', `RESPONSABLE: ${responsibleName.toUpperCase()}`, 'RECIBIDO', 'REBECCA PINTO', 'COMENTARIOS'])
-      wsData.push(['', formatECT(new Date().toISOString(), false), `HORA: ${new Date().getHours()}:${new Date().getMinutes().toString().padStart(2, '0')}`, '', 'HORA: 16:00', ''])
-      wsData.push(['', '', 'PRIMER DESPACHO', '', 'SEGUNDO DESPACHO', ''])
-      wsData.push([]) // Spacer
-
-      // Apply styles to header rows
-      // Row 0 (Headers)
-      for (let c = 0; c <= 5; c++) {
-        setStyle(0, c, { font: { bold: true }, border: { bottom: { style: 'thin' } } })
+      // Row 1: Responsible
+      wsData.push([`RESPONSABLE: ${responsibleName.toUpperCase()}`, ...Array(totalCols - 1).fill('')])
+      wsMerges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } })
+      for (let c = 0; c < totalCols; c++) {
+        S(1, c, { font: { sz: 10, italic: true, color: { rgb: '5D4037' } }, fill: { fgColor: { rgb: 'FFF8E1' } } })
       }
 
-      let currentRow = 4
+      // Row 2: Column headers
+      wsData.push([
+        'CATEGORÍA', 'PRODUCTO',
+        ...sortedCols.map(col => col.round ? `${col.dest.toUpperCase()}\n${col.round.toUpperCase()}` : col.dest.toUpperCase()),
+        'TOTAL'
+      ])
+      for (let c = 0; c < totalCols; c++) {
+        S(2, c, { font: { bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: C_HEADER_BG } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: border('000000', c === 0 || c === 1 ? 'medium' : 'thin') })
+      }
 
+      let currentRow = 3
+
+      // Category + product rows
       sortedCategories.forEach(cat => {
-        const products = groupedProducts[cat] || []
-        if (products.length > 0) {
-          // Category Header
-          wsData.push([cat, '', '', '', '', ''])
+        const products = grouped[cat] || []
+        if (products.length === 0) return
 
-          // Merge cells for category header across A-F? Or just leave it in A
-          // Let's style the whole row for the category
-          for (let c = 0; c <= 5; c++) {
-            setStyle(currentRow, c, {
-              fill: { fgColor: { rgb: "E0E0E0" } }, // Light Gray background
-              font: { bold: true, sz: 12 }
+        // Category header — spans all columns
+        wsData.push([cat, ...Array(totalCols - 1).fill('')])
+        wsMerges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: totalCols - 1 } })
+        for (let c = 0; c < totalCols; c++) {
+          S(currentRow, c, { font: { bold: true, sz: 11, color: { rgb: '4E342E' } }, fill: { fgColor: { rgb: C_CAT_BG } }, alignment: { horizontal: 'left', vertical: 'center' }, border: border(C_CAT_BORDER) })
+        }
+        currentRow++
+
+        products.forEach((productName, pIdx) => {
+          const destQty = pivot[productName]?.destQty
+          if (!destQty) return
+          let rowTotal = 0
+          const qtyValues = sortedCols.map(col => {
+            const q = destQty[col.key] || 0
+            rowTotal += q
+            return q > 0 ? q : ''
+          })
+          wsData.push(['', productName, ...qtyValues, rowTotal > 0 ? rowTotal : ''])
+
+          const rowBg = pIdx % 2 === 0 ? C_EVEN : C_ODD
+          for (let c = 0; c < totalCols; c++) {
+            const isLast = c === lastCol
+            S(currentRow, c, {
+              font: isLast ? { bold: true } : {},
+              fill: { fgColor: { rgb: isLast ? 'FFF8E1' : rowBg } },
+              alignment: { horizontal: c <= 1 ? 'left' : 'center', vertical: 'center' },
+              border: border(C_BORDER)
             })
           }
           currentRow++
-
-          products.forEach(p => {
-            wsData.push([p.name, p.unit, p.qty, '', '', p.comments])
-            currentRow++
-          })
-          // Spacer after category
-          wsData.push([])
-          currentRow++
-        }
+        })
       })
 
+      // Totals row
+      const totalsRow: any[] = ['', 'TOTAL GENERAL']
+      let grandTotal = 0
+      sortedCols.forEach(col => {
+        let colTotal = 0
+        Object.values(pivot).forEach(({ destQty }) => { colTotal += destQty[col.key] || 0 })
+        grandTotal += colTotal
+        totalsRow.push(colTotal > 0 ? colTotal : '')
+      })
+      totalsRow.push(grandTotal > 0 ? grandTotal : '')
+      wsData.push(totalsRow)
+      for (let c = 0; c < totalCols; c++) {
+        S(currentRow, c, { font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: C_TOTAL_BG } }, alignment: { horizontal: c <= 1 ? 'left' : 'center', vertical: 'center' }, border: border('000000', 'medium') })
+      }
+
+      // ── 6. Build workbook ───────────────────────────────────────────
       const wb = XLSX.utils.book_new()
       const ws = XLSX.utils.aoa_to_sheet(wsData)
+      ws['!merges'] = wsMerges
+      ws['!rows'] = [{ hpt: 28 }, { hpt: 18 }, { hpt: 40 }]
+      ws['!cols'] = [{ wch: 16 }, { wch: 38 }, ...sortedCols.map(() => ({ wch: 16 })), { wch: 12 }]
 
-      // Apply merges (if any needed, none strict right now)
-      // ws['!merges'] = wsMerges
+      Object.keys(wsStyle).forEach(ref => { if (ws[ref]) ws[ref].s = wsStyle[ref] })
 
-      // Apply styles
-      Object.keys(wsStyle).forEach(cell => {
-        if (!ws[cell]) return
-        ws[cell].s = wsStyle[cell]
-      })
-
-      // Column Widths
-      ws['!cols'] = [{ wch: 40 }, { wch: 10 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 50 }]
-
-      XLSX.utils.book_append_sheet(wb, ws, 'Orden Produccion')
-      saveExcelFile(wb, `Orden_Produccion_${formatECT(new Date().toISOString(), false)}`)
+      XLSX.utils.book_append_sheet(wb, ws, 'Orden de Producción')
+      saveExcelFile(wb, `Orden_Produccion_${today}`)
 
     } catch (error) {
       console.error('Export error:', error)
