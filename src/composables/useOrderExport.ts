@@ -62,10 +62,10 @@ export function useOrderExport() {
           dest = 'Delivery'; sortKey = 10
         } else if (order.branch) {
           const b = (order.branch as string).toLowerCase()
-          if (b.includes('marino'))                              { dest = 'San Marino';  sortKey = 1 }
-          else if (b.includes('mall') || b.includes('sol'))     { dest = 'Mall del Sol'; sortKey = 2 }
+          if (b.includes('marino'))                              { dest = 'Retiro - San Marino';  sortKey = 1 }
+          else if (b.includes('mall') || b.includes('sol'))     { dest = 'Retiro - Mall del Sol'; sortKey = 2 }
           else if (b.includes('centro') || b.includes('producci') || b.includes('cdp')) { dest = 'CDP'; sortKey = 5 }
-          else                                                   { dest = order.branch;  sortKey = 8 }
+          else                                                   { dest = `Retiro - ${order.branch}`;  sortKey = 8 }
         }
         const isRestock = order.salesChannel === 'Restock' || order.salesChannel === 'Restock-Bodega'
         const round = isRestock && order.comments ? String(order.comments) : ''
