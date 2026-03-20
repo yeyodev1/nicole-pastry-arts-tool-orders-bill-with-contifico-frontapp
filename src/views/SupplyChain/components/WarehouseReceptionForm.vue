@@ -32,6 +32,45 @@ const getDisplayUnit = (unit?: string) => {
 
 const getMaterialById = (id: string) => props.materials.find(m => m._id === id)
 
+/**
+ * Si hay un proveedor seleccionado a nivel de recepción, muestra solo los materiales
+ * asociados a ese proveedor. Si el material no tiene proveedores configurados, se muestra
+ * siempre (es accesible a cualquier proveedor).
+ * Si no hay proveedor seleccionado, muestra todos.
+ */
+const filteredMaterialOptions = computed(() => {
+  if (!props.form.provider) return props.materialOptions
+
+  return props.materialOptions.filter(opt => {
+    const mat = props.materials.find(m => m._id === opt.value)
+    if (!mat) return true
+    // Sin proveedores configurados → siempre visible
+    if (!mat.providers || mat.providers.length === 0) return true
+    // Tiene proveedores → solo si el proveedor seleccionado está en la lista
+    return mat.providers.some(p => {
+      const provId = typeof p.provider === 'object' ? p.provider?._id : p.provider
+      return provId === props.form.provider
+    })
+  })
+})
+
+// Cuando cambia el proveedor global, limpiar ítems cuyo material ya no pertenece a ese proveedor
+watch(() => props.form.provider, (newProvider) => {
+  if (!newProvider) return
+  const updatedItems = props.form.items.map(item => {
+    if (!item.rawMaterial) return item
+    const mat = props.materials.find(m => m._id === item.rawMaterial)
+    if (!mat || !mat.providers || mat.providers.length === 0) return item
+    const belongs = mat.providers.some(p => {
+      const provId = typeof p.provider === 'object' ? p.provider?._id : p.provider
+      return provId === newProvider
+    })
+    if (!belongs) return { rawMaterial: '', quantity: 0, unitCost: 0, provider: '' }
+    return item
+  })
+  emit('update:form', { ...props.form, items: updatedItems })
+})
+
 const itemTotal = (item: ReceptionItem) => item.quantity * (item.unitCost || 0)
 
 const grandTotal = computed(() => props.form.items.reduce((s, i) => s + itemTotal(i), 0))
@@ -183,9 +222,18 @@ const fmt = (n: number) => n.toLocaleString('es-EC', { minimumFractionDigits: 2,
                 <label>Materia Prima</label>
                 <SearchableSelect
                   :modelValue="item.rawMaterial"
-                  @update:modelValue="val => updateItem(idx, { rawMaterial: val, provider: '', unitCost: 0 })"
-                  :options="materialOptions"
-                  placeholder="Buscar materia prima..."
+                  @update:modelValue="val => {
+                    const mat = getMaterialById(val)
+                    // Auto-fill price from the global provider if configured
+                    let autoPrice = 0
+                    if (mat && form.provider && mat.providers?.length) {
+                      const pInfo = mat.providers.find(p => (typeof p.provider === 'object' ? p.provider?._id : p.provider) === form.provider)
+                      if (pInfo) autoPrice = (mat.unit === 'g' || mat.unit === 'ml') ? pInfo.price * 1000 : pInfo.price
+                    }
+                    updateItem(idx, { rawMaterial: val, provider: form.provider || '', unitCost: autoPrice })
+                  }"
+                  :options="filteredMaterialOptions"
+                  :placeholder="form.provider ? 'Materias del proveedor seleccionado...' : 'Buscar materia prima...'"
                 />
               </div>
 
