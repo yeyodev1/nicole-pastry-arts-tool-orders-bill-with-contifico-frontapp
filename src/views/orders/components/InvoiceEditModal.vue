@@ -11,6 +11,7 @@ const props = defineProps<{
     businessName: string
     email: string
     address: string
+    personType?: 'natural' | 'juridica'
   }
   invoiceNeeded: boolean
 }>()
@@ -24,6 +25,7 @@ const dialog = useDialog()
 const isSubmitting = ref(false)
 const form = reactive({
   invoiceNeeded: false,
+  personType: 'natural' as 'natural' | 'juridica',
   ruc: '',
   businessName: '',
   email: '',
@@ -35,6 +37,7 @@ watch(() => props.isOpen, (newVal) => {
   if (newVal) {
     form.invoiceNeeded = props.invoiceNeeded
     if (props.currentInvoiceData) {
+      form.personType = props.currentInvoiceData.personType || 'natural'
       form.ruc = props.currentInvoiceData.ruc || ''
       form.businessName = props.currentInvoiceData.businessName || ''
       form.email = props.currentInvoiceData.email || ''
@@ -73,6 +76,7 @@ const save = async () => {
     const payload = {
       invoiceNeeded: form.invoiceNeeded,
       invoiceData: form.invoiceNeeded ? {
+        personType: form.personType,
         ruc: form.ruc.trim(),
         businessName: form.businessName,
         email: form.email,
@@ -109,9 +113,24 @@ const save = async () => {
       </div>
       
       <div v-if="form.invoiceNeeded" class="fields-container">
+          <!-- Tipo de persona -->
           <div class="form-group">
-            <label>RUC / Cédula *</label>
-            <input v-model="form.ruc" placeholder="10 o 13 dígitos" />
+            <label>Tipo de Persona *</label>
+            <div class="person-type-row">
+              <label class="pt-opt" :class="{ active: form.personType === 'natural' }">
+                <input type="radio" value="natural" v-model="form.personType" />
+                <i class="fa-solid fa-user"></i> Persona Natural
+              </label>
+              <label class="pt-opt" :class="{ active: form.personType === 'juridica' }">
+                <input type="radio" value="juridica" v-model="form.personType" />
+                <i class="fa-solid fa-building"></i> Persona Jurídica
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>{{ form.personType === 'juridica' ? 'RUC Empresa *' : 'Cédula / RUC *' }}</label>
+            <input v-model="form.ruc" :placeholder="form.personType === 'juridica' ? '13 dígitos empresa' : '10 (cédula) o 13 (RUC)'" inputmode="numeric" />
           </div>
           
           <div class="form-group">
@@ -257,5 +276,37 @@ const save = async () => {
   gap: 0.5rem;
   font-size: 0.9rem;
   border: 1px solid #fde047;
+}
+
+.person-type-row {
+  display: flex;
+  gap: 0.5rem;
+
+  .pt-opt {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 0.75rem;
+    border: 2px solid $border-light;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+    transition: all 0.18s;
+
+    input[type="radio"] { display: none; }
+
+    &:hover { border-color: $NICOLE-PURPLE; }
+
+    &.active {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.06);
+      color: $NICOLE-PURPLE;
+    }
+
+    i { font-size: 0.8rem; }
+  }
 }
 </style>
