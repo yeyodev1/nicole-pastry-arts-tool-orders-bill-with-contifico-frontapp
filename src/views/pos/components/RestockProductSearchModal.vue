@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { type PropType, computed } from 'vue';
+import { type PropType, computed, onMounted } from 'vue';
+import { useBranches } from '@/composables/useBranches';
 import type { RestockProduct } from '@/views/pos/composables/useRestockModal';
 import RestockConfig from './RestockConfig.vue';
 import type { WeeklyObjectives } from '@/services/pos-restock.service';
@@ -13,7 +14,8 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'success', 'update:branch', 'notify']);
 
-const branches = ['San Marino', 'Mall del Sol', 'Centro de Producción'];
+const { branchNames: branches, load: loadBranches } = useBranches()
+onMounted(() => { loadBranches() })
 
 const selectedBranch = computed({
   get: () => props.branch,

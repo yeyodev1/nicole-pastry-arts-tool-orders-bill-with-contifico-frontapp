@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, onMounted } from 'vue'
+import { useBranches } from '@/composables/useBranches'
 
 const props = defineProps({
   isOpen: {
@@ -14,9 +15,15 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'confirm'])
 
-const selectedIsland = ref('San Marino')
+const { branchNames: ISLANDS, load: loadBranches } = useBranches()
+const selectedIsland = ref('')
 
-const ISLANDS = ['San Marino', 'Mall del Sol', 'Centro de Producción']
+// Set default to first branch once loaded
+watch(ISLANDS, (names) => {
+  if (!selectedIsland.value && names.length) selectedIsland.value = names[0] ?? ''
+}, { immediate: true })
+
+onMounted(() => { loadBranches() })
 
 const handleConfirm = () => {
   if (!selectedIsland.value) return

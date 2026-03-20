@@ -3,7 +3,7 @@ import type { OrderFormData } from '@/types/order'
 import { computed, ref, onMounted } from 'vue'
 import { useDialog } from '@/composables/useDialog'
 import { deliveryService, type DeliveryPerson } from '@/services/delivery.service'
-import ProductionSettingsService from '@/services/production-settings.service'
+import { useBranches } from '@/composables/useBranches'
 import PaymentFields from './PaymentFields.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 import CustomTimeSelect from '@/components/ui/CustomTimeSelect.vue'
@@ -16,7 +16,8 @@ const props = defineProps<{
 }>()
 
 const dialog = useDialog()
-const BRANCHES = ref<string[]>([])
+const { branchNames, load: loadBranches } = useBranches()
+const BRANCHES = branchNames
 
 const isDelivery = computed(() => props.modelValue.deliveryType === 'delivery')
 
@@ -32,20 +33,9 @@ const fetchRiders = async () => {
   }
 }
 
-const fetchDynamicDestinations = async () => {
-  try {
-    const settings = await ProductionSettingsService.getSettings()
-    if (settings && settings.destinations) {
-      BRANCHES.value = settings.destinations.map(d => d.name)
-    }
-  } catch (error) {
-    console.error('Error fetching dynamic destinations:', error)
-  }
-}
-
 onMounted(() => {
   fetchRiders()
-  fetchDynamicDestinations()
+  loadBranches()
 })
 
 const handleRiderChange = (e: Event) => {
