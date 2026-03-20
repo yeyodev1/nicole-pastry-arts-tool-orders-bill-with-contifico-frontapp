@@ -156,6 +156,9 @@ const closePanel = () => { mobileOpen.value = false }
           <router-link to="/admin/users" active-class="active" @click="closePanel">
             <i class="fa-solid fa-users"></i> Gestión de Equipo
           </router-link>
+          <router-link to="/settings/branches" active-class="active" @click="closePanel">
+            <i class="fa-solid fa-store"></i> Puntos de Venta
+          </router-link>
         </template>
       </template>
 

@@ -6,6 +6,7 @@ import RestockProductSearchModal from './components/RestockProductSearchModal.vu
 import RestockDeleteModal from './components/RestockDeleteModal.vue';
 import SearchableSelect from '@/components/ui/SearchableSelect.vue';
 import { useToast } from '@/composables/useToast';
+import { useBranches } from '@/composables/useBranches';
 
 // --- Interfaces ---
 interface ProductConfig {
@@ -20,9 +21,9 @@ interface ProductConfig {
 
 // --- State ---
 const router = useRouter();
-const branch = ref('San Marino');
-const branches = ['San Marino', 'Mall del Sol', 'Centro de Producción'];
-const branchOptions = computed(() => branches.map(b => ({ value: b, label: b })));
+const { branchNames, load: loadBranches } = useBranches()
+const branch = ref('')
+const branchOptions = computed(() => branchNames.value.map(b => ({ value: b, label: b })));
 const products = ref<ProductConfig[]>([]);
 const isLoading = ref(false);
 const showModal = ref(false);
@@ -109,7 +110,11 @@ const goBack = () => {
   router.push({ name: 'pos-shipments' });
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadBranches()
+  if (!branch.value && branchNames.value.length) {
+    branch.value = branchNames.value[0] ?? ''
+  }
   fetchConfiguration();
 });
 

@@ -183,6 +183,12 @@ const router = createRouter({
       name: 'manage-users',
       component: () => import('../views/admin/ManagementUsersView.vue'),
       meta: { requiresAuth: true, role: 'SALES_MANAGER', title: 'Gestión de Equipo' }
+    },
+    {
+      path: '/settings/branches',
+      name: 'settings-branches',
+      component: () => import('../views/settings/BranchManagementView.vue'),
+      meta: { requiresAuth: true, role: 'SALES_MANAGER', title: 'Puntos de Venta' }
     }
   ],
 })
@@ -225,7 +231,7 @@ router.beforeEach((to, from, next) => {
   // 3. Role-Based Access Control logic
   if (isAuthenticated) {
     // Sales Manager user
-    if (role === 'SALES_MANAGER' && (!to.path.startsWith('/orders') && !to.path.startsWith('/admin') && !to.path.startsWith('/reports'))) {
+    if (role === 'SALES_MANAGER' && (!to.path.startsWith('/orders') && !to.path.startsWith('/admin') && !to.path.startsWith('/reports') && !to.path.startsWith('/settings'))) {
       next({ name: 'create-order' })
       return
     }
