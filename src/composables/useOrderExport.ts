@@ -172,7 +172,8 @@ export function useOrderExport() {
         currentRow++
 
         products.forEach((productName, pIdx) => {
-          const destQty = pivot[productName].destQty
+          const destQty = pivot[productName]?.destQty
+          if (!destQty) return
           let rowTotal = 0
           const qtyValues = sortedCols.map(col => {
             const q = destQty[col.key] || 0
