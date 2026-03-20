@@ -53,6 +53,12 @@ const ALL_ROLES = [
   { value: 'SUPPLY_CHAIN_MANAGER', label: 'Gerente Logística' }
 ]
 
+const contificoSourceOptions = [
+  { value: 'nicole', label: 'Nicole Pastry Arts', desc: 'Solo productos del catálogo Nicole' },
+  { value: 'sucree', label: 'Sucree', desc: 'Solo productos del catálogo Sucree' },
+  { value: 'both', label: 'Ambas marcas', desc: 'Puede ver productos de Nicole y Sucree' },
+]
+
 const filteredRoles = computed(() => {
   try {
     const userInfoStr = localStorage.getItem('user_info')
@@ -92,7 +98,8 @@ const openCreateModal = () => {
     name: '',
     email: '',
     password: '',
-    role: 'SALES_REP'
+    role: 'SALES_REP',
+    contificoSource: 'nicole' // Default: solo Nicole
   }
   showModal.value = true
 }
@@ -229,6 +236,14 @@ onMounted(fetchUsers)
               <span class="role-badge-premium" :class="user.role.toLowerCase()">
                 {{ getRoleLabel(user.role) }}
               </span>
+              <span
+                v-if="(user.role === 'SALES_REP' || user.role === 'SALES_MANAGER') && user.contificoSource && user.contificoSource !== 'nicole'"
+                class="source-badge"
+                :class="user.contificoSource"
+              >
+                <i class="fa-solid fa-store"></i>
+                {{ user.contificoSource === 'sucree' ? 'Sucree' : 'Ambas' }}
+              </span>
             </div>
           </div>
           
@@ -290,6 +305,33 @@ onMounted(fetchUsers)
                   :options="filteredRoles"
                   placeholder="Seleccionar rol de equipo..."
                 />
+              </div>
+            </div>
+
+            <!-- Fuente de Contífico: solo aplica a roles de ventas -->
+            <div v-if="currentUser.role === 'SALES_REP' || currentUser.role === 'SALES_MANAGER'" class="form-row">
+              <div class="form-field">
+                <label>Catálogo de Productos (Contífico)</label>
+                <div class="contifico-source-selector">
+                  <label
+                    v-for="option in contificoSourceOptions"
+                    :key="option.value"
+                    class="source-option"
+                    :class="{ active: currentUser.contificoSource === option.value }"
+                  >
+                    <input
+                      type="radio"
+                      :value="option.value"
+                      v-model="currentUser.contificoSource"
+                      class="sr-only"
+                    />
+                    <span class="source-dot" :class="option.value"></span>
+                    <div class="source-text">
+                      <span class="source-label">{{ option.label }}</span>
+                      <span class="source-desc">{{ option.desc }}</span>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -940,5 +982,98 @@ onMounted(fetchUsers)
   80% {
     transform: rotate(4deg);
   }
+}
+
+// Contífico Source Selector
+.contifico-source-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  .source-option {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.02);
+    }
+
+    &.active {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.05);
+    }
+
+    .source-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+
+      &.nicole { background: $NICOLE-PURPLE; }
+      &.sucree { background: #f59e0b; }
+      &.both {
+        background: linear-gradient(135deg, $NICOLE-PURPLE 50%, #f59e0b 50%);
+      }
+    }
+
+    .source-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+
+      .source-label {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #1e293b;
+      }
+
+      .source-desc {
+        font-size: 0.75rem;
+        color: #64748b;
+      }
+    }
+  }
+}
+
+// Badge de fuente en la tarjeta de usuario
+.source-badge {
+  padding: 0.3rem 0.6rem;
+  border-radius: 50px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.5rem;
+
+  &.sucree {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  &.both {
+    background: linear-gradient(135deg, rgba($NICOLE-PURPLE, 0.1), #fef3c7);
+    color: #4c1d95;
+  }
+}
+
+// Hidden but accessible radio inputs
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
 </style>

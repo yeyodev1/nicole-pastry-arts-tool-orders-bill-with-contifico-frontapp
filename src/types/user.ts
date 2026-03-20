@@ -4,6 +4,9 @@ export interface User {
   email: string
   role: 'admin' | 'sales' | 'production' | 'SALES_REP' | 'SALES_MANAGER' | 'RetailManager' | 'SUPPLY_CHAIN_MANAGER'
   password?: string
+  // Fuente de Contífico asignada. Define qué catálogo de productos puede ver/operar el usuario.
+  // 'nicole' = solo Nicole (default), 'sucree' = solo Sucree, 'both' = ambas marcas
+  contificoSource?: 'nicole' | 'sucree' | 'both'
   createdAt?: string
   updatedAt?: string
 }

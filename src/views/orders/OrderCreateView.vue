@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, onMounted, computed } from 'vue'
 import OrderService from '@/services/order.service'
 import { useRouter, useRoute } from 'vue-router'
 import type { Product, CartItem, OrderFormData } from '@/types/order'
@@ -72,6 +72,13 @@ const formData = reactive<OrderFormData>({
 // Cart
 const cart = ref<CartItem[]>([])
 
+// Fuente activa del carrito: determinada por el primer producto añadido.
+// Previene mezcla de productos de distintos Contificos (no se puede facturar de dos empresas en una sola orden).
+const activeCartSource = computed<'nicole' | 'sucree' | null>(() => {
+  if (cart.value.length === 0) return null
+  return cart.value[0].source || 'nicole'
+})
+
 // Sync totalValue with Cart & Discounts
 watch([cart, () => formData.globalDiscountPercentage, () => formData.isGlobalCourtesy], ([newCart, discount, isGlobalCourtesy]) => {
   if (isGlobalCourtesy) {
@@ -131,7 +138,8 @@ const addToCart = (product: Product) => {
       name: product.nombre,
       price: price,
       quantity: 1,
-      isCourtesy: isCourtesy // Add this property to CartItem type definition if needed, but JS will allow it. Ideally update Type.
+      isCourtesy: isCourtesy,
+      source: product.source // Fuente para control de mezcla de facturas
     })
   }
 }
@@ -402,7 +410,7 @@ onMounted(async () => {
              {{ isCourtesyMode ? 'Modo Cortesía (Próximos Items)' : 'Activar Cortesía Items' }}
            </button>
         </div>
-        <OrderProductSelector @add-to-cart="addToCart" />
+        <OrderProductSelector :active-cart-source="activeCartSource" @add-to-cart="addToCart" />
       </section>
 
       <!-- Right Column: Order Details & Cart -->

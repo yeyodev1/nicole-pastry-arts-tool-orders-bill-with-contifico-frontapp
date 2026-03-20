@@ -48,6 +48,28 @@ Global SCSS is auto-imported into every component via Vite's `css.preprocessorOp
 - `colorVariables.module.scss` — color CSS custom properties
 - `fonts.modules.scss` — font declarations
 
+### Dual-Contifico Architecture (Nicole + Sucree)
+
+The platform integrates **two separate Contifico accounts** — one per business entity:
+
+| Source | Business | Env vars |
+|--------|----------|----------|
+| `nicole` | Nicole Pastry Arts | `CONTIFICO_API_KEY` + `CONTIFICO_TOKEN` |
+| `sucree` | Sucree | `CONTIFICO_SUCREE_API_KEY` + `CONTIFICO_SUCREE_TOKEN` |
+
+**Backend (`nicole-order-backapp`):**
+- `ContificoService` accepts a `source: 'nicole' | 'sucree'` constructor param — each instance has its own product/category cache.
+- `product.controller.ts` creates `nicoleService` and `sucreeService` instances; routes product fetches based on `req.user.contificoSource` from the JWT.
+- Products are tagged with `{ source: 'nicole' | 'sucree' }` before being returned to the frontend.
+- The product routes require `authMiddleware` so the user's source is available.
+
+**Frontend:**
+- `User.contificoSource: 'nicole' | 'sucree' | 'both'` — defaults to `'nicole'`. Set in **Gestión de Equipo** by `admin` or `SALES_MANAGER`.
+- `Product.source` and `CartItem.source` track which Contifico each item belongs to.
+- `OrderProductSelector` computes `activeCartSource` from the first cart item and blocks products from the other source with a clear message.
+- `OrderProductCard` shows a colored brand badge (purple = Nicole, amber = Sucree) and a lock overlay when blocked.
+- **Mixing restriction**: A single order can only contain products from one Contifico. Attempting to add from the other brand shows an error: "Para eso son dos pedidos — son dos empresas distintas."
+
 ### Key Patterns
 
 - **Composables** (`src/composables/`) — reusable logic (order filtering, batch operations, toast notifications, Excel export)

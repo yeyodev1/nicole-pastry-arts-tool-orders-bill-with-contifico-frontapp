@@ -1,5 +1,7 @@
 export interface Product {
   id: string
+  // Identifica de qué cuenta de Contífico proviene este producto
+  source?: 'nicole' | 'sucree'
   codigo: string
   tipo_producto: string
   para_pos: boolean
@@ -43,6 +45,8 @@ export interface Product {
 export interface CartItem {
   id?: string
   contifico_id?: string
+  // Fuente del producto para control de mezcla de facturas
+  source?: 'nicole' | 'sucree'
   name: string
   price: number
   quantity: number
