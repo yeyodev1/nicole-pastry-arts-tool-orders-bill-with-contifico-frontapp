@@ -314,9 +314,53 @@ const selectTime = (time: string) => {
 
     <div v-if="props.modelValue.invoiceNeeded" class="invoice-fields">
       <h3>Datos de Facturación</h3>
+
+      <!-- Tipo de persona (obligatorio para facturación SRI correcta) -->
+      <div class="form-group full-inv-width">
+        <label class="required-label">Tipo de Persona</label>
+        <div class="person-type-selector">
+          <label
+            class="person-type-option"
+            :class="{ active: props.modelValue.invoiceData.personType === 'natural' }"
+          >
+            <input
+              type="radio"
+              value="natural"
+              v-model="props.modelValue.invoiceData.personType"
+            />
+            <div class="pt-icon"><i class="fa-solid fa-user"></i></div>
+            <div class="pt-text">
+              <span class="pt-label">Persona Natural</span>
+              <span class="pt-hint">Cédula (10 dígitos) o RUC personal (13 dígitos)</span>
+            </div>
+          </label>
+          <label
+            class="person-type-option"
+            :class="{ active: props.modelValue.invoiceData.personType === 'juridica' }"
+          >
+            <input
+              type="radio"
+              value="juridica"
+              v-model="props.modelValue.invoiceData.personType"
+            />
+            <div class="pt-icon"><i class="fa-solid fa-building"></i></div>
+            <div class="pt-text">
+              <span class="pt-label">Persona Jurídica</span>
+              <span class="pt-hint">RUC empresa (13 dígitos)</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
       <div class="form-group">
-        <label class="required-label">RUC / Cédula</label>
-        <input v-model="props.modelValue.invoiceData.ruc" />
+        <label class="required-label">
+          {{ props.modelValue.invoiceData.personType === 'juridica' ? 'RUC Empresa' : 'Cédula / RUC' }}
+        </label>
+        <input
+          v-model="props.modelValue.invoiceData.ruc"
+          :placeholder="props.modelValue.invoiceData.personType === 'juridica' ? '13 dígitos (RUC empresa)' : '10 dígitos (cédula) o 13 (RUC)'"
+          inputmode="numeric"
+        />
       </div>
       <div class="form-group">
         <label>Razón Social / Nombre</label>
@@ -891,6 +935,79 @@ const selectTime = (time: string) => {
 
     input {
       accent-color: #d97706;
+    }
+  }
+}
+
+// Selector de tipo de persona para facturación
+.full-inv-width {
+  grid-column: 1 / -1;
+}
+
+.person-type-selector {
+  display: flex;
+  gap: 0.75rem;
+
+  @media(max-width: 600px) {
+    flex-direction: column;
+  }
+
+  .person-type-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    border: 2px solid $border-light;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+
+    input[type="radio"] {
+      display: none;
+    }
+
+    &:hover {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.02);
+    }
+
+    &.active {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.05);
+      box-shadow: 0 0 0 3px rgba($NICOLE-PURPLE, 0.1);
+    }
+
+    .pt-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: rgba($NICOLE-PURPLE, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: $NICOLE-PURPLE;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .pt-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+
+      .pt-label {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #1e293b;
+      }
+
+      .pt-hint {
+        font-size: 0.72rem;
+        color: #94a3b8;
+        line-height: 1.3;
+      }
     }
   }
 }

@@ -75,8 +75,9 @@ const cart = ref<CartItem[]>([])
 // Fuente activa del carrito: determinada por el primer producto añadido.
 // Previene mezcla de productos de distintos Contificos (no se puede facturar de dos empresas en una sola orden).
 const activeCartSource = computed<'nicole' | 'sucree' | null>(() => {
-  if (cart.value.length === 0) return null
-  return cart.value[0].source || 'nicole'
+  const firstItem = cart.value[0]
+  if (!firstItem) return null
+  return firstItem.source || 'nicole'
 })
 
 // Sync totalValue with Cart & Discounts
@@ -236,7 +237,8 @@ const executeOrderAction = async () => {
         name: item.name,
         quantity: item.quantity,
         price: item.price,
-        isCourtesy: item.isCourtesy || false
+        isCourtesy: item.isCourtesy || false,
+        source: item.source  // Needed by backend to pick the right Contifico account
       })),
     }
 

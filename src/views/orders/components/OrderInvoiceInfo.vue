@@ -10,6 +10,7 @@ const props = defineProps<{
   authStatus?: string | null,
   isAuthLoading?: boolean,
   isPollingAuth?: boolean,
+  invoiceSentToSriAt?: string | null,
 }>()
 
 const emit = defineEmits(['open-invoice-modal', 'open-payment-modal', 'generate-invoice', 'view-invoice', 'trigger-auth', 'refresh-auth'])
@@ -66,6 +67,16 @@ const authStatusConfig = computed(() => {
       return null
   }
 })
+
+// Si la factura lleva más de 1 hora firmada sin ser aprobada por el SRI,
+// es probable que el tipo de persona esté incorrecto.
+const sriSignedTooLong = computed(() => {
+  if (props.authStatus !== 'Firmado') return false
+  if (!props.invoiceSentToSriAt) return false
+  const sentAt = new Date(props.invoiceSentToSriAt).getTime()
+  const diffMs = Date.now() - sentAt
+  return diffMs > 60 * 60 * 1000 // más de 1 hora
+})
 </script>
 
 <template>
@@ -116,8 +127,30 @@ const authStatusConfig = computed(() => {
       </template>
     </div>
 
+    <!-- Advertencia: firmado por más de 1 hora sin aprobación del SRI -->
+    <div v-if="sriSignedTooLong" class="sri-timeout-warning">
+      <i class="fas fa-triangle-exclamation"></i>
+      <div class="sri-timeout-text">
+        <strong>La factura lleva más de 1 hora sin aprobación del SRI</strong>
+        <span>
+          Esto puede indicar que el <strong>tipo de persona</strong> (Natural / Jurídica) está
+          incorrecto. Verifica los datos de facturación y comunícate con el SRI o soporte de
+          Contífico si el problema persiste.
+        </span>
+        <button class="sri-timeout-edit" @click="$emit('open-invoice-modal')">
+          <i class="fas fa-pen"></i> Editar datos de facturación
+        </button>
+      </div>
+    </div>
+
     <!-- Invoice Data Fields -->
     <div v-if="invoiceNeeded && invoiceData" class="inv-fields">
+      <div v-if="invoiceData.personType" class="inv-field">
+        <span class="inv-field-label"><i class="fas fa-user-tag"></i> Tipo de Persona</span>
+        <span class="inv-field-value inv-type-badge" :class="invoiceData.personType">
+          {{ invoiceData.personType === 'juridica' ? 'Persona Jurídica' : 'Persona Natural' }}
+        </span>
+      </div>
       <div class="inv-field">
         <span class="inv-field-label"><i class="fas fa-building"></i> Razón Social</span>
         <span class="inv-field-value">{{ invoiceData.businessName }}</span>
@@ -437,5 +470,80 @@ const authStatusConfig = computed(() => {
   transition: opacity 0.15s;
   &:hover { opacity: 1; }
   &:disabled { cursor: not-allowed; opacity: 0.3; }
+}
+
+// Badge de tipo de persona
+.inv-type-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+
+  &.natural {
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+
+  &.juridica {
+    background: #f0fdf4;
+    color: #166534;
+  }
+}
+
+// Advertencia de SRI tardío
+.sri-timeout-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+  color: #92400e;
+
+  > i {
+    font-size: 1rem;
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+    color: #f97316;
+  }
+
+  .sri-timeout-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+
+    strong {
+      font-size: 0.82rem;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    span {
+      font-size: 0.76rem;
+      font-weight: 500;
+      line-height: 1.5;
+      opacity: 0.9;
+    }
+
+    .sri-timeout-edit {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.4rem;
+      background: #f97316;
+      color: white;
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      width: fit-content;
+      transition: background 0.15s;
+
+      &:hover { background: #ea6c0a; }
+    }
+  }
 }
 </style>

@@ -387,6 +387,7 @@ onUnmounted(() => {
             :invoiceNeeded="order.invoiceNeeded"
             :invoiceData="order.invoiceData"
             :generatedInvoice="order.invoiceInfo"
+            :invoiceSentToSriAt="order.invoiceSentToSriAt"
             :authStatus="authStatus"
             :isAuthLoading="isAuthLoading"
             :isPollingAuth="isPollingAuth"
