@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import WarehouseService from '@/services/warehouse.service'
 import SupplierOrderService from '@/services/supplier-order.service'
 import WarehouseSettingsService from '@/services/warehouse-settings.service'
+import RawMaterialService from '@/services/raw-material.service'
 import { useWarehouse } from '@/composables/useWarehouse'
 import type { WarehouseInForm, WarehouseOutForm, ReceptionItem, DispatchItem } from '@/types/warehouse'
 
@@ -356,6 +357,16 @@ watch(() => inForm.value.items, (items) => {
 }, { deep: true })
 
 watch(activeTab, (tab) => { if (tab === 'in') fetchTodaySuggestions() })
+
+// Cuando cambia el proveedor en la recepción, refrescar las materias primas
+// desde la API filtrando por ese proveedor — el backend busca en providers[].provider
+watch(() => inForm.value.provider, async (newProvider) => {
+  try {
+    materials.value = await RawMaterialService.getRawMaterials(undefined, newProvider || undefined)
+  } catch (err) {
+    console.error('Error refetching materials by provider:', err)
+  }
+})
 
 // Watch outForm items for rawMaterial changes to fetch locationStocks per item
 watch(() => outForm.value.items.map(i => i.rawMaterial), async (rawMaterialIds, oldIds) => {
