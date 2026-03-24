@@ -19,6 +19,11 @@ const isDelivery = computed(() => {
   return props.product.nombre.toLowerCase().includes('delivery')
 })
 
+// Precio editable: delivery O productos con pvp_manual (ej. Tortas Personalizadas)
+const isEditablePrice = computed(() => {
+  return isDelivery.value || props.product.pvp_manual === true
+})
+
 const manualPrice = ref<number | string>('')
 
 // Etiqueta de marca según la fuente del producto
@@ -35,7 +40,7 @@ const handleAdd = () => {
     return
   }
 
-  if (isDelivery.value) {
+  if (isEditablePrice.value) {
     const priceToUse = Number(manualPrice.value) || 0
     emit('add', {
       ...props.product,
@@ -74,7 +79,7 @@ const handleAdd = () => {
         <p class="description">{{ product.descripcion || 'Deliciosas creaciones de Nicole Pastry Arts' }}</p>
       </div>
       <div class="product-actions">
-        <div v-if="isDelivery && !isBlocked" class="manual-price-container">
+        <div v-if="isEditablePrice && !isBlocked" class="manual-price-container">
           <span class="currency">$</span>
           <input
             type="number"
