@@ -98,6 +98,16 @@ class OrderService extends APIBase {
     }
   }
 
+  async regenerateInvoice(id: string): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/invoice/regenerate`, {})
+      return response.data
+    } catch (error) {
+      console.error('Error regenerating invoice:', error)
+      throw error
+    }
+  }
+
   async getInvoicePdf(id: string): Promise<any> {
     try {
       const response = await this.get<any>(`orders/${id}/invoice-pdf`)

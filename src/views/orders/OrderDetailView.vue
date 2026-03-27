@@ -105,6 +105,33 @@ const handleRefreshAuthStatus = () => {
   fetchAuthStatus()
 }
 
+const handleRegenerateInvoice = async () => {
+  if (!order.value) return
+  const confirmed = await dialog.confirm(
+    '¿Regenerar factura? Esto eliminará la factura actual en Contífico y creará una nueva con los valores corregidos.',
+    { title: 'Regenerar Factura', confirmLabel: 'Sí, regenerar', cancelLabel: 'Cancelar', variant: 'warning' }
+  )
+  if (!confirmed) return
+  isLoading.value = true
+  try {
+    await OrderService.regenerateInvoice(order.value._id)
+    success('Factura regenerada. Verificando autorización SRI...')
+    fetchOrder()
+    authStatus.value = null
+    pollAuthStatus()
+  } catch (e: any) {
+    const data = e.data
+    const contificoMsg = data?.contificoMessage
+    if (contificoMsg) {
+      showError(`⚠️ Contífico rechazó la factura:<br><small>${contificoMsg}</small>`, 10000)
+    } else {
+      showError(data?.message || e.message || 'Error al regenerar factura')
+    }
+  } finally {
+    isLoading.value = false
+  }
+}
+
 const totalPaid = computed(() => {
   if (!order.value?.payments) return 0
   return order.value.payments.reduce((sum: number, p: any) => sum + (p.monto || 0), 0)
@@ -397,6 +424,7 @@ onUnmounted(() => {
             @view-invoice="handleViewInvoice"
             @trigger-auth="handleTriggerAuth"
             @refresh-auth="handleRefreshAuthStatus"
+            @regenerate-invoice="handleRegenerateInvoice"
           />
         </section>
       </div>

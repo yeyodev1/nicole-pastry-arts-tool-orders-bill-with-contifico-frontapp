@@ -70,6 +70,16 @@ The platform integrates **two separate Contifico accounts** — one per business
 - `OrderProductCard` shows a colored brand badge (purple = Nicole, amber = Sucree) and a lock overlay when blocked.
 - **Mixing restriction**: A single order can only contain products from one Contifico. Attempting to add from the other brand shows an error: "Para eso son dos pedidos — son dos empresas distintas."
 
+### Contifico Invoice Payload — Campo Crítico
+
+El payload de factura usa `subtotal_12` (no `subtotal_15`) como base gravable para IVA, independientemente de si la tasa es 12% o 15%. La tasa real se determina por `porcentaje_iva` en cada línea de `detalles`. Si `subtotal_12 = 0`, el SRI rechaza con "ERROR EN DIFERENCIAS (baseImponible = 0)".
+
+**Flujo de facturación:**
+- `POST /orders/:id/invoice/generate` — crea factura en Contifico y envía al SRI
+- `POST /orders/:id/invoice/regenerate` — elimina factura rota en Contifico y la recrea (fix para SRI)
+- `POST /orders/:id/invoice/authorize` — reenvía doc existente al SRI
+- `GET /orders/:id/invoice/auth-status` — estado de autorización SRI
+
 ### Key Patterns
 
 - **Composables** (`src/composables/`) — reusable logic (order filtering, batch operations, toast notifications, Excel export)
