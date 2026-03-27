@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const props = defineProps<{
   message: string
-  type?: 'success' | 'error' | 'info'
+  type?: 'success' | 'error' | 'info' | 'warning'
 }>()
 
 defineEmits<{
@@ -14,6 +14,7 @@ defineEmits<{
     <div class="icon-box">
       <i v-if="type === 'error'" class="fa-solid fa-xmark"></i>
       <i v-else-if="type === 'info'" class="fa-solid fa-info"></i>
+      <i v-else-if="type === 'warning'" class="fa-solid fa-triangle-exclamation"></i>
       <i v-else class="fa-solid fa-check"></i>
     </div>
     <div class="content">
@@ -107,6 +108,24 @@ defineEmits<{
     }
 
     border-left: 4px solid #0284c7;
+  }
+
+  &.warning {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-left: 4px solid #f59e0b;
+    box-shadow:
+      0 10px 15px -3px rgba(245, 158, 11, 0.15),
+      0 4px 6px -2px rgba(245, 158, 11, 0.08);
+
+    .icon-box {
+      background: #fef3c7;
+      color: #d97706;
+    }
+
+    .content {
+      color: #78350f;
+    }
   }
 }
 </style>

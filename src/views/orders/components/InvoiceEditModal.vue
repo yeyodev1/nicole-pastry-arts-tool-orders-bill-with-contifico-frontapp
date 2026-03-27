@@ -46,6 +46,13 @@ watch(() => props.isOpen, (newVal) => {
   }
 })
 
+// Auto-select personType based on ID length
+const onRucInput = () => {
+  const digits = form.ruc.trim().replace(/\D/g, '')
+  if (digits.length === 13) form.personType = 'juridica'
+  else if (digits.length === 10) form.personType = 'natural'
+}
+
 const validate = async () => {
   if (!form.invoiceNeeded) return true
 
@@ -130,7 +137,7 @@ const save = async () => {
 
           <div class="form-group">
             <label>{{ form.personType === 'juridica' ? 'RUC Empresa *' : 'Cédula / RUC *' }}</label>
-            <input v-model="form.ruc" :placeholder="form.personType === 'juridica' ? '13 dígitos empresa' : '10 (cédula) o 13 (RUC)'" inputmode="numeric" />
+            <input v-model="form.ruc" :placeholder="form.personType === 'juridica' ? '13 dígitos empresa' : '10 (cédula) o 13 (RUC)'" inputmode="numeric" @input="onRucInput" />
           </div>
           
           <div class="form-group">

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { OrderFormData } from '@/types/order'
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useDialog } from '@/composables/useDialog'
+import { useToast } from '@/composables/useToast'
 import { deliveryService, type DeliveryPerson } from '@/services/delivery.service'
 import { useBranches } from '@/composables/useBranches'
 import PaymentFields from './PaymentFields.vue'
@@ -16,6 +17,7 @@ const props = defineProps<{
 }>()
 
 const dialog = useDialog()
+const toast = useToast()
 const { branchNames, load: loadBranches } = useBranches()
 const BRANCHES = branchNames
 
@@ -139,6 +141,45 @@ const timeOptions = getTimeOptions()
 
 const selectTime = (time: string) => {
   props.modelValue.deliveryTime = time
+}
+
+// --- Invoice ID validation ---
+const rucHasError = computed(() => {
+  const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+  if (!ruc) return false
+  const digits = ruc.replace(/\D/g, '')
+  return digits.length !== 10 && digits.length !== 13
+})
+
+// Una vez que el RUC tiene 10 o 13 dígitos válidos, el tipo de persona se bloquea
+// para evitar que el usuario lo cambie manualmente y cause errores en el SRI.
+const personTypeLocked = computed(() => {
+  const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+  const digits = ruc.replace(/\D/g, '')
+  return digits.length === 10 || digits.length === 13
+})
+
+// Show a warning toast when an invalid length is detected (only when value changes to invalid)
+watch(rucHasError, (hasError) => {
+  if (hasError) {
+    const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+    const digits = ruc.replace(/\D/g, '')
+    toast.warning(
+      `<strong>Identificación inválida</strong><br>Tiene ${digits.length} dígitos — debe ser cédula (10) o RUC (13).`,
+      5000
+    )
+  }
+})
+
+// Auto-select personType based on ID length when the user finishes typing
+const onRucInput = () => {
+  const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+  const digits = ruc.replace(/\D/g, '')
+  if (digits.length === 13) {
+    props.modelValue.invoiceData!.personType = 'juridica'
+  } else if (digits.length === 10) {
+    props.modelValue.invoiceData!.personType = 'natural'
+  }
 }
 </script>
 
@@ -306,17 +347,24 @@ const selectTime = (time: string) => {
       <h3>Datos de Facturación</h3>
 
       <!-- Tipo de persona (obligatorio para facturación SRI correcta) -->
+      <!-- Se bloquea automáticamente cuando el RUC/cédula tiene largo válido -->
       <div class="form-group full-inv-width">
-        <label class="required-label">Tipo de Persona</label>
-        <div class="person-type-selector">
+        <label class="required-label">
+          Tipo de Persona
+          <span v-if="personTypeLocked" class="pt-locked-hint">
+            <i class="fa-solid fa-lock"></i> Auto-detectado del documento
+          </span>
+        </label>
+        <div class="person-type-selector" :class="{ 'person-type-selector--locked': personTypeLocked }">
           <label
             class="person-type-option"
-            :class="{ active: props.modelValue.invoiceData.personType === 'natural' }"
+            :class="{ active: props.modelValue.invoiceData.personType === 'natural', locked: personTypeLocked }"
           >
             <input
               type="radio"
               value="natural"
               v-model="props.modelValue.invoiceData.personType"
+              :disabled="personTypeLocked"
             />
             <div class="pt-icon"><i class="fa-solid fa-user"></i></div>
             <div class="pt-text">
@@ -326,12 +374,13 @@ const selectTime = (time: string) => {
           </label>
           <label
             class="person-type-option"
-            :class="{ active: props.modelValue.invoiceData.personType === 'juridica' }"
+            :class="{ active: props.modelValue.invoiceData.personType === 'juridica', locked: personTypeLocked }"
           >
             <input
               type="radio"
               value="juridica"
               v-model="props.modelValue.invoiceData.personType"
+              :disabled="personTypeLocked"
             />
             <div class="pt-icon"><i class="fa-solid fa-building"></i></div>
             <div class="pt-text">
@@ -350,6 +399,8 @@ const selectTime = (time: string) => {
           v-model="props.modelValue.invoiceData.ruc"
           :placeholder="props.modelValue.invoiceData.personType === 'juridica' ? '13 dígitos (RUC empresa)' : '10 dígitos (cédula) o 13 (RUC)'"
           inputmode="numeric"
+          @input="onRucInput"
+          :class="{ 'input-error': rucHasError }"
         />
       </div>
       <div class="form-group">
@@ -999,6 +1050,51 @@ const selectTime = (time: string) => {
         line-height: 1.3;
       }
     }
+
+    // Estado bloqueado: opacidad reducida en la opción NO seleccionada, cursor deshabilitado
+    &.locked {
+      cursor: default;
+      pointer-events: none;
+
+      &:not(.active) {
+        opacity: 0.35;
+        filter: grayscale(0.5);
+      }
+
+      &.active {
+        border-color: #059669;
+        background: rgba(5, 150, 105, 0.06);
+        box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
+
+        .pt-icon {
+          background: rgba(5, 150, 105, 0.12);
+          color: #059669;
+        }
+      }
+    }
   }
+
+  // Contenedor bloqueado — quita el hover del wrapper
+  &--locked {
+    cursor: default;
+  }
+}
+
+// Hint "auto-detectado del documento"
+.pt-locked-hint {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #059669;
+  margin-left: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0.9;
+}
+
+// Borde rojo sutil cuando el RUC/cédula tiene largo incorrecto
+:deep(.input-error) {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
 }
 </style>

@@ -108,8 +108,8 @@ const handleRefreshAuthStatus = () => {
 const handleRegenerateInvoice = async () => {
   if (!order.value) return
   const confirmed = await dialog.confirm(
-    '¿Regenerar factura? Esto eliminará la factura actual en Contífico y creará una nueva con los valores corregidos.',
-    { title: 'Regenerar Factura', confirmLabel: 'Sí, regenerar', cancelLabel: 'Cancelar', variant: 'warning' }
+    '⚠️ La nueva factura se emitirá con la fecha de HOY.\n\nLa normativa del SRI exige que los documentos electrónicos se autoricen el mismo día de su emisión. Una factura con fecha original (hace varios días) sería rechazada como extemporánea.\n\nLa factura anterior quedará inactiva en Contífico y la nueva tendrá fecha de hoy.',
+    { title: 'Regenerar Factura — fecha de hoy', confirmLabel: 'Entendido, regenerar', cancelLabel: 'Cancelar', variant: 'warning' }
   )
   if (!confirmed) return
   isLoading.value = true

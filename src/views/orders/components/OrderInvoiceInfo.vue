@@ -101,6 +101,29 @@ const sriSignedTooLong = computed(() => {
   const diffMs = Date.now() - sentAt
   return diffMs > 60 * 60 * 1000 // más de 1 hora
 })
+
+// Detecta si el tipo de persona seleccionado no coincide con el largo del RUC/cédula.
+// Regla SRI Ecuador: 10 dígitos = Cédula (Persona Natural), 13 dígitos = RUC (Natural o Jurídica).
+// Crítico: si personType='juridica' pero el ID tiene 10 dígitos → el SRI rechaza con
+// "ARCHIVO NO CUMPLE ESTRUCTURA XML: tipoIdentificacionComprador inválido".
+const personTypeMismatch = computed(() => {
+  const data = props.invoiceData
+  if (!data?.ruc || !data?.personType) return null
+  const digits = (data.ruc || '').trim().replace(/\D/g, '')
+  if (digits.length === 10 && data.personType === 'juridica') {
+    return {
+      msg: 'Tipo de persona incorrecto: ingresaste una cédula (10 dígitos) pero seleccionaste Persona Jurídica.',
+      hint: 'Cambia el tipo a Persona Natural, o ingresa el RUC de empresa (13 dígitos).',
+    }
+  }
+  if (digits.length !== 10 && digits.length !== 13) {
+    return {
+      msg: `Identificación inválida: tiene ${digits.length} dígitos. Debe ser cédula (10) o RUC (13).`,
+      hint: 'Corrige el número antes de generar la factura.',
+    }
+  }
+  return null
+})
 </script>
 
 <template>
@@ -158,7 +181,7 @@ const sriSignedTooLong = computed(() => {
       <i class="fas fa-triangle-exclamation"></i>
       <div class="broken-invoice-text">
         <strong>Factura con valores incorrectos — no se autorizará</strong>
-        <span>La factura fue creada con <code>base imponible = 0</code>. El SRI la rechazará siempre. Debe regenerarse para corregir los valores.</span>
+        <span>La factura fue creada con <code>base imponible = 0</code>. El SRI la rechazará siempre. Al regenerar se emitirá una nueva factura <strong>con fecha de hoy</strong> (normativa SRI — documentos con fecha anterior serían rechazados como extemporáneos).</span>
         <button class="broken-regen-btn" @click="$emit('regenerate-invoice')">
           <i class="fas fa-rotate-right"></i> Regenerar Factura ahora
         </button>
@@ -188,18 +211,41 @@ const sriSignedTooLong = computed(() => {
       </button>
     </div>
 
-    <!-- Advertencia: firmado por más de 1 hora sin aprobación del SRI -->
-    <div v-if="sriSignedTooLong" class="sri-timeout-warning">
+    <!-- Advertencia: firmado pero sin autorización del SRI -->
+    <div v-if="authStatus === 'Firmado' && invoiceSentToSriAt" class="sri-timeout-warning" :class="{ 'sri-timeout-warning--urgent': sriSignedTooLong }">
       <i class="fas fa-triangle-exclamation"></i>
       <div class="sri-timeout-text">
-        <strong>La factura lleva más de 1 hora sin aprobación del SRI</strong>
-        <span>
-          Esto puede indicar que el <strong>tipo de persona</strong> (Natural / Jurídica) está
-          incorrecto. Verifica los datos de facturación y comunícate con el SRI o soporte de
-          Contífico si el problema persiste.
+        <strong v-if="sriSignedTooLong">Factura sin autorizar hace más de 1 hora — acción requerida</strong>
+        <strong v-else>Factura firmada — esperando autorización del SRI</strong>
+        <span v-if="sriSignedTooLong">
+          El SRI no ha autorizado esta factura. La causa más común es que el <strong>tipo de persona no coincide</strong>
+          con la identificación ingresada. Por ejemplo: se seleccionó <em>Persona Jurídica</em> pero se ingresó
+          una cédula de 10 dígitos, o viceversa.
         </span>
-        <button class="sri-timeout-edit" @click="$emit('open-invoice-modal')">
-          <i class="fas fa-pen"></i> Editar datos de facturación
+        <span v-else>
+          El documento fue firmado y enviado al SRI. Si en unos minutos no aparece como Autorizado,
+          puede ser que el <strong>tipo de persona</strong> esté incorrecto — verifica que coincida con el RUC/cédula.
+        </span>
+        <div class="sri-timeout-actions">
+          <button class="sri-timeout-edit" @click="$emit('open-invoice-modal')">
+            <i class="fas fa-pen"></i> Verificar / Corregir datos de facturación
+          </button>
+          <button v-if="sriSignedTooLong" class="sri-timeout-regen" @click="$emit('regenerate-invoice')">
+            <i class="fas fa-rotate-right"></i> Regenerar con datos corregidos
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerta: tipo de persona no coincide con el documento ingresado -->
+    <div v-if="personTypeMismatch && invoiceNeeded" class="person-mismatch-alert">
+      <i class="fas fa-triangle-exclamation"></i>
+      <div class="person-mismatch-text">
+        <strong>Error en datos de facturación — la factura será rechazada por el SRI</strong>
+        <span>{{ personTypeMismatch.msg }}</span>
+        <span class="hint">{{ personTypeMismatch.hint }}</span>
+        <button class="mismatch-edit-btn" @click="$emit('open-invoice-modal')">
+          <i class="fas fa-pen"></i> Corregir datos de facturación
         </button>
       </div>
     </div>
@@ -680,15 +726,96 @@ const sriSignedTooLong = computed(() => {
       opacity: 0.9;
     }
 
+    .sri-timeout-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.4rem;
+    }
+
+    .sri-timeout-edit,
+    .sri-timeout-regen {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: none;
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      width: fit-content;
+      transition: background 0.15s;
+    }
+
     .sri-timeout-edit {
+      background: #f97316;
+      color: white;
+      &:hover { background: #ea6c0a; }
+    }
+
+    .sri-timeout-regen {
+      background: #7c3aed;
+      color: white;
+      &:hover { background: #6d28d9; }
+    }
+  }
+
+  // Estado urgente (>1 hora sin autorizar)
+  &--urgent {
+    background: #fef2f2;
+    border-bottom-color: #fecaca;
+    color: #991b1b;
+    > i { color: #dc2626; }
+  }
+}
+
+// Alerta de mismatch tipo de persona vs documento
+.person-mismatch-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  background: #fefce8;
+  border-bottom: 1px solid #fde047;
+  color: #713f12;
+
+  > i {
+    font-size: 1rem;
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+    color: #ca8a04;
+  }
+
+  .person-mismatch-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    strong { font-size: 0.83rem; font-weight: 800; line-height: 1.3; }
+
+    span {
+      font-size: 0.76rem;
+      font-weight: 500;
+      line-height: 1.5;
+      opacity: 0.9;
+
+      &.hint {
+        font-style: italic;
+        opacity: 0.75;
+      }
+    }
+
+    .mismatch-edit-btn {
       display: inline-flex;
       align-items: center;
       gap: 0.35rem;
       margin-top: 0.4rem;
-      background: #f97316;
+      background: #ca8a04;
       color: white;
       border: none;
-      padding: 0.4rem 0.8rem;
+      padding: 0.4rem 0.85rem;
       border-radius: 6px;
       font-size: 0.75rem;
       font-weight: 700;
@@ -696,7 +823,7 @@ const sriSignedTooLong = computed(() => {
       width: fit-content;
       transition: background 0.15s;
 
-      &:hover { background: #ea6c0a; }
+      &:hover { background: #a16207; }
     }
   }
 }

@@ -23,13 +23,13 @@ const { toasts, remove } = useToast()
 .toast-container {
   position: fixed;
   top: 2rem;
-  right: 2rem;
+  left: 2rem;
   z-index: 9999;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   pointer-events: none;
-  align-items: flex-end;
+  align-items: flex-start;
 }
 
 /* Toast Transitions */
@@ -44,13 +44,13 @@ const { toasts, remove } = useToast()
 
 .toast-enter-from {
   opacity: 0;
-  transform: translateX(100%) scale(0.8);
+  transform: translateX(-100%) scale(0.8);
   filter: blur(4px);
 }
 
 .toast-leave-to {
   opacity: 0;
-  transform: translateX(40px) scale(0.9);
+  transform: translateX(-40px) scale(0.9);
   filter: blur(4px);
 }
 
@@ -62,9 +62,9 @@ const { toasts, remove } = useToast()
 @media (max-width: 768px) {
   .toast-container {
     top: 1rem;
-    right: 1rem;
     left: 1rem;
-    align-items: center;
+    right: 1rem;
+    align-items: flex-start;
   }
 }
 </style>
