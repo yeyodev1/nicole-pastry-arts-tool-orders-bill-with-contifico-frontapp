@@ -13,7 +13,7 @@ const props = defineProps<{
   invoiceSentToSriAt?: string | null,
 }>()
 
-const emit = defineEmits(['open-invoice-modal', 'open-payment-modal', 'generate-invoice', 'view-invoice', 'trigger-auth', 'refresh-auth'])
+const emit = defineEmits(['open-invoice-modal', 'open-payment-modal', 'generate-invoice', 'view-invoice', 'trigger-auth', 'refresh-auth', 'regenerate-invoice', 'regenerate-consumidor-final'])
 const { error: showError } = useToast()
 
 const isInvoiceDataComplete = computed(() => {
@@ -38,44 +38,102 @@ const authStatusConfig = computed(() => {
         detail: null,
         cls: 'auth--ok',
         canRetry: false,
+        canReenviar: false,
       }
     case 'Enviado SRI':
       return {
         icon: 'fa-clock',
-        label: 'Enviado al SRI',
+        label: 'Enviado al SRI — procesando',
         detail: 'El SRI está procesando el documento. Esto puede tomar unos minutos.',
         cls: 'auth--pending',
         canRetry: false,
+        canReenviar: false,
       }
     case 'Firmado':
       return {
         icon: 'fa-pen-nib',
-        label: 'Firmado — en cola de envío',
-        detail: 'La factura está firmada y lista. Contífico la enviará al SRI automáticamente en su próximo ciclo (máx. 60 min). No necesitas hacer nada.',
+        label: 'Firmado — pendiente de autorización SRI',
+        detail: 'El documento está firmado pero aún no autorizado. Puedes reenviar manualmente al SRI.',
         cls: 'auth--signed',
         canRetry: false,
+        canReenviar: true,
       }
     case 'No Firmado':
       return {
         icon: 'fa-exclamation-circle',
-        label: 'No firmado',
-        detail: 'El documento no pudo firmarse. Contacta a soporte de Contífico.',
+        label: 'No firmado — error de firma',
+        detail: 'El documento no pudo firmarse. Intenta reenviar o contacta soporte de Contífico.',
         cls: 'auth--error',
         canRetry: true,
+        canReenviar: true,
       }
     default:
-      return null
+      return {
+        icon: 'fa-question-circle',
+        label: 'Estado SRI no verificado',
+        detail: 'No se pudo obtener el estado de autorización. Haz clic en actualizar o reenvía al SRI.',
+        cls: 'auth--unknown',
+        canRetry: false,
+        canReenviar: true,
+      }
   }
 })
 
-// Si la factura lleva más de 1 hora firmada sin ser aprobada por el SRI,
-// es probable que el tipo de persona esté incorrecto.
+// Factura con datos incorrectos: subtotal_12 = 0 pero iva > 0.
+// Esto ocurre cuando la factura fue creada con el bug del campo subtotal_12 hardcoded a 0.
+// Estas facturas NUNCA serán autorizadas por el SRI — necesitan regenerarse.
+const isBrokenInvoice = computed(() => {
+  const info = props.generatedInvoice
+  if (!info) return false
+  const sub12 = parseFloat(info.subtotal_12 ?? '0')
+  const sub0  = parseFloat(info.subtotal_0  ?? '0')
+  const iva   = parseFloat(info.iva          ?? '0')
+  // Si no hay base gravable (subtotal_12 = 0) pero sí hay IVA → datos incoherentes
+  return sub12 === 0 && sub0 === 0 && iva > 0
+})
+
+// Factura firmada sin autorización del SRI pasados más de 15 minutos → acción recomendada
 const sriSignedTooLong = computed(() => {
   if (props.authStatus !== 'Firmado') return false
   if (!props.invoiceSentToSriAt) return false
   const sentAt = new Date(props.invoiceSentToSriAt).getTime()
   const diffMs = Date.now() - sentAt
-  return diffMs > 60 * 60 * 1000 // más de 1 hora
+  return diffMs > 15 * 60 * 1000 // más de 15 minutos
+})
+
+// Factura firmada y enviada al SRI pero sin autorizar — el usuario puede regenerar en cualquier momento
+const canRegenerateNow = computed(() => {
+  return props.authStatus === 'Firmado' && !!props.invoiceSentToSriAt
+})
+
+// Detecta si la persona en Contifico tiene tipo: "C" — inválido para SRI.
+// Estos documentos son firmados pero SRI nunca los autoriza silenciosamente.
+// Solución: regenerar con Consumidor Final.
+const hasTipoC = computed(() => {
+  return props.generatedInvoice?.persona?.tipo === 'C'
+})
+
+// Detecta si el tipo de persona seleccionado no coincide con el largo del RUC/cédula.
+// Regla SRI Ecuador: 10 dígitos = Cédula (Persona Natural), 13 dígitos = RUC (Natural o Jurídica).
+// Crítico: si personType='juridica' pero el ID tiene 10 dígitos → el SRI rechaza con
+// "ARCHIVO NO CUMPLE ESTRUCTURA XML: tipoIdentificacionComprador inválido".
+const personTypeMismatch = computed(() => {
+  const data = props.invoiceData
+  if (!data?.ruc || !data?.personType) return null
+  const digits = (data.ruc || '').trim().replace(/\D/g, '')
+  if (digits.length === 10 && data.personType === 'juridica') {
+    return {
+      msg: 'Tipo de persona incorrecto: ingresaste una cédula (10 dígitos) pero seleccionaste Persona Jurídica.',
+      hint: 'Cambia el tipo a Persona Natural, o ingresa el RUC de empresa (13 dígitos).',
+    }
+  }
+  if (digits.length !== 10 && digits.length !== 13) {
+    return {
+      msg: `Identificación inválida: tiene ${digits.length} dígitos. Debe ser cédula (10) o RUC (13).`,
+      hint: 'Corrige el número antes de generar la factura.',
+    }
+  }
+  return null
 })
 </script>
 
@@ -100,45 +158,114 @@ const sriSignedTooLong = computed(() => {
       </div>
     </div>
 
-    <!-- SRI Auth Banner (when already processed) -->
+    <!-- SRI Auth Banner (when already processed) — siempre visible -->
     <div v-if="invoiceStatus === 'PROCESSED'" class="auth-banner"
-      :class="isAuthLoading ? 'auth-banner--loading' : authStatusConfig ? `auth-banner--${authStatusConfig.cls.replace('auth--', '')}` : ''"
+      :class="isAuthLoading ? 'auth-banner--loading' : `auth-banner--${authStatusConfig!.cls.replace('auth--', '')}`"
     >
       <template v-if="isAuthLoading">
         <i class="fas fa-spinner fa-spin"></i>
         <div class="auth-banner-text">
-          <strong>Verificando con el SRI...</strong>
+          <strong>Verificando estado con el SRI...</strong>
         </div>
       </template>
-      <template v-else-if="authStatusConfig">
-        <i class="fas" :class="authStatusConfig.icon"></i>
+      <template v-else>
+        <i class="fas" :class="authStatusConfig!.icon"></i>
         <div class="auth-banner-text">
-          <strong>{{ authStatusConfig.label }}</strong>
-          <span v-if="authStatusConfig.detail">{{ authStatusConfig.detail }}</span>
+          <strong>{{ authStatusConfig!.label }}</strong>
+          <span v-if="authStatusConfig!.detail">{{ authStatusConfig!.detail }}</span>
         </div>
-        <button
-          class="auth-refresh-btn"
-          @click="$emit('refresh-auth')"
-          :disabled="isAuthLoading"
-          title="Actualizar estado"
-        >
-          <i class="fas fa-sync-alt"></i>
-        </button>
+        <div class="auth-banner-actions">
+          <button
+            class="auth-refresh-btn"
+            @click="$emit('refresh-auth')"
+            :disabled="isAuthLoading"
+            title="Actualizar estado"
+          >
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
       </template>
     </div>
 
-    <!-- Advertencia: firmado por más de 1 hora sin aprobación del SRI -->
-    <div v-if="sriSignedTooLong" class="sri-timeout-warning">
+    <!-- Alerta crítica: factura con subtotal_12=0 — NUNCA se autorizará, requiere regeneración -->
+    <div v-if="invoiceStatus === 'PROCESSED' && isBrokenInvoice" class="broken-invoice-alert">
+      <i class="fas fa-triangle-exclamation"></i>
+      <div class="broken-invoice-text">
+        <strong>Factura con valores incorrectos — no se autorizará</strong>
+        <span>La factura fue creada con <code>base imponible = 0</code>. El SRI la rechazará siempre. Al regenerar se emitirá una nueva factura <strong>con fecha de hoy</strong> (normativa SRI — documentos con fecha anterior serían rechazados como extemporáneos).</span>
+        <button class="broken-regen-btn" @click="$emit('regenerate-invoice')">
+          <i class="fas fa-rotate-right"></i> Regenerar Factura ahora
+        </button>
+      </div>
+    </div>
+
+    <!-- Acciones SRI: reenviar / regenerar — zona de acción clara cuando no está autorizado -->
+    <div
+      v-if="invoiceStatus === 'PROCESSED' && !isAuthLoading && authStatusConfig!.cls !== 'auth--ok'"
+      class="sri-actions-bar"
+    >
+      <button
+        v-if="!isBrokenInvoice && (authStatusConfig!.canRetry || authStatusConfig!.canReenviar)"
+        class="sri-action-btn sri-action-btn--send"
+        @click="$emit('trigger-auth')"
+      >
+        <i class="fas fa-paper-plane"></i>
+        Reenviar al SRI
+      </button>
+      <button
+        v-if="!isBrokenInvoice && (canRegenerateNow || authStatusConfig!.cls === 'auth--error')"
+        class="sri-action-btn sri-action-btn--regen"
+        @click="$emit('regenerate-invoice')"
+      >
+        <i class="fas fa-rotate-right"></i>
+        Regenerar Factura
+      </button>
+      <button
+        v-if="hasTipoC"
+        class="sri-action-btn sri-action-btn--consumidor"
+        @click="$emit('regenerate-consumidor-final')"
+        title="La persona en Contífico tiene tipo 'C' — inválido para el SRI. Genera una nueva factura como Consumidor Final."
+      >
+        <i class="fas fa-user-slash"></i>
+        Regenerar como Consumidor Final
+      </button>
+    </div>
+
+    <!-- Advertencia: firmado pero sin autorización del SRI -->
+    <div v-if="authStatus === 'Firmado' && invoiceSentToSriAt" class="sri-timeout-warning" :class="{ 'sri-timeout-warning--urgent': sriSignedTooLong }">
       <i class="fas fa-triangle-exclamation"></i>
       <div class="sri-timeout-text">
-        <strong>La factura lleva más de 1 hora sin aprobación del SRI</strong>
-        <span>
-          Esto puede indicar que el <strong>tipo de persona</strong> (Natural / Jurídica) está
-          incorrecto. Verifica los datos de facturación y comunícate con el SRI o soporte de
-          Contífico si el problema persiste.
+        <strong v-if="sriSignedTooLong">Factura sin autorizar hace más de 15 min — acción requerida</strong>
+        <strong v-else>Factura firmada — esperando autorización del SRI</strong>
+        <span v-if="sriSignedTooLong">
+          El SRI no ha autorizado esta factura. La causa más común es que el <strong>tipo de persona no coincide</strong>
+          con la identificación ingresada. Por ejemplo: se seleccionó <em>Persona Jurídica</em> pero se ingresó
+          una cédula de 10 dígitos, o viceversa.
         </span>
-        <button class="sri-timeout-edit" @click="$emit('open-invoice-modal')">
-          <i class="fas fa-pen"></i> Editar datos de facturación
+        <span v-else>
+          El documento fue firmado y enviado al SRI. Si en unos minutos no aparece como Autorizado,
+          puede ser que el <strong>tipo de persona</strong> esté incorrecto — verifica que coincida con el RUC/cédula.
+        </span>
+        <div class="sri-timeout-actions">
+          <button class="sri-timeout-edit" @click="$emit('open-invoice-modal')">
+            <i class="fas fa-pen"></i> Verificar / Corregir datos de facturación
+          </button>
+          <button v-if="sriSignedTooLong" class="sri-timeout-regen" @click="$emit('regenerate-invoice')">
+            <i class="fas fa-rotate-right"></i> Regenerar con datos corregidos
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerta: tipo de persona no coincide con el documento ingresado -->
+    <div v-if="personTypeMismatch && invoiceNeeded" class="person-mismatch-alert">
+      <i class="fas fa-triangle-exclamation"></i>
+      <div class="person-mismatch-text">
+        <strong>Error en datos de facturación — la factura será rechazada por el SRI</strong>
+        <span>{{ personTypeMismatch.msg }}</span>
+        <span class="hint">{{ personTypeMismatch.hint }}</span>
+        <button class="mismatch-edit-btn" @click="$emit('open-invoice-modal')">
+          <i class="fas fa-pen"></i> Corregir datos de facturación
         </button>
       </div>
     </div>
@@ -184,16 +311,6 @@ const sriSignedTooLong = computed(() => {
         <button class="inv-btn inv-btn--outline" @click="$emit('view-invoice')">
           <i class="fas fa-file-pdf"></i>
           Ver Factura PDF
-        </button>
-        <!-- Only show retry for "No Firmado" — all other states are normal -->
-        <button
-          v-if="authStatusConfig?.canRetry"
-          class="inv-btn inv-btn--authorize"
-          @click="$emit('trigger-auth')"
-          :disabled="isAuthLoading"
-        >
-          <i class="fas fa-paper-plane"></i>
-          Reintentar envío al SRI
         </button>
       </template>
 
@@ -286,8 +403,9 @@ const sriSignedTooLong = computed(() => {
   &--loading  { background: #f8fafc; color: #64748b; border-bottom-color: #f1f5f9; }
   &--ok       { background: #f0fdf4; color: #065f46; border-bottom-color: #bbf7d0; }
   &--pending  { background: #fffbeb; color: #92400e; border-bottom-color: #fde68a; }
-  &--signed   { background: #eef2ff; color: #3730a3; border-bottom-color: #c7d2fe; }
+  &--signed   { background: #fff7ed; color: #9a3412; border-bottom-color: #fed7aa; }
   &--error    { background: #fef2f2; color: #991b1b; border-bottom-color: #fecaca; }
+  &--unknown  { background: #f8fafc; color: #475569; border-bottom-color: #e2e8f0; }
 
   > i { font-size: 0.95rem; margin-top: 0.15rem; flex-shrink: 0; }
 }
@@ -409,13 +527,74 @@ const sriSignedTooLong = computed(() => {
     &:disabled { opacity: 0.5; cursor: not-allowed; }
   }
 
-  &--disabled {
-    background: #e2e8f0 !important;
-    color: #94a3b8 !important;
-    border-color: transparent !important;
-    cursor: not-allowed;
-    opacity: 1;
+  &--regenerate {
+    background: #fff7ed;
+    border-color: #f97316;
+    color: #c2410c;
+    &:hover { background: #f97316; color: white; }
   }
+}
+
+/* Barra de acciones SRI — zona naranja/roja clara cuando la factura NO está autorizada */
+.sri-actions-bar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+}
+
+.sri-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.18s;
+  line-height: 1;
+
+  i { font-size: 0.8rem; }
+
+  &--send {
+    background: #fff;
+    border-color: #d97706;
+    color: #92400e;
+    &:hover { background: #d97706; color: white; border-color: #d97706; }
+  }
+
+  &--regen {
+    background: #fff;
+    border-color: #ef4444;
+    color: #991b1b;
+    &:hover { background: #ef4444; color: white; border-color: #ef4444; }
+  }
+
+  &--consumidor {
+    background: #fff;
+    border-color: #7c3aed;
+    color: #4c1d95;
+    &:hover { background: #7c3aed; color: white; border-color: #7c3aed; }
+  }
+}
+
+.auth-banner-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.inv-btn--disabled {
+  background: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  border-color: transparent !important;
+  cursor: not-allowed;
+  opacity: 1;
 }
 
 .inv-warning {
@@ -490,6 +669,54 @@ const sriSignedTooLong = computed(() => {
   }
 }
 
+// Alerta de factura rota (subtotal_12 = 0, iva > 0)
+.broken-invoice-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  background: #fef2f2;
+  border-bottom: 2px solid #fca5a5;
+  color: #991b1b;
+
+  > i {
+    font-size: 1.1rem;
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+    color: #ef4444;
+  }
+
+  .broken-invoice-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+
+    strong { font-size: 0.84rem; font-weight: 800; }
+    span   { font-size: 0.76rem; font-weight: 500; line-height: 1.5; opacity: 0.9; }
+    code   { background: rgba(239,68,68,0.12); padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.75rem; }
+  }
+
+  .broken-regen-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 0.45rem 0.9rem;
+    border-radius: 7px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    width: fit-content;
+    transition: background 0.15s;
+
+    &:hover { background: #dc2626; }
+  }
+}
+
 // Advertencia de SRI tardío
 .sri-timeout-warning {
   display: flex;
@@ -526,15 +753,96 @@ const sriSignedTooLong = computed(() => {
       opacity: 0.9;
     }
 
+    .sri-timeout-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.4rem;
+    }
+
+    .sri-timeout-edit,
+    .sri-timeout-regen {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: none;
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      width: fit-content;
+      transition: background 0.15s;
+    }
+
     .sri-timeout-edit {
+      background: #f97316;
+      color: white;
+      &:hover { background: #ea6c0a; }
+    }
+
+    .sri-timeout-regen {
+      background: #7c3aed;
+      color: white;
+      &:hover { background: #6d28d9; }
+    }
+  }
+
+  // Estado urgente (>1 hora sin autorizar)
+  &--urgent {
+    background: #fef2f2;
+    border-bottom-color: #fecaca;
+    color: #991b1b;
+    > i { color: #dc2626; }
+  }
+}
+
+// Alerta de mismatch tipo de persona vs documento
+.person-mismatch-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  background: #fefce8;
+  border-bottom: 1px solid #fde047;
+  color: #713f12;
+
+  > i {
+    font-size: 1rem;
+    margin-top: 0.1rem;
+    flex-shrink: 0;
+    color: #ca8a04;
+  }
+
+  .person-mismatch-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+
+    strong { font-size: 0.83rem; font-weight: 800; line-height: 1.3; }
+
+    span {
+      font-size: 0.76rem;
+      font-weight: 500;
+      line-height: 1.5;
+      opacity: 0.9;
+
+      &.hint {
+        font-style: italic;
+        opacity: 0.75;
+      }
+    }
+
+    .mismatch-edit-btn {
       display: inline-flex;
       align-items: center;
       gap: 0.35rem;
       margin-top: 0.4rem;
-      background: #f97316;
+      background: #ca8a04;
       color: white;
       border: none;
-      padding: 0.4rem 0.8rem;
+      padding: 0.4rem 0.85rem;
       border-radius: 6px;
       font-size: 0.75rem;
       font-weight: 700;
@@ -542,7 +850,7 @@ const sriSignedTooLong = computed(() => {
       width: fit-content;
       transition: background 0.15s;
 
-      &:hover { background: #ea6c0a; }
+      &:hover { background: #a16207; }
     }
   }
 }

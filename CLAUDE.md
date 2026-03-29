@@ -70,6 +70,58 @@ The platform integrates **two separate Contifico accounts** — one per business
 - `OrderProductCard` shows a colored brand badge (purple = Nicole, amber = Sucree) and a lock overlay when blocked.
 - **Mixing restriction**: A single order can only contain products from one Contifico. Attempting to add from the other brand shows an error: "Para eso son dos pedidos — son dos empresas distintas."
 
+### Contifico Invoice Payload — Reglas Críticas
+
+**1. `subtotal_12` es la base gravable (siempre)**
+El payload usa `subtotal_12` (no `subtotal_15`) como base imponible para IVA, sin importar si la tasa es 12% o 15%. Si `subtotal_12 = 0` → SRI rechaza con "ERROR EN DIFERENCIAS".
+
+**2. `tipoIdentificacionComprador` — derivar solo del largo del ID**
+- 13 dígitos → RUC (`tipoIdentificacionComprador = "04"`): enviar `ruc = rawId`, `cedula = ""`
+- 10 dígitos → Cédula (`tipoIdentificacionComprador = "05"`): enviar `cedula = rawId`, `ruc = rawId + "001"`
+- Contifico requiere `ruc` no vacío incluso para cédulas — enviar `ruc = ""` impide que el documento se firme
+- NUNCA enviar ambos `cedula` y `ruc` — Contifico genera `tipoIdentificacionComprador = "None"` → SRI rechaza con "ARCHIVO NO CUMPLE ESTRUCTURA XML"
+  - **EXCEPCIÓN**: `ruc = cedula + "001"` sí es aceptado porque Contifico lo trata como RUC de persona natural derivado de cédula
+- `personType` del frontend NO se usa para este cálculo en el backend
+- `tipo: "C"` en `clientePayload` es un tipo INVÁLIDO para el SRI. Contifico acepta la factura y la firma, pero SRI rechaza la autorización silenciosamente. La persona queda en Contifico con `tipo: "C"` de forma permanente (no se puede actualizar vía REST). La solución es crear una nueva factura usando los datos de **Consumidor Final** (`ruc: "9999999999"`) en lugar de los datos del cliente.
+- **Consumidor Final en Contifico**: `persona_id: "NO8bYRVq3HX9xd7j"`, `tipo: "N"`, `ruc: "9999999999999"`, `cedula: "9999999999"`. Pasar `invoiceData.ruc = "9999999999"` es suficiente para que el backend use esta persona.
+- **Blindaje automático en `createInvoice`**: Antes de crear cada factura, `ensurePersonaTipo(rawId, correctTipo)` busca la persona por RUC/cédula en Contifico (`GET /persona/?identificacion=<rawId>`). Si tiene `tipo: "C"`, intenta corregirla via `PUT /persona/`. Si el PUT falla, usa Consumidor Final automáticamente como fallback. Esto garantiza que nuevas facturas nunca queden bloqueadas por `tipo: "C"`.
+
+**3. `sendToSriWhenReady` — timing asíncrono**
+Contifico firma documentos de forma asíncrona, típicamente en 2-10 minutos. `sendToSriWhenReady` hace polling cada 15s hasta max 10 min. Si `firmado` nunca llega a `true` (Contifico a veces firma internamente sin actualizar el flag en el GET), igual intenta `sendToSri` al final del timeout.
+
+**IMPORTANTE**: `firmado: false` en el GET de Contifico NO significa que el documento no esté listo para SRI. Contifico puede haber firmado internamente sin actualizar ese campo. Siempre intentar `sendToSri` después de 2+ minutos aunque `firmado` siga en `false`.
+
+**Estados Contifico → SRI:** No Firmado → Firmado → Enviado SRI → Autorizado
+
+**Flujo de facturación:**
+- `POST /orders/:id/invoice/generate` — crea factura en Contifico y envía al SRI
+- `POST /orders/:id/invoice/regenerate` — repara doc roto (PUT) y reenvía
+- `POST /orders/:id/invoice/authorize` — reenvía doc existente al SRI (fix para timing)
+- `GET /orders/:id/invoice/auth-status` — estado de autorización SRI
+
+### Batch Invoice Scripts (nicole-order-backapp)
+
+Scripts para operaciones masivas sobre facturas históricas. Ejecutar desde `nicole-order-backapp/`:
+
+| Comando | Script | Propósito |
+|---------|--------|-----------|
+| `pnpm regen:invoices` | `scripts/regenerate-invoices.ts` | Crea facturas NUEVAS para todas las órdenes sin autorización SRI |
+| `pnpm verify:invoices` | `scripts/verify-invoices.ts` | Verifica estado SRI y guarda números de autorización en DB |
+| `pnpm auth:consumidor` | `scripts/authorize-consumidor-final.ts` | Crea facturas nuevas con Consumidor Final para órdenes con `tipo: "C"` bloqueadas |
+| `pnpm auth:consumidor -- --order <id>` | ídem | Para una sola orden específica |
+
+**Flujo de reparación masiva (órdenes con `tipo: "C"`):**
+1. `pnpm auth:consumidor` — crea facturas nuevas con Consumidor Final, espera firma (15 min), envía al SRI
+2. Esperar 5-10 min para que SRI procese
+3. `pnpm verify:invoices` — recoge autorizaciones y las guarda en DB
+4. Repetir paso 3 hasta que WAITING_SRI = 0
+
+**Flujo estándar (órdenes con datos de identificación válidos):**
+1. `pnpm regen:invoices` — crea facturas nuevas y envía al SRI (CHUNK_SIZE=3 para no saturar API)
+2-4. Mismo flujo que arriba.
+
+**Regla crítica:** Siempre crear factura **nueva** (`createInvoice`) para órdenes históricas con errores. No intentar reparar con PUT porque los documentos viejos acumulan errores de datos.
+
 ### Key Patterns
 
 - **Composables** (`src/composables/`) — reusable logic (order filtering, batch operations, toast notifications, Excel export)

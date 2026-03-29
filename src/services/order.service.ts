@@ -98,6 +98,33 @@ class OrderService extends APIBase {
     }
   }
 
+  async regenerateInvoice(id: string): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/invoice/regenerate`, {})
+      return response.data
+    } catch (error) {
+      console.error('Error regenerating invoice:', error)
+      throw error
+    }
+  }
+
+  async regenerateInvoiceConsumidorFinal(id: string): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/invoice/regenerate?force=true`, {
+        invoiceDataOverride: {
+          ruc: '9999999999',
+          businessName: 'sin nombre',
+          email: 'noname@noname.com',
+          address: 'sin dirección',
+        },
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error regenerating invoice (consumidor final):', error)
+      throw error
+    }
+  }
+
   async getInvoicePdf(id: string): Promise<any> {
     try {
       const response = await this.get<any>(`orders/${id}/invoice-pdf`)
@@ -210,6 +237,50 @@ class OrderService extends APIBase {
     } catch (error) {
       console.error('Error triggering batch invoice:', error)
       throw error
+    }
+  }
+
+  async syncInvoiceAuthorizations(): Promise<{
+    found: number
+    authorized: number
+    sentToSri: number
+    stillPending: number
+    failed: number
+    details: Array<{ orderId: string; customerName: string; action: string; autorizacion?: string }>
+  }> {
+    try {
+      const response = await this.post<any>('orders/invoice/sync-authorizations', {})
+      return response.data
+    } catch (error) {
+      console.error('Error syncing authorizations:', error)
+      throw error
+    }
+  }
+
+  async batchReauthorizeInvoices(): Promise<{
+    found: number
+    sentToSri: number
+    regenerated: number
+    skipped: number
+    failed: number
+    results: Array<{ orderId: string; customerName: string; action: string; detail?: string }>
+  }> {
+    try {
+      const response = await this.post<any>('orders/invoice/batch-reauthorize', {})
+      return response.data
+    } catch (error) {
+      console.error('Error triggering batch reauthorize:', error)
+      throw error
+    }
+  }
+
+  async searchPersona(identificacion: string): Promise<{ razon_social: string; email: string; direccion: string } | null> {
+    try {
+      const response = await this.get<any>(`persons?identificacion=${identificacion}`)
+      const persona = response.data?.data?.[0]
+      return persona ?? null
+    } catch {
+      return null
     }
   }
 }

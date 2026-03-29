@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { OrderFormData } from '@/types/order'
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useDialog } from '@/composables/useDialog'
+import { useToast } from '@/composables/useToast'
 import { deliveryService, type DeliveryPerson } from '@/services/delivery.service'
+import orderService from '@/services/order.service'
 import { useBranches } from '@/composables/useBranches'
 import PaymentFields from './PaymentFields.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
@@ -16,6 +18,7 @@ const props = defineProps<{
 }>()
 
 const dialog = useDialog()
+const toast = useToast()
 const { branchNames, load: loadBranches } = useBranches()
 const BRANCHES = branchNames
 
@@ -139,6 +142,76 @@ const timeOptions = getTimeOptions()
 
 const selectTime = (time: string) => {
   props.modelValue.deliveryTime = time
+}
+
+// --- Invoice ID validation ---
+const rucHasError = computed(() => {
+  const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+  if (!ruc) return false
+  const digits = ruc.replace(/\D/g, '')
+  return digits.length !== 10 && digits.length !== 13
+})
+
+// Una vez que el RUC tiene 10 o 13 dígitos válidos, el tipo de persona se bloquea
+// para evitar que el usuario lo cambie manualmente y cause errores en el SRI.
+const personTypeLocked = computed(() => {
+  const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+  const digits = ruc.replace(/\D/g, '')
+  return digits.length === 10 || digits.length === 13
+})
+
+// Show a warning toast when an invalid length is detected (only when value changes to invalid)
+watch(rucHasError, (hasError) => {
+  if (hasError) {
+    const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+    const digits = ruc.replace(/\D/g, '')
+    toast.warning(
+      `<strong>Identificación inválida</strong><br>Tiene ${digits.length} dígitos — debe ser cédula (10) o RUC (13).`,
+      5000
+    )
+  }
+})
+
+// Auto-select personType + search persona in Contifico
+const isSearchingPersona = ref(false)
+const personaSearchStatus = ref<'idle' | 'found' | 'not-found'>('idle')
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+const onRucInput = () => {
+  const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
+  const digits = ruc.replace(/\D/g, '')
+
+  if (digits.length === 13) {
+    props.modelValue.invoiceData!.personType = 'juridica'
+  } else if (digits.length === 10) {
+    props.modelValue.invoiceData!.personType = 'natural'
+  }
+
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+
+  // Reset state when user keeps typing
+  if (digits.length < 10) {
+    personaSearchStatus.value = 'idle'
+    isSearchingPersona.value = false
+    return
+  }
+
+  if (digits.length === 10 || digits.length === 13) {
+    personaSearchStatus.value = 'idle'
+    searchDebounceTimer = setTimeout(async () => {
+      isSearchingPersona.value = true
+      const persona = await orderService.searchPersona(digits)
+      isSearchingPersona.value = false
+      if (persona) {
+        props.modelValue.invoiceData!.businessName = persona.razon_social || props.modelValue.invoiceData!.businessName
+        props.modelValue.invoiceData!.email = persona.email || props.modelValue.invoiceData!.email
+        props.modelValue.invoiceData!.address = persona.direccion || props.modelValue.invoiceData!.address
+        personaSearchStatus.value = 'found'
+      } else {
+        personaSearchStatus.value = 'not-found'
+      }
+    }, 400)
+  }
 }
 </script>
 
@@ -306,17 +379,24 @@ const selectTime = (time: string) => {
       <h3>Datos de Facturación</h3>
 
       <!-- Tipo de persona (obligatorio para facturación SRI correcta) -->
+      <!-- Se bloquea automáticamente cuando el RUC/cédula tiene largo válido -->
       <div class="form-group full-inv-width">
-        <label class="required-label">Tipo de Persona</label>
-        <div class="person-type-selector">
+        <label class="required-label">
+          Tipo de Persona
+          <span v-if="personTypeLocked" class="pt-locked-hint">
+            <i class="fa-solid fa-lock"></i> Auto-detectado del documento
+          </span>
+        </label>
+        <div class="person-type-selector" :class="{ 'person-type-selector--locked': personTypeLocked }">
           <label
             class="person-type-option"
-            :class="{ active: props.modelValue.invoiceData.personType === 'natural' }"
+            :class="{ active: props.modelValue.invoiceData.personType === 'natural', locked: personTypeLocked }"
           >
             <input
               type="radio"
               value="natural"
               v-model="props.modelValue.invoiceData.personType"
+              :disabled="personTypeLocked"
             />
             <div class="pt-icon"><i class="fa-solid fa-user"></i></div>
             <div class="pt-text">
@@ -326,12 +406,13 @@ const selectTime = (time: string) => {
           </label>
           <label
             class="person-type-option"
-            :class="{ active: props.modelValue.invoiceData.personType === 'juridica' }"
+            :class="{ active: props.modelValue.invoiceData.personType === 'juridica', locked: personTypeLocked }"
           >
             <input
               type="radio"
               value="juridica"
               v-model="props.modelValue.invoiceData.personType"
+              :disabled="personTypeLocked"
             />
             <div class="pt-icon"><i class="fa-solid fa-building"></i></div>
             <div class="pt-text">
@@ -342,27 +423,62 @@ const selectTime = (time: string) => {
         </div>
       </div>
 
-      <div class="form-group">
+      <!-- RUC / Cédula con búsqueda automática -->
+      <div class="form-group full-inv-width">
         <label class="required-label">
           {{ props.modelValue.invoiceData.personType === 'juridica' ? 'RUC Empresa' : 'Cédula / RUC' }}
         </label>
-        <input
-          v-model="props.modelValue.invoiceData.ruc"
-          :placeholder="props.modelValue.invoiceData.personType === 'juridica' ? '13 dígitos (RUC empresa)' : '10 dígitos (cédula) o 13 (RUC)'"
-          inputmode="numeric"
-        />
+        <div class="ruc-input-wrapper" :class="{ 'is-searching': isSearchingPersona, 'is-found': personaSearchStatus === 'found', 'is-not-found': personaSearchStatus === 'not-found' }">
+          <input
+            v-model="props.modelValue.invoiceData.ruc"
+            :placeholder="props.modelValue.invoiceData.personType === 'juridica' ? '13 dígitos (RUC empresa)' : '10 dígitos (cédula) o 13 (RUC)'"
+            inputmode="numeric"
+            @input="onRucInput"
+            :class="{ 'input-error': rucHasError }"
+          />
+          <span class="ruc-search-icon">
+            <i v-if="isSearchingPersona" class="fas fa-circle-notch fa-spin"></i>
+            <i v-else-if="personaSearchStatus === 'found'" class="fas fa-check-circle"></i>
+            <i v-else-if="personaSearchStatus === 'not-found'" class="fas fa-user-plus"></i>
+            <i v-else class="fas fa-search"></i>
+          </span>
+        </div>
+
+        <!-- Status banner below the input -->
+        <Transition name="status-slide">
+          <div v-if="isSearchingPersona" class="persona-status-banner searching">
+            <i class="fas fa-circle-notch fa-spin"></i>
+            Buscando en Contifico…
+          </div>
+          <div v-else-if="personaSearchStatus === 'found'" class="persona-status-banner found">
+            <i class="fas fa-check-circle"></i>
+            Cliente encontrado — datos completados automáticamente
+          </div>
+          <div v-else-if="personaSearchStatus === 'not-found'" class="persona-status-banner not-found">
+            <i class="fas fa-user-plus"></i>
+            <div>
+              <strong>Cliente nuevo</strong> — no está en Contifico todavía.<br />
+              <span>Completa los datos abajo y se registrará al generar la factura.</span>
+            </div>
+          </div>
+        </Transition>
       </div>
-      <div class="form-group">
+
+      <!-- Autofill fields — show skeleton while searching -->
+      <div class="form-group" :class="{ 'field-loading': isSearchingPersona }">
         <label>Razón Social / Nombre</label>
-        <input v-model="props.modelValue.invoiceData.businessName" />
+        <div v-if="isSearchingPersona" class="skeleton-input"></div>
+        <input v-else v-model="props.modelValue.invoiceData.businessName" placeholder="Nombre completo o razón social" :class="{ 'field-autofilled': personaSearchStatus === 'found' }" />
       </div>
-      <div class="form-group">
+      <div class="form-group" :class="{ 'field-loading': isSearchingPersona }">
         <label>Email</label>
-        <input v-model="props.modelValue.invoiceData.email" type="email" />
+        <div v-if="isSearchingPersona" class="skeleton-input"></div>
+        <input v-else v-model="props.modelValue.invoiceData.email" type="email" placeholder="correo@ejemplo.com" :class="{ 'field-autofilled': personaSearchStatus === 'found' }" />
       </div>
-      <div class="form-group">
+      <div class="form-group" :class="{ 'field-loading': isSearchingPersona }">
         <label>Dirección</label>
-        <input v-model="props.modelValue.invoiceData.address" />
+        <div v-if="isSearchingPersona" class="skeleton-input"></div>
+        <input v-else v-model="props.modelValue.invoiceData.address" placeholder="Dirección de facturación" :class="{ 'field-autofilled': personaSearchStatus === 'found' }" />
       </div>
     </div>
 
@@ -443,6 +559,110 @@ const selectTime = (time: string) => {
 
 .full-width {
   grid-column: 1 / -1;
+}
+
+// ── RUC search input ──────────────────────────────────────────
+.ruc-input-wrapper {
+  position: relative;
+
+  input {
+    width: 100%;
+    padding-right: 2.8rem !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  &.is-searching input { border-color: #94a3b8; }
+  &.is-found input     { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.12); }
+  &.is-not-found input { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.12); }
+
+  .ruc-search-icon {
+    position: absolute;
+    right: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.9rem;
+    pointer-events: none;
+    transition: color 0.2s;
+    color: #94a3b8;
+  }
+
+  &.is-searching .ruc-search-icon { color: #6b7280; }
+  &.is-found .ruc-search-icon     { color: #16a34a; }
+  &.is-not-found .ruc-search-icon { color: #f59e0b; }
+}
+
+// ── Status banner ─────────────────────────────────────────────
+.persona-status-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+
+  i { margin-top: 0.1rem; flex-shrink: 0; }
+
+  strong { display: block; margin-bottom: 0.1rem; }
+  span   { opacity: 0.85; }
+
+  &.searching {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    i { animation: spin 0.8s linear infinite; }
+  }
+
+  &.found {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+
+  &.not-found {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+}
+
+// ── Transition ────────────────────────────────────────────────
+.status-slide-enter-active,
+.status-slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease, max-height 0.25s ease;
+  overflow: hidden;
+  max-height: 80px;
+}
+.status-slide-enter-from,
+.status-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+  max-height: 0;
+}
+
+// ── Skeleton shimmer ──────────────────────────────────────────
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton-input {
+  height: 48px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+// ── Autofill flash ────────────────────────────────────────────
+@keyframes autofill-flash {
+  0%   { background-color: #f0fdf4; }
+  100% { background-color: transparent; }
+}
+
+.field-autofilled {
+  animation: autofill-flash 1.2s ease forwards;
 }
 
 .form-group {
@@ -999,6 +1219,51 @@ const selectTime = (time: string) => {
         line-height: 1.3;
       }
     }
+
+    // Estado bloqueado: opacidad reducida en la opción NO seleccionada, cursor deshabilitado
+    &.locked {
+      cursor: default;
+      pointer-events: none;
+
+      &:not(.active) {
+        opacity: 0.35;
+        filter: grayscale(0.5);
+      }
+
+      &.active {
+        border-color: #059669;
+        background: rgba(5, 150, 105, 0.06);
+        box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
+
+        .pt-icon {
+          background: rgba(5, 150, 105, 0.12);
+          color: #059669;
+        }
+      }
+    }
   }
+
+  // Contenedor bloqueado — quita el hover del wrapper
+  &--locked {
+    cursor: default;
+  }
+}
+
+// Hint "auto-detectado del documento"
+.pt-locked-hint {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #059669;
+  margin-left: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0.9;
+}
+
+// Borde rojo sutil cuando el RUC/cédula tiene largo incorrecto
+:deep(.input-error) {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
 }
 </style>

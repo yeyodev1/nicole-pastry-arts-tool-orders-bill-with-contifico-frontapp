@@ -93,16 +93,72 @@ const handleTriggerAuth = async () => {
   isAuthLoading.value = true
   try {
     await OrderService.triggerInvoiceAuth(id)
-    success('Enviado al SRI. Verificando autorización (puede tomar 1-2 min)...')
+    success('Enviado al SRI. Verificando autorización...')
     pollAuthStatus()
   } catch (e: any) {
-    showError(e.data?.message || e.message || 'Error al enviar al SRI')
+    // El backend devuelve 4xx cuando sendToSri falla — mostrar el error real de Contífico/SRI
+    const msg = e.response?.data?.message || e.data?.message || e.message || 'Error al enviar al SRI'
+    showError(`No se pudo enviar al SRI: ${msg}`)
     isAuthLoading.value = false
   }
 }
 
 const handleRefreshAuthStatus = () => {
   fetchAuthStatus()
+}
+
+const handleRegenerateInvoice = async () => {
+  if (!order.value) return
+  const confirmed = await dialog.confirm(
+    '⚠️ La nueva factura se emitirá con la fecha de HOY.\n\nLa normativa del SRI exige que los documentos electrónicos se autoricen el mismo día de su emisión. Una factura con fecha original (hace varios días) sería rechazada como extemporánea.\n\nLa factura anterior quedará inactiva en Contífico y la nueva tendrá fecha de hoy.',
+    { title: 'Regenerar Factura — fecha de hoy', confirmLabel: 'Entendido, regenerar', cancelLabel: 'Cancelar', variant: 'warning' }
+  )
+  if (!confirmed) return
+  isLoading.value = true
+  try {
+    await OrderService.regenerateInvoice(order.value._id)
+    success('Factura regenerada. Verificando autorización SRI...')
+    fetchOrder()
+    authStatus.value = null
+    pollAuthStatus()
+  } catch (e: any) {
+    const data = e.data
+    const contificoMsg = data?.contificoMessage
+    if (contificoMsg) {
+      showError(`⚠️ Contífico rechazó la factura:<br><small>${contificoMsg}</small>`, 10000)
+    } else {
+      showError(data?.message || e.message || 'Error al regenerar factura')
+    }
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const handleRegenerateConsumidorFinal = async () => {
+  if (!order.value) return
+  const confirmed = await dialog.confirm(
+    '⚠️ Se emitirá una nueva factura a nombre de Consumidor Final.\n\nEsto es necesario cuando la persona en Contífico tiene tipo inválido (tipo "C") que el SRI rechaza silenciosamente. La factura quedará a nombre de Consumidor Final — no del cliente.\n\nLa factura anterior quedará inactiva en Contífico y la nueva tendrá fecha de hoy.',
+    { title: 'Regenerar como Consumidor Final', confirmLabel: 'Entendido, regenerar', cancelLabel: 'Cancelar', variant: 'warning' }
+  )
+  if (!confirmed) return
+  isLoading.value = true
+  try {
+    await OrderService.regenerateInvoiceConsumidorFinal(order.value._id)
+    success('Factura regenerada como Consumidor Final. Verificando autorización SRI...')
+    fetchOrder()
+    authStatus.value = null
+    pollAuthStatus()
+  } catch (e: any) {
+    const data = e.data
+    const contificoMsg = data?.contificoMessage
+    if (contificoMsg) {
+      showError(`⚠️ Contífico rechazó la factura:<br><small>${contificoMsg}</small>`, 10000)
+    } else {
+      showError(data?.message || e.message || 'Error al regenerar factura como Consumidor Final')
+    }
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const totalPaid = computed(() => {
@@ -397,6 +453,8 @@ onUnmounted(() => {
             @view-invoice="handleViewInvoice"
             @trigger-auth="handleTriggerAuth"
             @refresh-auth="handleRefreshAuthStatus"
+            @regenerate-invoice="handleRegenerateInvoice"
+            @regenerate-consumidor-final="handleRegenerateConsumidorFinal"
           />
         </section>
       </div>

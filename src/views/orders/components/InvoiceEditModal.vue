@@ -46,6 +46,17 @@ watch(() => props.isOpen, (newVal) => {
   }
 })
 
+// Solo auto-selecciona personType cuando el campo RUC estaba VACÍO antes de escribir.
+// NO sobrescribimos el tipo si el usuario ya tiene uno seleccionado — eso bloquea los cambios manuales.
+const onRucInput = () => {
+  const digits = form.ruc.trim().replace(/\D/g, '')
+  // Auto-selección solo si todavía no hay tipo elegido (campo vacío al abrir modal)
+  if (!form.personType) {
+    if (digits.length === 13) form.personType = 'juridica'
+    else if (digits.length === 10) form.personType = 'natural'
+  }
+}
+
 const validate = async () => {
   if (!form.invoiceNeeded) return true
 
@@ -130,7 +141,7 @@ const save = async () => {
 
           <div class="form-group">
             <label>{{ form.personType === 'juridica' ? 'RUC Empresa *' : 'Cédula / RUC *' }}</label>
-            <input v-model="form.ruc" :placeholder="form.personType === 'juridica' ? '13 dígitos empresa' : '10 (cédula) o 13 (RUC)'" inputmode="numeric" />
+            <input v-model="form.ruc" :placeholder="form.personType === 'juridica' ? '13 dígitos empresa' : '10 (cédula) o 13 (RUC)'" inputmode="numeric" @input="onRucInput" />
           </div>
           
           <div class="form-group">
