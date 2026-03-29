@@ -70,15 +70,47 @@ The platform integrates **two separate Contifico accounts** — one per business
 - `OrderProductCard` shows a colored brand badge (purple = Nicole, amber = Sucree) and a lock overlay when blocked.
 - **Mixing restriction**: A single order can only contain products from one Contifico. Attempting to add from the other brand shows an error: "Para eso son dos pedidos — son dos empresas distintas."
 
-### Contifico Invoice Payload — Campo Crítico
+### Contifico Invoice Payload — Reglas Críticas
 
-El payload de factura usa `subtotal_12` (no `subtotal_15`) como base gravable para IVA, independientemente de si la tasa es 12% o 15%. La tasa real se determina por `porcentaje_iva` en cada línea de `detalles`. Si `subtotal_12 = 0`, el SRI rechaza con "ERROR EN DIFERENCIAS (baseImponible = 0)".
+**1. `subtotal_12` es la base gravable (siempre)**
+El payload usa `subtotal_12` (no `subtotal_15`) como base imponible para IVA, sin importar si la tasa es 12% o 15%. Si `subtotal_12 = 0` → SRI rechaza con "ERROR EN DIFERENCIAS".
+
+**2. `tipoIdentificacionComprador` — derivar solo del largo del ID**
+- 13 dígitos → RUC (`tipoIdentificacionComprador = "04"`): enviar `ruc = rawId`, `cedula = ""`
+- 10 dígitos → Cédula (`tipoIdentificacionComprador = "05"`): enviar `cedula = rawId`, `ruc = rawId + "001"`
+- Contifico requiere `ruc` no vacío incluso para cédulas — enviar `ruc = ""` impide que el documento se firme
+- NUNCA enviar ambos `cedula` y `ruc` — Contifico genera `tipoIdentificacionComprador = "None"` → SRI rechaza con "ARCHIVO NO CUMPLE ESTRUCTURA XML"
+  - **EXCEPCIÓN**: `ruc = cedula + "001"` sí es aceptado porque Contifico lo trata como RUC de persona natural derivado de cédula
+- `personType` del frontend NO se usa para este cálculo en el backend
+- `tipo: "C"` en `clientePayload` es el marcador de cliente de Contifico, NO afecta el XML del SRI
+
+**3. `sendToSriWhenReady` — timing asíncrono**
+Contifico firma documentos de forma asíncrona. Llamar `sendToSri` inmediatamente falla silenciosamente (`sendToSri` retorna `{ error }` sin lanzar). Siempre usar `sendToSriWhenReady` (polling cada 4s hasta que `firmado = true`, max 30s).
+
+**Estados Contifico → SRI:** No Firmado → Firmado → Enviado SRI → Autorizado
 
 **Flujo de facturación:**
 - `POST /orders/:id/invoice/generate` — crea factura en Contifico y envía al SRI
-- `POST /orders/:id/invoice/regenerate` — elimina factura rota en Contifico y la recrea (fix para SRI)
-- `POST /orders/:id/invoice/authorize` — reenvía doc existente al SRI
+- `POST /orders/:id/invoice/regenerate` — repara doc roto (PUT) y reenvía
+- `POST /orders/:id/invoice/authorize` — reenvía doc existente al SRI (fix para timing)
 - `GET /orders/:id/invoice/auth-status` — estado de autorización SRI
+
+### Batch Invoice Scripts (nicole-order-backapp)
+
+Scripts para operaciones masivas sobre facturas históricas. Ejecutar desde `nicole-order-backapp/`:
+
+| Comando | Script | Propósito |
+|---------|--------|-----------|
+| `pnpm regen:invoices` | `scripts/regenerate-invoices.ts` | Crea facturas NUEVAS para todas las órdenes sin autorización SRI |
+| `pnpm verify:invoices` | `scripts/verify-invoices.ts` | Verifica estado SRI y guarda números de autorización en DB |
+
+**Flujo de reparación masiva:**
+1. `pnpm regen:invoices` — crea facturas nuevas y envía al SRI (CHUNK_SIZE=3 para no saturar API)
+2. Esperar 5-10 min para que SRI procese
+3. `pnpm verify:invoices` — recoge autorizaciones y las guarda en DB
+4. Repetir paso 3 hasta que WAITING_SRI = 0
+
+**Regla crítica:** Siempre crear factura **nueva** (`createInvoice`) para órdenes históricas con errores. No intentar reparar con PUT porque los documentos viejos acumulan errores de datos. El script `regenerate-invoices.ts` siempre recrea — nunca repara.
 
 ### Key Patterns
 

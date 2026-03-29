@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { generateOrderSummary } from '@/utils/orderSummary'
 import { useToast } from '@/composables/useToast'
@@ -24,7 +24,7 @@ import OrderDeleteModal from './components/OrderDeleteModal.vue'
 import BatchRetryModal from './components/BatchRetryModal.vue'
 
 const router = useRouter()
-const { success, error: showError, info } = useToast()
+const { success, error: showError, info, warning } = useToast()
 const dialog = useDialog()
 
 // --- COMPOSABLES ---
@@ -295,9 +295,90 @@ const handleManualBatchProcess = async () => {
   }
 }
 
+const isReauthorizing = ref(false)
+const isSyncing = ref(false)
+
+const handleBatchReauthorize = async () => {
+  isReauthorizing.value = true
+  try {
+    const result = await OrderService.batchReauthorizeInvoices()
+    const { found, sentToSri, regenerated, skipped, failed } = result
+    const totalActioned = sentToSri + regenerated
+
+    if (found === 0) {
+      info('No hay facturas no autorizadas pendientes')
+    } else if (failed === 0) {
+      success(`✓ ${totalActioned} factura(s) procesadas de ${found} — ${sentToSri} enviadas al SRI, ${regenerated} regeneradas, ${skipped} ya autorizadas`)
+    } else if (totalActioned > 0) {
+      warning(`${totalActioned} de ${found} procesadas — ${failed} con error. Revisa "Errores de facturación"`)
+    } else {
+      showError(`No se pudo procesar ninguna factura (${failed} errores de ${found} encontradas)`)
+    }
+
+    // Log detalle por consola para debug
+    if (result.results?.length) {
+      console.group('📋 Batch reauthorize — detalle')
+      for (const r of result.results) {
+        const icon = r.action === 'failed' ? '❌' : r.action === 'skipped' ? '⏭️' : '✅'
+        console.log(`${icon} [${r.action}] ${r.customerName} (${r.orderId}) — ${r.detail ?? ''}`)
+      }
+      console.groupEnd()
+    }
+
+    await fetchInvoiceStatus()
+    fetchOrders()
+  } catch (err: any) {
+    showError(err.response?.data?.message || err.data?.message || err.message || 'Error al reenviar facturas')
+  } finally {
+    isReauthorizing.value = false
+  }
+}
+
+const handleSyncAuthorizations = async () => {
+  isSyncing.value = true
+  try {
+    const result = await OrderService.syncInvoiceAuthorizations()
+    const { found, authorized, sentToSri, stillPending } = result
+    if (found === 0) {
+      success('Todas las facturas están al día')
+    } else if (authorized > 0) {
+      success(`✓ ${authorized} autorización(es) sincronizadas desde el SRI${sentToSri > 0 ? ` | ${sentToSri} enviadas` : ''}`)
+    } else if (sentToSri > 0) {
+      info(`${sentToSri} enviadas al SRI — ${stillPending} esperando respuesta`)
+    } else {
+      info(`${stillPending} facturas en cola del SRI — sin cambios aún`)
+    }
+    await fetchInvoiceStatus()
+    fetchOrders()
+  } catch (err: any) {
+    showError(err.response?.data?.message || err.data?.message || err.message || 'Error al sincronizar')
+  } finally {
+    isSyncing.value = false
+  }
+}
+
+// Auto-sync every 5 minutes if there are pending invoices
+let syncInterval: ReturnType<typeof setInterval> | null = null
+const startAutoSync = () => {
+  if (syncInterval) return
+  syncInterval = setInterval(async () => {
+    if (invoiceStatus.value && (invoiceStatus.value.pending > 0 || invoiceStatus.value.error > 0)) {
+      await handleSyncAuthorizations()
+    }
+  }, 5 * 60 * 1000)
+}
+const stopAutoSync = () => {
+  if (syncInterval) { clearInterval(syncInterval); syncInterval = null }
+}
+
 onMounted(() => {
   fetchOrders()
   fetchInvoiceStatus()
+  startAutoSync()
+})
+
+onUnmounted(() => {
+  stopAutoSync()
 })
 </script>
 
@@ -385,6 +466,25 @@ onMounted(() => {
             >
               <i class="fas" :class="showErrorDetails ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
               {{ showErrorDetails ? 'Ocultar errores' : 'Ver errores' }}
+            </button>
+            <button
+              class="btn-sync-auth"
+              :disabled="isSyncing"
+              @click="handleSyncAuthorizations"
+              title="Consulta Contifico y guarda las autorizaciones del SRI pendientes"
+            >
+              <i class="fas" :class="isSyncing ? 'fa-spinner fa-spin' : 'fa-rotate'"></i>
+              {{ isSyncing ? 'Sincronizando...' : 'Sincronizar SRI' }}
+            </button>
+            <button
+              v-if="invoiceStatus.error > 0"
+              class="btn-reauthorize"
+              :disabled="isReauthorizing"
+              @click="handleBatchReauthorize"
+              title="Regenera y reenvía al SRI todas las facturas no autorizadas usando la lógica corregida"
+            >
+              <i class="fas" :class="isReauthorizing ? 'fa-spinner fa-spin' : 'fa-paper-plane'"></i>
+              {{ isReauthorizing ? 'Reenviando...' : 'Reenviar y regenerar' }}
             </button>
             <button
               v-if="invoiceStatus.pending > 0"
@@ -859,6 +959,44 @@ onMounted(() => {
     white-space: nowrap;
 
     &:hover { background: #fee2e2; }
+  }
+
+  .btn-sync-auth {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #0ea5e9;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+
+    &:hover:not(:disabled) { background: #0284c7; }
+    &:disabled { opacity: 0.65; cursor: not-allowed; }
+  }
+
+  .btn-reauthorize {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #7c3aed;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+
+    &:hover:not(:disabled) { background: #6d28d9; }
+    &:disabled { opacity: 0.65; cursor: not-allowed; }
   }
 
   .btn-process-now {

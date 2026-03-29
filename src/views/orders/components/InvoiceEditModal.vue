@@ -46,11 +46,15 @@ watch(() => props.isOpen, (newVal) => {
   }
 })
 
-// Auto-select personType based on ID length
+// Solo auto-selecciona personType cuando el campo RUC estaba VACÍO antes de escribir.
+// NO sobrescribimos el tipo si el usuario ya tiene uno seleccionado — eso bloquea los cambios manuales.
 const onRucInput = () => {
   const digits = form.ruc.trim().replace(/\D/g, '')
-  if (digits.length === 13) form.personType = 'juridica'
-  else if (digits.length === 10) form.personType = 'natural'
+  // Auto-selección solo si todavía no hay tipo elegido (campo vacío al abrir modal)
+  if (!form.personType) {
+    if (digits.length === 13) form.personType = 'juridica'
+    else if (digits.length === 10) form.personType = 'natural'
+  }
 }
 
 const validate = async () => {

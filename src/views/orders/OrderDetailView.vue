@@ -93,10 +93,12 @@ const handleTriggerAuth = async () => {
   isAuthLoading.value = true
   try {
     await OrderService.triggerInvoiceAuth(id)
-    success('Enviado al SRI. Verificando autorización (puede tomar 1-2 min)...')
+    success('Enviado al SRI. Verificando autorización...')
     pollAuthStatus()
   } catch (e: any) {
-    showError(e.data?.message || e.message || 'Error al enviar al SRI')
+    // El backend devuelve 4xx cuando sendToSri falla — mostrar el error real de Contífico/SRI
+    const msg = e.response?.data?.message || e.data?.message || e.message || 'Error al enviar al SRI'
+    showError(`No se pudo enviar al SRI: ${msg}`)
     isAuthLoading.value = false
   }
 }

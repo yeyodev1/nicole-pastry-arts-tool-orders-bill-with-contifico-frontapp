@@ -92,14 +92,18 @@ const isBrokenInvoice = computed(() => {
   return sub12 === 0 && sub0 === 0 && iva > 0
 })
 
-// Si la factura lleva más de 1 hora firmada sin ser aprobada por el SRI,
-// es probable que el tipo de persona esté incorrecto.
+// Factura firmada sin autorización del SRI pasados más de 15 minutos → acción recomendada
 const sriSignedTooLong = computed(() => {
   if (props.authStatus !== 'Firmado') return false
   if (!props.invoiceSentToSriAt) return false
   const sentAt = new Date(props.invoiceSentToSriAt).getTime()
   const diffMs = Date.now() - sentAt
-  return diffMs > 60 * 60 * 1000 // más de 1 hora
+  return diffMs > 15 * 60 * 1000 // más de 15 minutos
+})
+
+// Factura firmada y enviada al SRI pero sin autorizar — el usuario puede regenerar en cualquier momento
+const canRegenerateNow = computed(() => {
+  return props.authStatus === 'Firmado' && !!props.invoiceSentToSriAt
 })
 
 // Detecta si el tipo de persona seleccionado no coincide con el largo del RUC/cédula.
@@ -202,7 +206,7 @@ const personTypeMismatch = computed(() => {
         Reenviar al SRI
       </button>
       <button
-        v-if="!isBrokenInvoice && (sriSignedTooLong || authStatusConfig!.cls === 'auth--error')"
+        v-if="!isBrokenInvoice && (canRegenerateNow || authStatusConfig!.cls === 'auth--error')"
         class="sri-action-btn sri-action-btn--regen"
         @click="$emit('regenerate-invoice')"
       >
@@ -215,7 +219,7 @@ const personTypeMismatch = computed(() => {
     <div v-if="authStatus === 'Firmado' && invoiceSentToSriAt" class="sri-timeout-warning" :class="{ 'sri-timeout-warning--urgent': sriSignedTooLong }">
       <i class="fas fa-triangle-exclamation"></i>
       <div class="sri-timeout-text">
-        <strong v-if="sriSignedTooLong">Factura sin autorizar hace más de 1 hora — acción requerida</strong>
+        <strong v-if="sriSignedTooLong">Factura sin autorizar hace más de 15 min — acción requerida</strong>
         <strong v-else>Factura firmada — esperando autorización del SRI</strong>
         <span v-if="sriSignedTooLong">
           El SRI no ha autorizado esta factura. La causa más común es que el <strong>tipo de persona no coincide</strong>

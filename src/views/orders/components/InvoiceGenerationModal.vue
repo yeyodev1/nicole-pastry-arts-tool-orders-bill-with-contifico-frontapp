@@ -22,7 +22,7 @@ const progress = ref(0)
 const isHolding = ref(false)
 let animationFrameId: number | null = null
 let startTime: number | null = null
-const DURATION = 2000 // 2 seconds as requested
+const DURATION = 700 // 0.7s hold
 
 const startHold = () => {
   if (isHolding.value) return
@@ -116,7 +116,7 @@ const formatMoney = (val: number) => `$${val.toFixed(2)}`
               <div class="progress-bar" :style="{ width: progress + '%' }"></div>
               <span class="label">
                 <i class="fas" :class="progress >= 100 ? 'fa-check' : 'fa-fingerprint'"></i>
-                {{ isHolding ? 'Mantén presionado...' : 'Mantén 2s para Facturar' }}
+                {{ isHolding ? 'Mantén presionado...' : 'Mantén 1s para Facturar' }}
               </span>
             </button>
          </div>

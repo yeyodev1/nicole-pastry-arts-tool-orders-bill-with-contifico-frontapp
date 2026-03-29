@@ -222,6 +222,40 @@ class OrderService extends APIBase {
       throw error
     }
   }
+
+  async syncInvoiceAuthorizations(): Promise<{
+    found: number
+    authorized: number
+    sentToSri: number
+    stillPending: number
+    failed: number
+    details: Array<{ orderId: string; customerName: string; action: string; autorizacion?: string }>
+  }> {
+    try {
+      const response = await this.post<any>('orders/invoice/sync-authorizations', {})
+      return response.data
+    } catch (error) {
+      console.error('Error syncing authorizations:', error)
+      throw error
+    }
+  }
+
+  async batchReauthorizeInvoices(): Promise<{
+    found: number
+    sentToSri: number
+    regenerated: number
+    skipped: number
+    failed: number
+    results: Array<{ orderId: string; customerName: string; action: string; detail?: string }>
+  }> {
+    try {
+      const response = await this.post<any>('orders/invoice/batch-reauthorize', {})
+      return response.data
+    } catch (error) {
+      console.error('Error triggering batch reauthorize:', error)
+      throw error
+    }
+  }
 }
 
 export default new OrderService()
