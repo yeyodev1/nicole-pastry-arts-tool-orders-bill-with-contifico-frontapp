@@ -4,6 +4,7 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useDialog } from '@/composables/useDialog'
 import { useToast } from '@/composables/useToast'
 import { deliveryService, type DeliveryPerson } from '@/services/delivery.service'
+import orderService from '@/services/order.service'
 import { useBranches } from '@/composables/useBranches'
 import PaymentFields from './PaymentFields.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
@@ -171,14 +172,45 @@ watch(rucHasError, (hasError) => {
   }
 })
 
-// Auto-select personType based on ID length when the user finishes typing
+// Auto-select personType + search persona in Contifico
+const isSearchingPersona = ref(false)
+const personaSearchStatus = ref<'idle' | 'found' | 'not-found'>('idle')
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
 const onRucInput = () => {
   const ruc = (props.modelValue.invoiceData?.ruc || '').trim()
   const digits = ruc.replace(/\D/g, '')
+
   if (digits.length === 13) {
     props.modelValue.invoiceData!.personType = 'juridica'
   } else if (digits.length === 10) {
     props.modelValue.invoiceData!.personType = 'natural'
+  }
+
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+
+  // Reset state when user keeps typing
+  if (digits.length < 10) {
+    personaSearchStatus.value = 'idle'
+    isSearchingPersona.value = false
+    return
+  }
+
+  if (digits.length === 10 || digits.length === 13) {
+    personaSearchStatus.value = 'idle'
+    searchDebounceTimer = setTimeout(async () => {
+      isSearchingPersona.value = true
+      const persona = await orderService.searchPersona(digits)
+      isSearchingPersona.value = false
+      if (persona) {
+        props.modelValue.invoiceData!.businessName = persona.razon_social || props.modelValue.invoiceData!.businessName
+        props.modelValue.invoiceData!.email = persona.email || props.modelValue.invoiceData!.email
+        props.modelValue.invoiceData!.address = persona.direccion || props.modelValue.invoiceData!.address
+        personaSearchStatus.value = 'found'
+      } else {
+        personaSearchStatus.value = 'not-found'
+      }
+    }, 400)
   }
 }
 </script>
@@ -391,29 +423,62 @@ const onRucInput = () => {
         </div>
       </div>
 
-      <div class="form-group">
+      <!-- RUC / Cédula con búsqueda automática -->
+      <div class="form-group full-inv-width">
         <label class="required-label">
           {{ props.modelValue.invoiceData.personType === 'juridica' ? 'RUC Empresa' : 'Cédula / RUC' }}
         </label>
-        <input
-          v-model="props.modelValue.invoiceData.ruc"
-          :placeholder="props.modelValue.invoiceData.personType === 'juridica' ? '13 dígitos (RUC empresa)' : '10 dígitos (cédula) o 13 (RUC)'"
-          inputmode="numeric"
-          @input="onRucInput"
-          :class="{ 'input-error': rucHasError }"
-        />
+        <div class="ruc-input-wrapper" :class="{ 'is-searching': isSearchingPersona, 'is-found': personaSearchStatus === 'found', 'is-not-found': personaSearchStatus === 'not-found' }">
+          <input
+            v-model="props.modelValue.invoiceData.ruc"
+            :placeholder="props.modelValue.invoiceData.personType === 'juridica' ? '13 dígitos (RUC empresa)' : '10 dígitos (cédula) o 13 (RUC)'"
+            inputmode="numeric"
+            @input="onRucInput"
+            :class="{ 'input-error': rucHasError }"
+          />
+          <span class="ruc-search-icon">
+            <i v-if="isSearchingPersona" class="fas fa-circle-notch fa-spin"></i>
+            <i v-else-if="personaSearchStatus === 'found'" class="fas fa-check-circle"></i>
+            <i v-else-if="personaSearchStatus === 'not-found'" class="fas fa-user-plus"></i>
+            <i v-else class="fas fa-search"></i>
+          </span>
+        </div>
+
+        <!-- Status banner below the input -->
+        <Transition name="status-slide">
+          <div v-if="isSearchingPersona" class="persona-status-banner searching">
+            <i class="fas fa-circle-notch fa-spin"></i>
+            Buscando en Contifico…
+          </div>
+          <div v-else-if="personaSearchStatus === 'found'" class="persona-status-banner found">
+            <i class="fas fa-check-circle"></i>
+            Cliente encontrado — datos completados automáticamente
+          </div>
+          <div v-else-if="personaSearchStatus === 'not-found'" class="persona-status-banner not-found">
+            <i class="fas fa-user-plus"></i>
+            <div>
+              <strong>Cliente nuevo</strong> — no está en Contifico todavía.<br />
+              <span>Completa los datos abajo y se registrará al generar la factura.</span>
+            </div>
+          </div>
+        </Transition>
       </div>
-      <div class="form-group">
+
+      <!-- Autofill fields — show skeleton while searching -->
+      <div class="form-group" :class="{ 'field-loading': isSearchingPersona }">
         <label>Razón Social / Nombre</label>
-        <input v-model="props.modelValue.invoiceData.businessName" />
+        <div v-if="isSearchingPersona" class="skeleton-input"></div>
+        <input v-else v-model="props.modelValue.invoiceData.businessName" placeholder="Nombre completo o razón social" :class="{ 'field-autofilled': personaSearchStatus === 'found' }" />
       </div>
-      <div class="form-group">
+      <div class="form-group" :class="{ 'field-loading': isSearchingPersona }">
         <label>Email</label>
-        <input v-model="props.modelValue.invoiceData.email" type="email" />
+        <div v-if="isSearchingPersona" class="skeleton-input"></div>
+        <input v-else v-model="props.modelValue.invoiceData.email" type="email" placeholder="correo@ejemplo.com" :class="{ 'field-autofilled': personaSearchStatus === 'found' }" />
       </div>
-      <div class="form-group">
+      <div class="form-group" :class="{ 'field-loading': isSearchingPersona }">
         <label>Dirección</label>
-        <input v-model="props.modelValue.invoiceData.address" />
+        <div v-if="isSearchingPersona" class="skeleton-input"></div>
+        <input v-else v-model="props.modelValue.invoiceData.address" placeholder="Dirección de facturación" :class="{ 'field-autofilled': personaSearchStatus === 'found' }" />
       </div>
     </div>
 
@@ -494,6 +559,110 @@ const onRucInput = () => {
 
 .full-width {
   grid-column: 1 / -1;
+}
+
+// ── RUC search input ──────────────────────────────────────────
+.ruc-input-wrapper {
+  position: relative;
+
+  input {
+    width: 100%;
+    padding-right: 2.8rem !important;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  &.is-searching input { border-color: #94a3b8; }
+  &.is-found input     { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.12); }
+  &.is-not-found input { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.12); }
+
+  .ruc-search-icon {
+    position: absolute;
+    right: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.9rem;
+    pointer-events: none;
+    transition: color 0.2s;
+    color: #94a3b8;
+  }
+
+  &.is-searching .ruc-search-icon { color: #6b7280; }
+  &.is-found .ruc-search-icon     { color: #16a34a; }
+  &.is-not-found .ruc-search-icon { color: #f59e0b; }
+}
+
+// ── Status banner ─────────────────────────────────────────────
+.persona-status-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+
+  i { margin-top: 0.1rem; flex-shrink: 0; }
+
+  strong { display: block; margin-bottom: 0.1rem; }
+  span   { opacity: 0.85; }
+
+  &.searching {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    i { animation: spin 0.8s linear infinite; }
+  }
+
+  &.found {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+
+  &.not-found {
+    background: #fffbeb;
+    color: #92400e;
+    border: 1px solid #fde68a;
+  }
+}
+
+// ── Transition ────────────────────────────────────────────────
+.status-slide-enter-active,
+.status-slide-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease, max-height 0.25s ease;
+  overflow: hidden;
+  max-height: 80px;
+}
+.status-slide-enter-from,
+.status-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+  max-height: 0;
+}
+
+// ── Skeleton shimmer ──────────────────────────────────────────
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton-input {
+  height: 48px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+// ── Autofill flash ────────────────────────────────────────────
+@keyframes autofill-flash {
+  0%   { background-color: #f0fdf4; }
+  100% { background-color: transparent; }
+}
+
+.field-autofilled {
+  animation: autofill-flash 1.2s ease forwards;
 }
 
 .form-group {

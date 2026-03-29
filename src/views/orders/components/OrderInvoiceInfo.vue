@@ -13,7 +13,7 @@ const props = defineProps<{
   invoiceSentToSriAt?: string | null,
 }>()
 
-const emit = defineEmits(['open-invoice-modal', 'open-payment-modal', 'generate-invoice', 'view-invoice', 'trigger-auth', 'refresh-auth', 'regenerate-invoice'])
+const emit = defineEmits(['open-invoice-modal', 'open-payment-modal', 'generate-invoice', 'view-invoice', 'trigger-auth', 'refresh-auth', 'regenerate-invoice', 'regenerate-consumidor-final'])
 const { error: showError } = useToast()
 
 const isInvoiceDataComplete = computed(() => {
@@ -104,6 +104,13 @@ const sriSignedTooLong = computed(() => {
 // Factura firmada y enviada al SRI pero sin autorizar — el usuario puede regenerar en cualquier momento
 const canRegenerateNow = computed(() => {
   return props.authStatus === 'Firmado' && !!props.invoiceSentToSriAt
+})
+
+// Detecta si la persona en Contifico tiene tipo: "C" — inválido para SRI.
+// Estos documentos son firmados pero SRI nunca los autoriza silenciosamente.
+// Solución: regenerar con Consumidor Final.
+const hasTipoC = computed(() => {
+  return props.generatedInvoice?.persona?.tipo === 'C'
 })
 
 // Detecta si el tipo de persona seleccionado no coincide con el largo del RUC/cédula.
@@ -212,6 +219,15 @@ const personTypeMismatch = computed(() => {
       >
         <i class="fas fa-rotate-right"></i>
         Regenerar Factura
+      </button>
+      <button
+        v-if="hasTipoC"
+        class="sri-action-btn sri-action-btn--consumidor"
+        @click="$emit('regenerate-consumidor-final')"
+        title="La persona en Contífico tiene tipo 'C' — inválido para el SRI. Genera una nueva factura como Consumidor Final."
+      >
+        <i class="fas fa-user-slash"></i>
+        Regenerar como Consumidor Final
       </button>
     </div>
 
@@ -557,6 +573,13 @@ const personTypeMismatch = computed(() => {
     border-color: #ef4444;
     color: #991b1b;
     &:hover { background: #ef4444; color: white; border-color: #ef4444; }
+  }
+
+  &--consumidor {
+    background: #fff;
+    border-color: #7c3aed;
+    color: #4c1d95;
+    &:hover { background: #7c3aed; color: white; border-color: #7c3aed; }
   }
 }
 

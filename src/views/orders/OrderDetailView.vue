@@ -134,6 +134,33 @@ const handleRegenerateInvoice = async () => {
   }
 }
 
+const handleRegenerateConsumidorFinal = async () => {
+  if (!order.value) return
+  const confirmed = await dialog.confirm(
+    '⚠️ Se emitirá una nueva factura a nombre de Consumidor Final.\n\nEsto es necesario cuando la persona en Contífico tiene tipo inválido (tipo "C") que el SRI rechaza silenciosamente. La factura quedará a nombre de Consumidor Final — no del cliente.\n\nLa factura anterior quedará inactiva en Contífico y la nueva tendrá fecha de hoy.',
+    { title: 'Regenerar como Consumidor Final', confirmLabel: 'Entendido, regenerar', cancelLabel: 'Cancelar', variant: 'warning' }
+  )
+  if (!confirmed) return
+  isLoading.value = true
+  try {
+    await OrderService.regenerateInvoiceConsumidorFinal(order.value._id)
+    success('Factura regenerada como Consumidor Final. Verificando autorización SRI...')
+    fetchOrder()
+    authStatus.value = null
+    pollAuthStatus()
+  } catch (e: any) {
+    const data = e.data
+    const contificoMsg = data?.contificoMessage
+    if (contificoMsg) {
+      showError(`⚠️ Contífico rechazó la factura:<br><small>${contificoMsg}</small>`, 10000)
+    } else {
+      showError(data?.message || e.message || 'Error al regenerar factura como Consumidor Final')
+    }
+  } finally {
+    isLoading.value = false
+  }
+}
+
 const totalPaid = computed(() => {
   if (!order.value?.payments) return 0
   return order.value.payments.reduce((sum: number, p: any) => sum + (p.monto || 0), 0)
@@ -427,6 +454,7 @@ onUnmounted(() => {
             @trigger-auth="handleTriggerAuth"
             @refresh-auth="handleRefreshAuthStatus"
             @regenerate-invoice="handleRegenerateInvoice"
+            @regenerate-consumidor-final="handleRegenerateConsumidorFinal"
           />
         </section>
       </div>

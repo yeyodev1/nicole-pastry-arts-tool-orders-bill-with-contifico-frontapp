@@ -108,6 +108,23 @@ class OrderService extends APIBase {
     }
   }
 
+  async regenerateInvoiceConsumidorFinal(id: string): Promise<any> {
+    try {
+      const response = await this.post<any>(`orders/${id}/invoice/regenerate?force=true`, {
+        invoiceDataOverride: {
+          ruc: '9999999999',
+          businessName: 'sin nombre',
+          email: 'noname@noname.com',
+          address: 'sin dirección',
+        },
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error regenerating invoice (consumidor final):', error)
+      throw error
+    }
+  }
+
   async getInvoicePdf(id: string): Promise<any> {
     try {
       const response = await this.get<any>(`orders/${id}/invoice-pdf`)
@@ -254,6 +271,16 @@ class OrderService extends APIBase {
     } catch (error) {
       console.error('Error triggering batch reauthorize:', error)
       throw error
+    }
+  }
+
+  async searchPersona(identificacion: string): Promise<{ razon_social: string; email: string; direccion: string } | null> {
+    try {
+      const response = await this.get<any>(`persons?identificacion=${identificacion}`)
+      const persona = response.data?.data?.[0]
+      return persona ?? null
+    } catch {
+      return null
     }
   }
 }
