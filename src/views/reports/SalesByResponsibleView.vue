@@ -25,6 +25,7 @@ const totalSales = ref(0)
 const stats = ref<any[]>([])
 const isLoading = ref(false)
 const dateRange = ref({ from: '', to: '' })
+const selectedSource = ref<'nicole' | 'sucree' | null>(null)
 
 /**
  * Returns the effective goal for a stat:
@@ -94,7 +95,7 @@ const initDates = () => {
 const fetchStats = async () => {
   isLoading.value = true
   try {
-    const data = await AnalyticsService.getSalesByResponsible(dateRange.value.from, dateRange.value.to)
+    const data = await AnalyticsService.getSalesByResponsible(dateRange.value.from, dateRange.value.to, selectedSource.value ?? undefined)
     stats.value = data.stats
     totalSales.value = data.stats.reduce((acc: number, curr: any) => acc + curr.totalSales, 0)
     if (data.commissionTiers) {
@@ -219,6 +220,27 @@ onMounted(async () => {
         <div class="nav-top">
 
           <div class="nav-section">
+            <span class="section-label">Tienda</span>
+            <div class="source-toggle source-toggle--vertical">
+              <button
+                class="source-btn"
+                :class="{ active: selectedSource === null }"
+                @click="selectedSource = null; fetchStats()"
+              >Ambas</button>
+              <button
+                class="source-btn nicole"
+                :class="{ active: selectedSource === 'nicole' }"
+                @click="selectedSource = 'nicole'; fetchStats()"
+              >Nicole</button>
+              <button
+                class="source-btn sucree"
+                :class="{ active: selectedSource === 'sucree' }"
+                @click="selectedSource = 'sucree'; fetchStats()"
+              >Sucree</button>
+            </div>
+          </div>
+
+          <div class="nav-section">
             <span class="section-label">Período</span>
             <div class="date-field">
               <span class="date-label">Desde</span>
@@ -286,6 +308,27 @@ onMounted(async () => {
           <span class="filter-label">Hasta</span>
           <CustomDatePicker v-model="dateRange.to" @update:modelValue="fetchStats" />
         </div>
+        <div class="filter-group">
+          <span class="filter-label">Tienda</span>
+          <div class="source-toggle">
+            <button
+              class="source-btn"
+              :class="{ active: selectedSource === null }"
+              @click="selectedSource = null; fetchStats()"
+            >Ambas</button>
+            <button
+              class="source-btn nicole"
+              :class="{ active: selectedSource === 'nicole' }"
+              @click="selectedSource = 'nicole'; fetchStats()"
+            >Nicole</button>
+            <button
+              class="source-btn sucree"
+              :class="{ active: selectedSource === 'sucree' }"
+              @click="selectedSource = 'sucree'; fetchStats()"
+            >Sucree</button>
+          </div>
+        </div>
+
         <div class="filter-actions">
           <button @click="fetchStats" class="btn-update-inline" :disabled="isLoading">
             <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
@@ -1963,6 +2006,67 @@ onMounted(async () => {
     font-weight: 700;
     color: $text-light;
     white-space: nowrap;
+  }
+}
+
+// ── Store source toggle ───────────────────────────────────
+.source-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid $border-light;
+  border-radius: 8px;
+  overflow: hidden;
+  height: 42px;
+
+  &--vertical {
+    height: auto;
+    flex-direction: column;
+    border-radius: 8px;
+
+    .source-btn {
+      border-radius: 0;
+      border-right: none;
+      border-bottom: 1px solid $border-light;
+      height: 38px;
+      &:last-child { border-bottom: none; }
+    }
+  }
+}
+
+.source-btn {
+  flex: 1;
+  border: none;
+  border-right: 1px solid $border-light;
+  background: white;
+  color: $text-light;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0.85rem;
+  transition: all 0.15s;
+  white-space: nowrap;
+
+  &:last-child { border-right: none; }
+
+  &:hover:not(.active) {
+    background: $gray-50;
+    color: $text-dark;
+  }
+
+  &.active {
+    background: $gray-100;
+    color: $text-dark;
+    font-weight: 700;
+  }
+
+  &.nicole.active {
+    background: rgba($NICOLE-PURPLE, 0.1);
+    color: $NICOLE-PURPLE;
+  }
+
+  &.sucree.active {
+    background: #fffbeb;
+    color: #b45309;
   }
 }
 </style>

@@ -18,11 +18,12 @@ interface SalesByResponsibleResponse {
 }
 
 class AnalyticsService extends APIBase {
-  async getSalesByResponsible(from?: string, to?: string): Promise<SalesByResponsibleResponse> {
+  async getSalesByResponsible(from?: string, to?: string, source?: 'nicole' | 'sucree'): Promise<SalesByResponsibleResponse> {
     try {
       const params: any = {}
       if (from) params.from = from
       if (to) params.to = to
+      if (source) params.source = source
 
       const response = await this.get<SalesByResponsibleResponse>('analytics/sales-by-responsible', undefined, { params })
       return response.data
