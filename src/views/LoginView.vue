@@ -23,8 +23,18 @@ const handleLogin = async () => {
       localStorage.setItem('access_token', response.token)
       if (response.user) {
         localStorage.setItem('user_info', JSON.stringify(response.user))
+        
+        // Explicit redirection based on role
+        const role = response.user.role
+        if (role === 'production') router.push('/production/summary')
+        else if (role === 'KITCHEN_DISPLAY') router.push('/production/kitchen')
+        else if (role === 'RetailManager') router.push('/pos/shipments')
+        else if (role === 'SUPPLY_CHAIN_MANAGER') router.push('/supply-chain/summary')
+        else if (role === 'superadmin') router.push('/admin/dashboard')
+        else router.push('/')
+      } else {
+        router.push('/')
       }
-      router.push('/')
     }
   } catch (err: any) {
     if (err.status === 401 || err.message === 'USER_NOT_FOUND' || err.message === 'PASSWORD_INCORRECT') {

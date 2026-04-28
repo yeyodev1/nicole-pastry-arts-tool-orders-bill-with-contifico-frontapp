@@ -38,7 +38,8 @@ const isSalesManager = computed(() => {
   const role = userRole.value?.toUpperCase()
   return role === 'SALES_MANAGER' || role === 'ADMIN' || role === 'SALES'
 })
-const isSales = computed(() => !isRetail.value && !isProduction.value && !isSupplyChain.value)
+const isSuperAdmin = computed(() => userRole.value?.toLowerCase() === 'superadmin')
+const isSales = computed(() => !isRetail.value && !isProduction.value && !isSupplyChain.value && !isSuperAdmin.value)
 
 const closePanel = () => { mobileOpen.value = false }
 </script>
@@ -130,6 +131,27 @@ const closePanel = () => { mobileOpen.value = false }
         <span class="nav-group-label">Configuración</span>
         <router-link to="/supply-chain/points" active-class="active" @click="closePanel">
           <i class="fa-solid fa-location-dot"></i> Puntos de Entrega
+        </router-link>
+      </template>
+
+      <!-- Super Admin / Gerencia -->
+      <template v-else-if="isSuperAdmin">
+        <span class="nav-group-label">Gerencia</span>
+        <router-link to="/admin/dashboard" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-gauge-high"></i> Panel de Control
+        </router-link>
+        <router-link to="/reports/sales-by-responsible" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-chart-line"></i> Ventas &amp; Comisiones
+        </router-link>
+        <router-link to="/reports/delivery" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-motorcycle"></i> Transporte
+        </router-link>
+        <span class="nav-group-label">Administración</span>
+        <router-link to="/admin/users" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-users"></i> Gestión de Equipo
+        </router-link>
+        <router-link to="/settings/branches" active-class="active" @click="closePanel">
+          <i class="fa-solid fa-store"></i> Puntos de Venta
         </router-link>
       </template>
 
