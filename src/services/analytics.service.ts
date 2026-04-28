@@ -1,3 +1,4 @@
+import axios from 'axios'
 import APIBase from './httpBase'
 
 interface SalesByResponsibleResponse {
@@ -29,6 +30,37 @@ class AnalyticsService extends APIBase {
       return response.data
     } catch (error) {
       console.error('Error fetching sales by responsible:', error)
+      throw error
+    }
+  }
+
+  async getSuperAdminAnalytics(period: 'day' | 'week' | 'month' = 'month', source?: 'nicole' | 'sucree'): Promise<any> {
+    try {
+      const params: any = { period }
+      if (source) params.source = source
+      
+      const response = await this.get<any>(`analytics/superadmin/main`, undefined, { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching superadmin analytics:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Fetches Meta Ads insights. Uses VITE_META_ADS_SERVICE_URL from env.
+   */
+  async getMetaAdsInsights(clientId: string, adAccountId: string, datePreset: string = 'this_month'): Promise<any> {
+    try {
+      const baseUrl = (import.meta.env.VITE_META_ADS_SERVICE_URL || 'https://ads-bakano-clients-backapp.vercel.app').replace(/\/$/, '')
+      const url = `${baseUrl}/api/meta/${clientId}/ads-insights`
+      
+      const response = await axios.get(url, {
+        params: { datePreset, adAccountId }
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching Meta Ads insights:', error)
       throw error
     }
   }
