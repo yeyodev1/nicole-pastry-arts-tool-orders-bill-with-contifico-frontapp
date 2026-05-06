@@ -105,7 +105,8 @@ class APIBase {
         }
 
         // Manejar código 401 (No autorizado) - Trigger global expiry
-        if (error.response?.status === 401) {
+        // EXCEPT for meta-ads proxy which might fail independently
+        if (error.response?.status === 401 && !error.config.url?.includes('meta-ads')) {
           const { triggerExpiry } = useSessionExpired();
           triggerExpiry();
         }

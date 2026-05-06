@@ -17,6 +17,7 @@ const router = createRouter({
             if (user?.role === 'KITCHEN_DISPLAY') return { name: 'kitchen-display' }
             if (user?.role === 'RetailManager') return { name: 'pos-shipments' }
             if (user?.role === 'SUPPLY_CHAIN_MANAGER') return { name: 'providers-list' }
+            if (user?.role === 'superadmin') return { name: 'superadmin-dashboard' }
             return { name: 'create-order' }
           } catch (e) {
             return { name: 'login' }
@@ -189,6 +190,12 @@ const router = createRouter({
       name: 'settings-branches',
       component: () => import('../views/settings/BranchManagementView.vue'),
       meta: { requiresAuth: true, role: 'SALES_MANAGER', title: 'Puntos de Venta' }
+    },
+    {
+      path: '/admin/dashboard',
+      name: 'superadmin-dashboard',
+      component: () => import('../views/admin/SuperAdminDashboard.vue'),
+      meta: { requiresAuth: true, role: 'superadmin', title: 'Panel de Gerencia' }
     }
   ],
 })
@@ -224,12 +231,23 @@ router.beforeEach((to, from, next) => {
     else if (role === 'KITCHEN_DISPLAY') next({ name: 'kitchen-display' })
     else if (role === 'RetailManager') next({ name: 'pos-shipments' })
     else if (role === 'SUPPLY_CHAIN_MANAGER') next({ name: 'providers-list' })
+    else if (role === 'superadmin') next({ name: 'superadmin-dashboard' })
     else next({ name: 'create-order' })
     return
   }
 
   // 3. Role-Based Access Control logic
   if (isAuthenticated) {
+    // Superadmin guard - Priority
+    if (role === 'superadmin') {
+      if (!to.path.startsWith('/admin') && !to.path.startsWith('/reports') && !to.path.startsWith('/settings')) {
+        next({ name: 'superadmin-dashboard' })
+        return
+      }
+      next()
+      return
+    }
+
     // Sales Manager user
     if (role === 'SALES_MANAGER' && (!to.path.startsWith('/orders') && !to.path.startsWith('/admin') && !to.path.startsWith('/reports') && !to.path.startsWith('/settings'))) {
       next({ name: 'create-order' })

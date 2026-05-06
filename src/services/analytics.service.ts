@@ -32,6 +32,35 @@ class AnalyticsService extends APIBase {
       throw error
     }
   }
+
+  async getSuperAdminAnalytics(period: 'day' | 'week' | 'month' = 'month', source?: 'nicole' | 'sucree'): Promise<any> {
+    try {
+      const params: any = { period }
+      if (source) params.source = source
+      
+      const response = await this.get<any>(`analytics/superadmin/main`, undefined, { params })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching superadmin analytics:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Fetches Meta Ads insights via backend proxy to avoid CORS issues
+   */
+  async getMetaAdsInsights(clientId: string, adAccountId: string, datePreset: string = 'this_month'): Promise<any> {
+    try {
+      // Now calling our own backend endpoint
+      const response = await this.get<any>('analytics/meta-ads', undefined, {
+        params: { clientId, adAccountId, datePreset }
+      })
+      return response.data
+    } catch (error) {
+      console.error('Error fetching Meta Ads insights via proxy:', error)
+      throw error
+    }
+  }
 }
 
 export default new AnalyticsService()
