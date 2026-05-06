@@ -66,8 +66,8 @@ const ADS_CONFIG = {
     accountId: '4155874788065730'
   },
   nicole: {
-    clientId: '69b662df94d35e1654e58f27', // Placeholder/Inferred
-    accountId: '120231554762190606' // Placeholder
+    clientId: '69a5e54a15be7cf6d45b3cf0',
+    accountId: '6035632256484141'
   }
 }
 

@@ -1,4 +1,3 @@
-import axios from 'axios'
 import APIBase from './httpBase'
 
 interface SalesByResponsibleResponse {
@@ -48,19 +47,17 @@ class AnalyticsService extends APIBase {
   }
 
   /**
-   * Fetches Meta Ads insights. Uses VITE_META_ADS_SERVICE_URL from env.
+   * Fetches Meta Ads insights via backend proxy to avoid CORS issues
    */
   async getMetaAdsInsights(clientId: string, adAccountId: string, datePreset: string = 'this_month'): Promise<any> {
     try {
-      const baseUrl = (import.meta.env.VITE_META_ADS_SERVICE_URL || 'https://ads-bakano-clients-backapp.vercel.app').replace(/\/$/, '')
-      const url = `${baseUrl}/api/meta/${clientId}/ads-insights`
-      
-      const response = await axios.get(url, {
-        params: { datePreset, adAccountId }
+      // Now calling our own backend endpoint
+      const response = await this.get<any>('analytics/meta-ads', undefined, {
+        params: { clientId, adAccountId, datePreset }
       })
       return response.data
     } catch (error) {
-      console.error('Error fetching Meta Ads insights:', error)
+      console.error('Error fetching Meta Ads insights via proxy:', error)
       throw error
     }
   }
