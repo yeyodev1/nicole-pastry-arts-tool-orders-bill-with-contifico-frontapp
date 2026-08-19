@@ -255,11 +255,9 @@ onMounted(() => {
                   </td>
                   <td>
                     <div class="name-block">
-                      <span class="brand-name">
-                        {{ m.name }}
-                        <span v-if="m.fromContifico" class="contifico-badge" :title="`Importado de Contífico (${m.contificoSource || 'nicole'})`">
-                          <i class="fas fa-link"></i> Contífico
-                        </span>
+                      <span class="brand-name">{{ m.name }}</span>
+                      <span v-if="m.fromContifico" class="contifico-badge" :title="`Importado de Contífico (${m.contificoSource || 'nicole'})`">
+                        <i class="fas fa-link"></i> Contífico
                       </span>
                       <span class="invoice-hint" v-if="m.lastInvoice">Fac: {{ m.lastInvoice }}</span>
                     </div>
@@ -295,12 +293,10 @@ onMounted(() => {
                    {{ getDisplayQuantity(m.quantity, m.unit) }} {{ getDisplayUnit(m.unit) }}
                 </div>
               </div>
-              <h3 class="material-title">
-                {{ m.name }}
-                <span v-if="m.fromContifico" class="contifico-badge" :title="`Importado de Contífico (${m.contificoSource || 'nicole'})`">
-                  <i class="fas fa-link"></i> Contífico
-                </span>
-              </h3>
+              <h3 class="material-title">{{ m.name }}</h3>
+              <span v-if="m.fromContifico" class="contifico-badge" :title="`Importado de Contífico (${m.contificoSource || 'nicole'})`">
+                <i class="fas fa-link"></i> Contífico
+              </span>
               <div class="card-meta">
                 <div class="meta-item">
                   <i class="fas fa-truck"></i>
@@ -354,18 +350,19 @@ onMounted(() => {
 .contifico-badge {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
   gap: 0.25rem;
   background: #ede9fe;
   color: #6d28d9;
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  margin-left: 0.4rem;
-  vertical-align: middle;
+  margin-top: 0.2rem;
   white-space: nowrap;
+  width: fit-content;
 
-  i { font-size: 0.6rem; }
+  i { font-size: 0.58rem; }
 }
 
 .header {
