@@ -120,6 +120,9 @@ onMounted(() => {
           <div class="card-top">
             <div class="card-title">
               <h3>{{ p.name }}</h3>
+              <span v-if="p.fromContifico" class="contifico-badge" title="Vinculado a Contífico">
+                <i class="fas fa-link"></i> Contífico
+              </span>
               <span class="item-count-badge" v-if="p.itemCount > 0">{{ p.itemCount }} ítems</span>
             </div>
           </div>
@@ -144,6 +147,9 @@ onMounted(() => {
             <div class="header-info">
               <h3>{{ p.name }}</h3>
               <div class="meta-pills">
+                <span v-if="p.fromContifico" class="pill contifico-badge" title="Vinculado a Contífico">
+                  <i class="fas fa-link"></i> Contífico
+                </span>
                 <span class="pill items" v-if="p.itemCount > 0">{{ p.itemCount }} productos</span>
                 <span class="pill agents" v-if="p.commercialAgents?.length">{{ p.commercialAgents.length }} agentes</span>
               </div>
@@ -195,6 +201,21 @@ onMounted(() => {
   @media (min-width: 768px) {
     padding: 2rem;
   }
+}
+
+.contifico-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #ede9fe;
+  color: #6d28d9;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+
+  i { font-size: 0.6rem; }
 }
 
 .header {
