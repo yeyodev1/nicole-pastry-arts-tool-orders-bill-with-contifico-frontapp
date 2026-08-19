@@ -95,21 +95,24 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="emit('close')">
-    <div class="modal danger-modal" :style="disintegrationStyles">
-      <div class="modal-header">
-        <div class="danger-icon">
-          <i class="fas fa-user-slash"></i>
-        </div>
-        <h2>Eliminar Transporte</h2>
-        <p class="warning-text">¿Estás seguro de eliminar a <strong>{{ personName }}</strong>?</p>
-      </div>
+  <Teleport to="body">
+    <transition name="delete-modal">
+      <div v-if="isOpen" class="modal-overlay" @click.self="emit('close')">
+        <div class="modal danger-modal" :style="disintegrationStyles">
+          <div class="modal-header">
+            <div class="danger-icon">
+              <i class="fas fa-user-slash"></i>
+            </div>
+            <h2>Eliminar Transporte</h2>
+            <p class="warning-text">¿Estás seguro de eliminar a <strong>{{ personName }}</strong>?</p>
+          </div>
 
-      <div class="danger-box">
-        <p>Esta acción eliminará el registro del sistema.</p>
-      </div>
+          <div class="modal-scroll">
+            <div class="danger-box">
+              <p>Esta acción eliminará el registro del sistema.</p>
+            </div>
 
-      <div class="reassign-options">
+            <div class="reassign-options">
         <label>¿Qué hacer con sus pedidos asignados?</label>
         
         <div class="option">
@@ -131,12 +134,13 @@ onUnmounted(() => {
             </select>
         </div>
 
-        <p v-if="availableRiders.length === 0 && reassignAction === 'unassign'" class="hint">
-            No hay otros transportes disponibles para reasignar.
-        </p>
-      </div>
+            <p v-if="availableRiders.length === 0 && reassignAction === 'unassign'" class="hint">
+                No hay otros transportes disponibles para reasignar.
+            </p>
+          </div>
+          </div>
 
-      <div class="actions">
+          <div class="actions">
         <button class="btn-cancel" @click="emit('close')">Cancelar</button>
 
         <div class="hold-button-wrapper danger">
@@ -159,37 +163,87 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
-    </div>
-  </div>
+        </div>
+      </div>
+    </transition>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(8px);
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
   z-index: 3000;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+
+  @media (min-width: 640px) {
+    padding: 1.5rem;
+  }
 }
 
 .modal {
   background: white;
-  width: 95%;
-  max-width: 400px;
-  border-radius: 24px;
+  width: 100%;
+  height: 100dvh; // Mobile: full screen
+  max-height: 100dvh;
+  border-radius: 0;
   padding: 2.5rem 2rem;
   text-align: center;
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.5);
   border: 1px solid #fecaca;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  @media (min-width: 640px) {
+    height: auto;
+    max-height: 90vh;
+    max-width: 400px;
+    border-radius: 24px;
+  }
+}
+
+/* --- Transición de apertura/cierre --- */
+.delete-modal-enter-active {
+  transition: opacity 0.3s ease;
+
+  .modal {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+.delete-modal-leave-active {
+  transition: opacity 0.2s ease;
+
+  .modal {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+}
+
+.delete-modal-enter-from,
+.delete-modal-leave-to {
+  opacity: 0;
+
+  .modal {
+    transform: translateY(24px) scale(0.96);
+    opacity: 0;
+  }
+}
+
+.modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .modal-header {
+  flex-shrink: 0;
   margin-bottom: 1.5rem;
 
   .danger-icon {
@@ -290,6 +344,7 @@ onUnmounted(() => {
 .actions {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 1rem;
 }
 

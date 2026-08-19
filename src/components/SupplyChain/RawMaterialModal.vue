@@ -600,28 +600,32 @@ const categoryOptions = computed(() => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
   display: flex;
   justify-content: center;
-  align-items: end;
+  align-items: center;
   z-index: 2000;
   padding: 0;
-  @media (min-width: 640px) { align-items: center; padding: 1rem; }
+  @media (min-width: 640px) { padding: 1.5rem; }
 }
 
 .pro-modal {
   background: white;
   width: 100%;
-  max-width: 750px;
-  max-height: 95vh;
-  border-radius: 28px 28px 0 0;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 -25px 50px -12px rgba(0, 0, 0, 0.15);
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-  @media (min-width: 640px) { border-radius: 36px; }
+  @media (min-width: 640px) {
+    height: auto;
+    max-height: 90vh;
+    max-width: 750px;
+    border-radius: 36px;
+  }
 }
 
 .modal-header {
@@ -631,6 +635,7 @@ const categoryOptions = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
   position: sticky;
   top: 0;
   z-index: 10;
@@ -644,7 +649,9 @@ const categoryOptions = computed(() => {
 .modal-body {
   padding: 1.5rem;
   overflow-y: auto;
-  flex: 1;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  min-height: 0;
   background: white;
   @media (min-width: 640px) { padding: 2rem 2.5rem; }
 }
@@ -809,6 +816,7 @@ const categoryOptions = computed(() => {
   border-top: 1px solid #f1f5f9;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 1rem;
   .main-actions {
     display: flex;

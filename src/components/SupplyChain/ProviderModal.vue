@@ -181,7 +181,9 @@ const handleConfirmDelete = () => {
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
+  <Teleport to="body">
+    <transition name="provider-modal">
+      <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-content provider-modal">
       <div class="modal-header">
         <div class="header-title">
@@ -334,65 +336,72 @@ const handleConfirmDelete = () => {
       @save="handleSaveItem"
       @delete="handleDeleteItem"
     />
-  </div>
+      </div>
+    </transition>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
   display: flex;
   justify-content: center;
-  align-items: end; // Mobile: aligned to bottom
-  z-index: 1000;
+  align-items: center;
+  z-index: 2000;
   padding: 0; // Mobile: full width
 
   @media (min-width: 640px) {
-    align-items: center;
-    padding: 1rem;
+    padding: 1.5rem;
   }
 }
 
 .modal-content {
   background: white;
-  border-radius: 28px 28px 0 0; // Mobile: top rounded only
+  border-radius: 0; // Mobile: full screen
   width: 100%;
-  max-width: 650px;
-  max-height: 90vh;
-  overflow-y: auto;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   box-shadow: 0 -25px 50px -12px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
   @media (min-width: 640px) {
+    height: auto;
+    max-height: 90vh;
+    max-width: 650px;
     border-radius: 28px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
-    animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
 
-@keyframes slideUp {
-  from {
-    transform: translateY(100%);
-  }
+/* --- Transición de apertura/cierre --- */
+.provider-modal-enter-active {
+  transition: opacity 0.3s ease;
 
-  to {
-    transform: translateY(0);
+  .modal-content {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 }
 
-@keyframes modalIn {
-  from {
+.provider-modal-leave-active {
+  transition: opacity 0.2s ease;
+
+  .modal-content {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+}
+
+.provider-modal-enter-from,
+.provider-modal-leave-to {
+  opacity: 0;
+
+  .modal-content {
+    transform: translateY(24px) scale(0.96);
     opacity: 0;
-    transform: translateY(20px) scale(0.95);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
@@ -402,8 +411,7 @@ const handleConfirmDelete = () => {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid #f1f5f9;
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   background: white;
   z-index: 10;
 
@@ -454,6 +462,10 @@ const handleConfirmDelete = () => {
 
 .modal-body {
   padding: 1.5rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .required-warning {
@@ -815,10 +827,9 @@ const handleConfirmDelete = () => {
 
 .modal-footer {
   padding: 1.5rem;
-  background: #fff; // Sticky footer often looks better white on mobile
+  background: #fff;
   border-top: 1px solid #f1f5f9;
-  position: sticky;
-  bottom: 0;
+  flex-shrink: 0;
   z-index: 10;
 
   // Safe area for iPhone home bar

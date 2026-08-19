@@ -89,34 +89,35 @@ const filtered = computed(() => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
   display: flex;
   justify-content: center;
-  align-items: flex-end;
+  align-items: center;
   z-index: 2000;
   padding: 0;
 
   @media (min-width: 640px) {
-    align-items: center;
-    padding: 1rem;
+    padding: 1.5rem;
   }
 }
 
 .select-provider-modal {
   background: white;
   width: 100%;
-  max-width: 560px;
-  max-height: 80vh;
-  border-radius: 28px 28px 0 0;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 -25px 50px -12px rgba(0, 0, 0, 0.15);
 
   @media (min-width: 640px) {
+    height: auto;
+    max-height: 90vh;
+    max-width: 560px;
     border-radius: 36px;
-    max-height: 75vh;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
   }
 }
@@ -132,15 +133,13 @@ const filtered = computed(() => {
 .modal-bounce-enter-from {
   opacity: 0;
   .select-provider-modal {
-    transform: translateY(100%);
-    @media (min-width: 640px) { transform: translateY(24px) scale(0.92); }
+    transform: translateY(24px) scale(0.96);
   }
 }
 .modal-bounce-leave-to {
   opacity: 0;
   .select-provider-modal {
-    transform: translateY(100%);
-    @media (min-width: 640px) { transform: translateY(16px) scale(0.96); }
+    transform: translateY(24px) scale(0.96);
   }
 }
 
@@ -221,7 +220,9 @@ const filtered = computed(() => {
 .modal-body {
   padding: 1.25rem 1.5rem;
   overflow-y: auto;
-  flex: 1;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  min-height: 0;
 
   @media (min-width: 640px) {
     padding: 1.5rem 2.5rem 2rem;

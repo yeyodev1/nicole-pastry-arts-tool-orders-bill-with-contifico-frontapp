@@ -358,33 +358,34 @@ watch([deliveryDate, orderItems], () => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(8px);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
   display: flex;
   justify-content: center;
-  align-items: flex-end; // Bottom sheet behavior by default (mobile)
+  align-items: center;
   z-index: 2100;
   padding: 0;
 
   @media (min-width: 640px) {
-    align-items: center;
-    padding: 1rem;
+    padding: 1.5rem;
   }
 }
 
 .pro-modal {
   background: white;
   width: 100%;
-  max-width: 650px;
-  max-height: 90vh;
-  border-radius: 28px 28px 0 0; // Top corners rounded for bottom sheet
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0; // Mobile: full screen
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.1);
-  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   @media (min-width: 640px) {
+    height: auto;
+    max-height: 90vh;
+    max-width: 650px;
     border-radius: 32px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   }
@@ -396,6 +397,7 @@ watch([deliveryDate, orderItems], () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 
   h2 {
     font-size: 1.5rem;
@@ -436,7 +438,9 @@ watch([deliveryDate, orderItems], () => {
 .modal-body {
   padding: 2rem;
   overflow-y: auto;
-  flex: 1;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .section-title {
@@ -686,6 +690,7 @@ watch([deliveryDate, orderItems], () => {
   border-top: 1px solid #f1f5f9;
   display: flex;
   justify-content: flex-end;
+  flex-shrink: 0;
   gap: 1rem;
 
   button {
