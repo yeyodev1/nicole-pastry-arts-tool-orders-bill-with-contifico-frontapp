@@ -110,8 +110,30 @@ watch(() => props.isOpen, (newVal) => {
         }]
       }
     }
+    // Snapshot para detectar cambios sin guardar
+    initialSnapshot.value = JSON.stringify(form.value)
+    showCloseConfirm.value = false
   }
 }, { immediate: true })
+
+// --- Cierre con confirmación si hay cambios sin guardar ---
+const initialSnapshot = ref('')
+const showCloseConfirm = ref(false)
+
+const isDirty = computed(() => JSON.stringify(form.value) !== initialSnapshot.value)
+
+const requestClose = () => {
+  if (isDirty.value) {
+    showCloseConfirm.value = true
+  } else {
+    emit('close')
+  }
+}
+
+const confirmClose = () => {
+  showCloseConfirm.value = false
+  emit('close')
+}
 
 const addProvider = () => {
   if (form.value.providers.length < 3) {
@@ -227,15 +249,34 @@ const categoryOptions = computed(() => {
 <template>
   <Teleport to="body">
     <transition name="modal-bounce">
-      <div v-if="isOpen" class="modal-overlay" @click.self="$emit('close')">
+      <div v-if="isOpen" class="modal-overlay" @click.self="requestClose">
         <div class="modal-content pro-modal">
           <div class="modal-header">
             <div class="header-info">
               <h2>{{ materialToEdit ? 'Editar Material' : 'Nuevo Material' }}</h2>
               <p v-if="materialToEdit" class="sku-subtitle">SKU: {{ form.code }}</p>
             </div>
-            <button class="btn-close" @click="$emit('close')">&times;</button>
+            <button class="btn-close" @click="requestClose">&times;</button>
           </div>
+
+          <!-- Confirmación amigable de cierre con cambios sin guardar -->
+          <transition name="confirm-fade">
+            <div v-if="showCloseConfirm" class="close-confirm-overlay" @click.self="showCloseConfirm = false">
+              <div class="close-confirm-card">
+                <div class="confirm-icon"><i class="fas fa-hand-paper"></i></div>
+                <h3>¿Cerrar sin guardar?</h3>
+                <p>Hiciste cambios que aún no se guardan. Si cierras ahora, se perderán.</p>
+                <div class="confirm-actions">
+                  <button type="button" class="btn-keep-editing" @click="showCloseConfirm = false">
+                    Seguir editando
+                  </button>
+                  <button type="button" class="btn-discard" @click="confirmClose">
+                    Cerrar sin guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </transition>
 
           <div class="modal-body">
             <!-- SECTION 1: Información Básica -->
@@ -406,7 +447,7 @@ const categoryOptions = computed(() => {
 
           <div class="modal-footer pro-footer">
             <div class="main-actions">
-              <button class="btn-cancel" @click="$emit('close')">Cerrar</button>
+              <button class="btn-cancel" @click="requestClose">Cerrar</button>
               <HoldConfirmButton 
                 :label="materialToEdit ? 'GUARDAR CAMBIOS' : 'CREAR MATERIAL'"
                 :disabled="isSaving || !form.name"
@@ -434,6 +475,128 @@ const categoryOptions = computed(() => {
 </template>
 
 <style lang="scss" scoped>
+/* --- Transición de apertura/cierre del modal --- */
+.modal-bounce-enter-active {
+  transition: opacity 0.25s ease;
+
+  .modal-content {
+    transition: transform 0.35s cubic-bezier(0.34, 1.4, 0.64, 1), opacity 0.25s ease;
+  }
+}
+
+.modal-bounce-leave-active {
+  transition: opacity 0.2s ease;
+
+  .modal-content {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+}
+
+.modal-bounce-enter-from,
+.modal-bounce-leave-to {
+  opacity: 0;
+
+  .modal-content {
+    transform: translateY(48px) scale(0.96);
+    opacity: 0;
+  }
+}
+
+/* --- Confirmación amigable de cierre --- */
+.confirm-fade-enter-active,
+.confirm-fade-leave-active {
+  transition: opacity 0.2s ease;
+
+  .close-confirm-card { transition: transform 0.25s cubic-bezier(0.34, 1.4, 0.64, 1); }
+}
+
+.confirm-fade-enter-from,
+.confirm-fade-leave-to {
+  opacity: 0;
+
+  .close-confirm-card { transform: scale(0.92); }
+}
+
+.close-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+  padding: 1.5rem;
+}
+
+.close-confirm-card {
+  background: white;
+  border-radius: 16px;
+  padding: 1.75rem;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+
+  .confirm-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #fef3c7;
+    color: #d97706;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    margin: 0 auto 0.9rem;
+  }
+
+  h3 {
+    margin: 0 0 0.4rem;
+    font-size: 1.1rem;
+    color: #1e293b;
+  }
+
+  p {
+    margin: 0 0 1.25rem;
+    font-size: 0.88rem;
+    color: #64748b;
+    line-height: 1.5;
+  }
+}
+
+.confirm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  .btn-keep-editing {
+    background: #7c3aed;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 0.7rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 0.9rem;
+
+    &:hover { background: #6d28d9; }
+  }
+
+  .btn-discard {
+    background: transparent;
+    color: #b91c1c;
+    border: none;
+    border-radius: 10px;
+    padding: 0.6rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.85rem;
+
+    &:hover { background: #fef2f2; }
+  }
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
