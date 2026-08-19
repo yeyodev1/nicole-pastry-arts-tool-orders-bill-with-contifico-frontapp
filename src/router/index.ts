@@ -75,6 +75,12 @@ const router = createRouter({
       meta: { title: 'Iniciar Sesión' }
     },
     {
+      path: '/reset-password',
+      name: 'reset-password',
+      component: () => import('../views/ResetPasswordView.vue'),
+      meta: { title: 'Restablecer Contraseña' }
+    },
+    {
       path: '/production',
       redirect: '/production/summary'
     },
