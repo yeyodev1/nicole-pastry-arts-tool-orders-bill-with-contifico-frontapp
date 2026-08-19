@@ -255,7 +255,12 @@ onMounted(() => {
                   </td>
                   <td>
                     <div class="name-block">
-                      <span class="brand-name">{{ m.name }}</span>
+                      <span class="brand-name">
+                        {{ m.name }}
+                        <span v-if="m.fromContifico" class="contifico-badge" :title="`Importado de Contífico (${m.contificoSource || 'nicole'})`">
+                          <i class="fas fa-link"></i> Contífico
+                        </span>
+                      </span>
                       <span class="invoice-hint" v-if="m.lastInvoice">Fac: {{ m.lastInvoice }}</span>
                     </div>
                   </td>
@@ -290,7 +295,12 @@ onMounted(() => {
                    {{ getDisplayQuantity(m.quantity, m.unit) }} {{ getDisplayUnit(m.unit) }}
                 </div>
               </div>
-              <h3 class="material-title">{{ m.name }}</h3>
+              <h3 class="material-title">
+                {{ m.name }}
+                <span v-if="m.fromContifico" class="contifico-badge" :title="`Importado de Contífico (${m.contificoSource || 'nicole'})`">
+                  <i class="fas fa-link"></i> Contífico
+                </span>
+              </h3>
               <div class="card-meta">
                 <div class="meta-item">
                   <i class="fas fa-truck"></i>
@@ -339,6 +349,23 @@ onMounted(() => {
   margin: 0 auto;
   min-height: 100vh;
   background: #fcfcfd;
+}
+
+.contifico-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #ede9fe;
+  color: #6d28d9;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+  white-space: nowrap;
+
+  i { font-size: 0.6rem; }
 }
 
 .header {
