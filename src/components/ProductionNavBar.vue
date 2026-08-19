@@ -25,6 +25,7 @@ const handleLogout = () => {
       <router-link to="/production/summary" class="nav-item" active-class="active">Órdenes</router-link>
       <router-link to="/production/orders" class="nav-item" active-class="active">Rutas</router-link>
       <router-link to="/production/reports" class="nav-item" active-class="active">Reportes</router-link>
+      <router-link to="/production/requisitions" class="nav-item" active-class="active">Pedir a Bodega</router-link>
     </nav>
   </header>
 </template>

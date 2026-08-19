@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import ProductSearchPanel from './ProductSearchPanel.vue'
+import RequisitionService from '@/services/requisition.service'
 
 const router = useRouter()
 const isPanelOpen = ref(false)
+const pendingRequisitions = ref(0)
 
 const handleLogout = () => {
   localStorage.removeItem('access_token')
   localStorage.removeItem('user_info')
   router.push('/login')
 }
+
+onMounted(async () => {
+  try {
+    pendingRequisitions.value = await RequisitionService.getPendingCount()
+  } catch { /* silencioso */ }
+})
 </script>
 
 <template>
@@ -37,11 +45,32 @@ const handleLogout = () => {
       <router-link to="/supply-chain/materials" class="nav-item" active-class="active">Materia Prima</router-link>
       <router-link to="/supply-chain/categories" class="nav-item" active-class="active">Categorías</router-link>
       <router-link to="/supply-chain/warehouse" class="nav-item" active-class="active">Bodega</router-link>
+      <router-link to="/supply-chain/receptions" class="nav-item" active-class="active">Recepciones</router-link>
+      <router-link to="/supply-chain/requisitions" class="nav-item" active-class="active">
+        Requerimientos
+        <span v-if="pendingRequisitions" class="pending-badge">{{ pendingRequisitions }}</span>
+      </router-link>
+      <router-link to="/supply-chain/loans" class="nav-item" active-class="active">Préstamos</router-link>
+      <router-link to="/supply-chain/payables" class="nav-item" active-class="active">Por Pagar</router-link>
+      <router-link to="/supply-chain/invoices" class="nav-item" active-class="active">Facturas</router-link>
+      <router-link to="/supply-chain/reports" class="nav-item" active-class="active">Reportes</router-link>
     </nav>
   </header>
 
   <ProductSearchPanel :is-open="isPanelOpen" @close="isPanelOpen = false" />
 </template>
+
+<style lang="scss" scoped>
+.pending-badge {
+  background: #dc2626;
+  color: white;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.4rem;
+  margin-left: 0.3rem;
+  font-weight: 700;
+}
+</style>
 
 <style lang="scss" scoped>
 .navbar {
