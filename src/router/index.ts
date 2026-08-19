@@ -17,6 +17,7 @@ const router = createRouter({
             if (user?.role === 'KITCHEN_DISPLAY') return { name: 'kitchen-display' }
             if (user?.role === 'RetailManager') return { name: 'pos-shipments' }
             if (user?.role === 'SUPPLY_CHAIN_MANAGER') return { name: 'providers-list' }
+            if (user?.role === 'WAREHOUSE_RECEIVER') return { name: 'supply-receptions' }
             if (user?.role === 'superadmin') return { name: 'superadmin-dashboard' }
             return { name: 'create-order' }
           } catch (e) {
@@ -160,6 +161,42 @@ const router = createRouter({
       component: () => import('../views/SupplyChain/InvoicesView.vue'),
       meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Facturas de Compra' }
     },
+    {
+      path: '/supply-chain/payables',
+      name: 'supply-payables',
+      component: () => import('../views/SupplyChain/PayablesView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Cuentas por Pagar' }
+    },
+    {
+      path: '/supply-chain/receptions',
+      name: 'supply-receptions',
+      component: () => import('../views/SupplyChain/ReceptionsView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Recepción de Mercadería' }
+    },
+    {
+      path: '/supply-chain/requisitions',
+      name: 'supply-requisitions',
+      component: () => import('../views/SupplyChain/RequisitionsView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Requerimientos Internos' }
+    },
+    {
+      path: '/supply-chain/loans',
+      name: 'supply-loans',
+      component: () => import('../views/SupplyChain/LoansView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Préstamos entre Bodegas' }
+    },
+    {
+      path: '/supply-chain/reports',
+      name: 'supply-reports',
+      component: () => import('../views/SupplyChain/WarehouseReportsView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Reportes de Bodega' }
+    },
+    {
+      path: '/production/requisitions',
+      name: 'production-requisitions',
+      component: () => import('../views/production/RequisitionCreateView.vue'),
+      meta: { requiresAuth: true, role: 'production', title: 'Pedir a Bodega' }
+    },
     // POS / RetailManager Routes
     {
       path: '/pos/shipments',
@@ -231,6 +268,7 @@ router.beforeEach((to, from, next) => {
     else if (role === 'KITCHEN_DISPLAY') next({ name: 'kitchen-display' })
     else if (role === 'RetailManager') next({ name: 'pos-shipments' })
     else if (role === 'SUPPLY_CHAIN_MANAGER') next({ name: 'providers-list' })
+    else if (role === 'WAREHOUSE_RECEIVER') next({ name: 'supply-receptions' })
     else if (role === 'superadmin') next({ name: 'superadmin-dashboard' })
     else next({ name: 'create-order' })
     return
@@ -287,6 +325,12 @@ router.beforeEach((to, from, next) => {
     // Supply Chain Manager guard
     if (role === 'SUPPLY_CHAIN_MANAGER' && !to.path.startsWith('/supply-chain')) {
       next({ name: 'inventory-summary' })
+      return
+    }
+
+    // Warehouse Receiver guard — solo recepciones y requerimientos
+    if (role === 'WAREHOUSE_RECEIVER' && !['/supply-chain/receptions', '/supply-chain/requisitions'].includes(to.path)) {
+      next({ name: 'supply-receptions' })
       return
     }
   }

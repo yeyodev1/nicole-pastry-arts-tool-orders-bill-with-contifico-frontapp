@@ -38,6 +38,18 @@ class WarehouseService extends APIBase {
     const response = await this.patch<any>(`warehouse/invoices/${encodeURIComponent(invoiceRef)}/pay`, {});
     return response.data;
   }
+
+  async getExpiring(days = 30) {
+    const response = await this.get<any>(`warehouse/expiring?days=${days}`);
+    return response.data;
+  }
+
+  async getDispatchSummary(params: { from: string; to: string; entity?: string }) {
+    const query = new URLSearchParams({ from: params.from, to: params.to });
+    if (params.entity) query.append('entity', params.entity);
+    const response = await this.get<any>(`warehouse/dispatch-summary?${query.toString()}`);
+    return response.data;
+  }
 }
 
 export default new WarehouseService();

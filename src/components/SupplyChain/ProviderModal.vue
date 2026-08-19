@@ -21,6 +21,7 @@ const form = ref({
   phone: '',
   address: '',
   ruc: '',
+  creditDays: 0,
   commercialAgents: [] as any[]
 })
 
@@ -88,6 +89,7 @@ const resetForm = () => {
     phone: '',
     address: '',
     ruc: '',
+    creditDays: 0,
     commercialAgents: []
   }
   relatedItems.value = []
@@ -205,6 +207,10 @@ const handleConfirmDelete = () => {
           <div class="form-group">
             <label>RUC *</label>
             <input v-model="form.ruc" type="text" placeholder="1234567890001" :class="{ 'field-required': !isEditing && !form.ruc?.trim() }" />
+          </div>
+          <div class="form-group">
+            <label>Días de crédito</label>
+            <input v-model.number="form.creditDays" type="number" min="0" placeholder="0 = contado" />
           </div>
           <div class="form-group">
             <label>Teléfono *</label>
