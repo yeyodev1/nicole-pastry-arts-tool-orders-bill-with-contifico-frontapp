@@ -34,6 +34,12 @@ class RawMaterialService extends APIBase {
     cacheInvalidate('raw-materials:')
     return response.data
   }
+
+  /** Stock en vivo por bodega en Contífico (solo materiales vinculados) */
+  async getContificoStock(id: string) {
+    const response = await this.get<any>(`raw-materials/${id}/contifico-stock`)
+    return response.data
+  }
 }
 
 export default new RawMaterialService()

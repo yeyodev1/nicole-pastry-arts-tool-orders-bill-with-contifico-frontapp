@@ -92,7 +92,9 @@ onMounted(fetchRiders)
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal-overlay" @click.self="emit('close')">
+  <Teleport to="body">
+    <transition name="management-modal">
+      <div v-if="isOpen" class="modal-overlay" @click.self="emit('close')">
     <div class="modal management-modal">
         <header class="modal-header">
             <div class="header-content">
@@ -159,35 +161,73 @@ onMounted(fetchRiders)
             @confirm="handleDelete"
         />
     </div>
-  </div>
+      </div>
+    </transition>
+  </Teleport>
 </template>
 
 <style lang="scss" scoped>
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
   z-index: 2000; // Lower than child modals but higher than page
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+
+  @media (min-width: 640px) {
+    padding: 1.5rem;
+  }
 }
 
 .modal.management-modal {
   background: white;
-  width: 95%;
-  max-width: 800px;
-  height: 80vh; // Fixed height for scrolling list
-  border-radius: 20px;
+  width: 100%;
+  height: 100dvh; // Mobile: full screen
+  max-height: 100dvh;
+  border-radius: 0;
   padding: 0; // Padding handled by internal sections
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+
+  @media (min-width: 640px) {
+    height: auto;
+    max-height: 90vh;
+    max-width: 800px;
+    border-radius: 20px;
+  }
+}
+
+/* --- Transición de apertura/cierre --- */
+.management-modal-enter-active {
+  transition: opacity 0.3s ease;
+
+  .modal.management-modal {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+.management-modal-leave-active {
+  transition: opacity 0.2s ease;
+
+  .modal.management-modal {
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+}
+
+.management-modal-enter-from,
+.management-modal-leave-to {
+  opacity: 0;
+
+  .modal.management-modal {
+    transform: translateY(24px) scale(0.96);
+    opacity: 0;
+  }
 }
 
 .modal-header {
@@ -196,6 +236,7 @@ onMounted(fetchRiders)
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  flex-shrink: 0;
   background: white;
 
   h2 {
@@ -232,8 +273,10 @@ onMounted(fetchRiders)
 }
 
 .riders-list {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 2rem;
   background: $gray-50;
 
@@ -407,7 +450,8 @@ onMounted(fetchRiders)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 200px;
   gap: 1rem;
   color: $text-light;
 

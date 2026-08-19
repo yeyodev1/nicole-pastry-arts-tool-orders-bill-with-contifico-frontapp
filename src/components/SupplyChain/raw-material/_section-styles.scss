@@ -1,0 +1,170 @@
+/* Estilos compartidos de las secciones del modal de materia prima */
+@use "@/styles/index.scss" as *;
+
+.modal-section {
+  margin-bottom: 0.5rem;
+}
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  i { color: $NICOLE-PURPLE; opacity: 0.7; }
+
+  @media (min-width: 640px) { font-size: 0.8rem; }
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+
+  .section-title { margin-bottom: 0; }
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  label {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: #64748b;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+
+    i { color: #cbd5e1; font-size: 0.7rem; }
+  }
+
+  input, select {
+    padding: 0.9rem;
+    border: 2px solid #f1f5f9;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 600;
+    background: #f8fafc;
+
+    &:focus { outline: none; border-color: $NICOLE-PURPLE; }
+  }
+
+  .input-hint { font-size: 0.72rem; color: #94a3b8; }
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+
+  @media (min-width: 640px) { flex-direction: row; gap: 1.5rem; }
+
+  .form-group { flex: 1; }
+}
+
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+
+  .chip {
+    padding: 0.4rem 0.9rem;
+    border-radius: 99px;
+    border: 2px solid #f1f5f9;
+    background: white;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover { border-color: #e2e8f0; color: #334155; }
+
+    &--active {
+      border-color: $NICOLE-PURPLE;
+      background: rgba($NICOLE-PURPLE, 0.05);
+      color: $NICOLE-PURPLE;
+    }
+  }
+}
+
+.new-cat-row { margin-top: 0.5rem; }
+
+.btn-add-cat-inline {
+  background: transparent;
+  border: 2px dashed #e2e8f0;
+  color: #94a3b8;
+  padding: 0.5rem 1rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: $NICOLE-PURPLE;
+    color: $NICOLE-PURPLE;
+    background: rgba($NICOLE-PURPLE, 0.02);
+  }
+}
+
+.new-cat-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  position: relative;
+
+  .new-cat-input {
+    flex: 1;
+    padding: 0.6rem 0.9rem;
+    border: 2px solid $NICOLE-PURPLE;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    background: white;
+
+    &:focus { outline: none; }
+  }
+
+  .btn-cat-confirm, .btn-cat-cancel {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-cat-confirm {
+    background: $NICOLE-PURPLE;
+    color: white;
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+
+  .btn-cat-cancel { background: #f1f5f9; color: #64748b; }
+
+  .cat-error {
+    position: absolute;
+    bottom: -1.25rem;
+    left: 0;
+    font-size: 0.7rem;
+    color: #ef4444;
+    font-weight: 600;
+  }
+}
