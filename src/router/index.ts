@@ -198,6 +198,12 @@ const router = createRouter({
       meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Reportes de Bodega' }
     },
     {
+      path: '/supply-chain/team',
+      name: 'supply-team',
+      component: () => import('../views/admin/ManagementUsersView.vue'),
+      meta: { requiresAuth: true, role: 'SUPPLY_CHAIN_MANAGER', title: 'Equipo de Bodega' }
+    },
+    {
       path: '/production/requisitions',
       name: 'production-requisitions',
       component: () => import('../views/production/RequisitionCreateView.vue'),

@@ -73,6 +73,11 @@ const filteredRoles = computed(() => {
       return ALL_ROLES
     }
 
+    // El gerente de bodega solo gestiona receptores de bodega
+    if (role === 'SUPPLY_CHAIN_MANAGER') {
+      return ALL_ROLES.filter(r => r.value === 'WAREHOUSE_RECEIVER')
+    }
+
     // Sales Managers and any other role authorized to be here
     // can only create/manage Sales Reps and other Sales Managers
     return ALL_ROLES.filter(r => ['SALES_REP', 'SALES_MANAGER'].includes(r.value))
@@ -99,7 +104,7 @@ const openCreateModal = () => {
     name: '',
     email: '',
     password: '',
-    role: 'SALES_REP',
+    role: (filteredRoles.value[0]?.value || 'SALES_REP') as User['role'],
     contificoSource: 'nicole' // Default: solo Nicole
   }
   showModal.value = true
