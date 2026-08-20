@@ -1,13 +1,27 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useRegisterSW } from 'virtual:pwa-register/vue'
 
+// Intervalo de chequeo de nueva versión (ms)
+const CHECK_INTERVAL_MS = 60 * 1000
+
 const { needRefresh, updateServiceWorker } = useRegisterSW({
+  onRegisteredSW(_url, registration) {
+    if (!registration) return
+    // Buscar actualizaciones periódicamente aunque el usuario no navegue
+    setInterval(() => registration.update().catch(() => {}), CHECK_INTERVAL_MS)
+  },
   onRegisterError(error) {
     console.error('SW registration error:', error)
   },
 })
 
 const update = () => updateServiceWorker(true)
+
+// Actualización forzada: al detectar nueva versión se recarga sin pedir confirmación
+watch(needRefresh, (v) => {
+  if (v) update()
+}, { immediate: true })
 const dismiss = () => { needRefresh.value = false }
 </script>
 

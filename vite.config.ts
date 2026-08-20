@@ -9,11 +9,15 @@ export default defineConfig({
     vue(),
     vueDevTools(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       // Only cache the app shell — no full offline mode
       workbox: {
         globPatterns: ['**/*.{js,css,html}'],
         navigateFallback: null,
+        // Forzar que la nueva versión tome control de inmediato en todos los clientes
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
       },
       manifest: false, // No PWA manifest needed, just update detection
     }),
