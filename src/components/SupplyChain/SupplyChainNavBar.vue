@@ -54,6 +54,7 @@ onMounted(async () => {
       <router-link to="/supply-chain/payables" class="nav-item" active-class="active">Por Pagar</router-link>
       <router-link to="/supply-chain/invoices" class="nav-item" active-class="active">Facturas</router-link>
       <router-link to="/supply-chain/reports" class="nav-item" active-class="active">Reportes</router-link>
+      <router-link to="/supply-chain/team" class="nav-item" active-class="active">Equipo</router-link>
     </nav>
   </header>
 
