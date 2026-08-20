@@ -50,7 +50,8 @@ const ALL_ROLES = [
   { value: 'admin', label: 'Administrador' },
   { value: 'production', label: 'Producción' },
   { value: 'RetailManager', label: 'Gerente Retail' },
-  { value: 'SUPPLY_CHAIN_MANAGER', label: 'Gerente Logística' }
+  { value: 'SUPPLY_CHAIN_MANAGER', label: 'Gerente Logística' },
+  { value: 'WAREHOUSE_RECEIVER', label: 'Receptor de Bodega' }
 ]
 
 const contificoSourceOptions = [
