@@ -2,9 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 // ── Configuración (editar aquí para ajustar o quitar el aviso) ────────────
-// Fecha límite: lunes 24 de agosto de 2026, 10:00 (Ecuador, UTC-5)
-const DEADLINE = new Date('2026-08-24T10:00:00-05:00')
-const DEADLINE_LABEL = 'lunes 24 de agosto'
+// Fecha límite: lunes 31 de agosto de 2026, 10:00 (Ecuador, UTC-5)
+const DEADLINE = new Date('2026-08-31T10:00:00-05:00')
+const DEADLINE_LABEL = 'lunes 31 de agosto'
 const PHONE_DISPLAY = '+593 99 525 4965'
 const PHONE_WA = '593995254965'
 // Para retirar el aviso una vez confirmado el pago: poner en false y desplegar
