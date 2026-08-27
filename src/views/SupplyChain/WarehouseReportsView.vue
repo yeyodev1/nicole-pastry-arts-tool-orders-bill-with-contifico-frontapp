@@ -64,30 +64,244 @@ const fetchLeftovers = async () => {
   }
 }
 
+// ── Estilos del export (misma paleta de la vista) ─────────────────────
+const XL_PURPLE = '7C3AED'
+const XL_PURPLE_SOFT = 'EDE9FE'
+const XL_AMBER = 'B45309'
+const XL_AMBER_SOFT = 'FEF3C7'
+const XL_HEADER_BG = 'F9FAFB'
+const XL_LINE = 'E5E7EB'
+
+const xlBorder = {
+  top: { style: 'thin', color: { rgb: XL_LINE } },
+  bottom: { style: 'thin', color: { rgb: XL_LINE } },
+  left: { style: 'thin', color: { rgb: XL_LINE } },
+  right: { style: 'thin', color: { rgb: XL_LINE } },
+}
+
+const LEFTOVER_HEADERS = [
+  'Fecha', 'Sucursal', 'Producto', 'Unidad', 'Stock inicial', 'Recibido',
+  'Bajas', 'Nota bajas', 'Sobrante (cierre)', 'Venta implícita',
+  'Objetivo mañana', 'Pedido final', 'Registró',
+]
+// Columnas numéricas (0-indexed) que se alinean a la derecha
+const LEFTOVER_NUM_COLS = new Set([4, 5, 6, 8, 9, 10, 11])
+
 const exportLeftovers = () => {
   if (filteredLeftovers.value.length === 0) {
     showError('No hay datos para exportar')
     return
   }
-  const rows = filteredLeftovers.value.map(r => ({
-    Fecha: r.date,
-    Sucursal: r.branch,
-    Producto: r.productName,
-    Unidad: r.unit,
-    'Stock inicial': r.stockInicial ?? 'sin cierre',
-    Recibido: r.recibido,
-    Bajas: r.bajas,
-    'Nota bajas': r.bajasNote || '',
-    'Sobrante (cierre)': r.stockFinal,
-    'Venta implícita': r.ventaImplicita ?? 'sin cierre previo',
-    'Objetivo mañana': r.stockObjectiveTomorrow,
-    'Pedido final': r.pedidoFinal,
-    Registró: r.submittedBy,
-  }))
-  const ws = XLSX.utils.json_to_sheet(rows)
+
+  const data = filteredLeftovers.value
   const wb = XLSX.utils.book_new()
+
+  // ── Hoja 1: Sobrantes POS ──────────────────────────────────────────
+  const branchLabel = posBranch.value === 'all' ? 'Todas las sucursales' : posBranch.value
+  const aoa: any[][] = [
+    [`Sobrantes de cierre en Punto de Venta — ${posFrom.value} al ${posTo.value}`],
+    [`${branchLabel} · Cuadre: stock inicial + recibido − bajas − sobrante = venta implícita`],
+    [],
+    LEFTOVER_HEADERS,
+  ]
+
+  for (const r of data) {
+    aoa.push([
+      r.date,
+      r.branch,
+      r.productName,
+      r.unit,
+      r.stockInicial ?? 'sin cierre',
+      r.recibido,
+      r.bajas,
+      r.bajasNote || '',
+      r.stockFinal,
+      r.ventaImplicita ?? 'sin cierre previo',
+      r.stockObjectiveTomorrow,
+      r.pedidoFinal,
+      r.submittedBy,
+    ])
+  }
+
+  // Fila de totales
+  const sum = (pick: (r: LeftoverRow) => number | null) =>
+    data.reduce((acc, r) => acc + (pick(r) ?? 0), 0)
+  aoa.push([
+    'TOTALES', '', `${data.length} registros`, '', '',
+    sum(r => r.recibido), sum(r => r.bajas), '',
+    sum(r => r.stockFinal), sum(r => r.ventaImplicita), '', sum(r => r.pedidoFinal), '',
+  ])
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  const HEADER_ROW = 3 // 0-indexed
+  const TOTAL_ROW = aoa.length - 1
+
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: LEFTOVER_HEADERS.length - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: LEFTOVER_HEADERS.length - 1 } },
+  ]
+  ws['!cols'] = [12, 20, 26, 9, 13, 11, 9, 26, 17, 16, 15, 13, 18].map(w => ({ wch: w }))
+  ws['!rows'] = [{ hpt: 24 }, { hpt: 18 }]
+  ws['!autofilter'] = {
+    ref: XLSX.utils.encode_range(
+      { r: HEADER_ROW, c: 0 },
+      { r: TOTAL_ROW - 1, c: LEFTOVER_HEADERS.length - 1 }
+    ),
+  }
+
+  const styleCell = (row: number, col: number, style: any) => {
+    const ref = XLSX.utils.encode_cell({ r: row, c: col })
+    if (!ws[ref]) ws[ref] = { t: 's', v: '' }
+    ws[ref].s = style
+  }
+
+  // Título y subtítulo
+  for (let c = 0; c < LEFTOVER_HEADERS.length; c++) {
+    styleCell(0, c, {
+      font: { bold: true, sz: 13, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: XL_PURPLE } },
+      alignment: { vertical: 'center', indent: 1 },
+    })
+    styleCell(1, c, {
+      font: { sz: 9, color: { rgb: '4C1D95' } },
+      fill: { fgColor: { rgb: XL_PURPLE_SOFT } },
+      alignment: { vertical: 'center', indent: 1 },
+    })
+  }
+
+  // Encabezados
+  for (let c = 0; c < LEFTOVER_HEADERS.length; c++) {
+    styleCell(HEADER_ROW, c, {
+      font: { bold: true, sz: 10, color: { rgb: '374151' } },
+      fill: { fgColor: { rgb: XL_HEADER_BG } },
+      border: xlBorder,
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    })
+  }
+
+  // Cuerpo
+  for (let i = 0; i < data.length; i++) {
+    const row = HEADER_ROW + 1 + i
+    for (let c = 0; c < LEFTOVER_HEADERS.length; c++) {
+      const value = aoa[row][c]
+      const isMissing = typeof value === 'string' && value.startsWith('sin cierre')
+      const isLoss = c === 6 && typeof value === 'number' && value > 0
+
+      styleCell(row, c, {
+        font: {
+          sz: 10,
+          bold: c === 8,
+          italic: isMissing,
+          color: { rgb: isMissing ? '9CA3AF' : isLoss ? XL_AMBER : '374151' },
+        },
+        fill: isLoss ? { fgColor: { rgb: XL_AMBER_SOFT } } : undefined,
+        border: xlBorder,
+        alignment: {
+          horizontal: LEFTOVER_NUM_COLS.has(c) || isMissing ? 'right' : 'left',
+        },
+      })
+    }
+  }
+
+  // Totales
+  for (let c = 0; c < LEFTOVER_HEADERS.length; c++) {
+    styleCell(TOTAL_ROW, c, {
+      font: { bold: true, sz: 10, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: XL_PURPLE } },
+      border: xlBorder,
+      alignment: { horizontal: LEFTOVER_NUM_COLS.has(c) ? 'right' : 'left' },
+    })
+  }
+
   XLSX.utils.book_append_sheet(wb, ws, 'Sobrantes POS')
-  XLSX.writeFile(wb, `sobrantes-pos_${posFrom.value}_${posTo.value}.xlsx`)
+
+  // ── Hoja 2: Días sin cierre ────────────────────────────────────────
+  // Viaja en el archivo para que el aviso no se pierda al reenviarlo.
+  const missingAoa: any[][] = [
+    ['Días sin cierre registrado — no se puede cuadrar inventario'],
+    [],
+    ['Fecha', 'Sucursal', 'Efecto'],
+  ]
+  if (missingDays.value.length === 0) {
+    missingAoa.push(['—', '—', 'Todas las sucursales cerraron todos los días del rango.'])
+  } else {
+    for (const m of missingDays.value) {
+      missingAoa.push([m.date, m.branch, 'El día siguiente abre sin stock inicial conocido'])
+    }
+  }
+
+  const ws2 = XLSX.utils.aoa_to_sheet(missingAoa)
+  ws2['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }]
+  ws2['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 52 }]
+  ws2['!rows'] = [{ hpt: 22 }]
+
+  const styleCell2 = (row: number, col: number, style: any) => {
+    const ref = XLSX.utils.encode_cell({ r: row, c: col })
+    if (!ws2[ref]) ws2[ref] = { t: 's', v: '' }
+    ws2[ref].s = style
+  }
+
+  for (let c = 0; c < 3; c++) {
+    styleCell2(0, c, {
+      font: { bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: XL_AMBER } },
+      alignment: { vertical: 'center', indent: 1 },
+    })
+    styleCell2(2, c, {
+      font: { bold: true, sz: 10, color: { rgb: '374151' } },
+      fill: { fgColor: { rgb: XL_HEADER_BG } },
+      border: xlBorder,
+    })
+  }
+  for (let r = 3; r < missingAoa.length; r++) {
+    for (let c = 0; c < 3; c++) {
+      styleCell2(r, c, {
+        font: { sz: 10, color: { rgb: '374151' } },
+        fill: missingDays.value.length ? { fgColor: { rgb: XL_AMBER_SOFT } } : undefined,
+        border: xlBorder,
+      })
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws2, 'Días sin cierre')
+
+  // ── Hoja 3: Cómo leerlo ────────────────────────────────────────────
+  const guide: Array<[string, boolean]> = [
+    ['Qué es este reporte', true],
+    ['Lo que el punto de venta registra al cerrar cada día, por sucursal: cuántas unidades sobraron.', false],
+    ['Sale de la app en Reportes de Bodega → pestaña "Sobrantes POS" → botón Excel.', false],
+    ['', false],
+    ['El cuadre', true],
+    ['Stock inicial + Recibido − Bajas − Sobrante = Venta implícita', false],
+    ['La venta implícita es lo que salió según el inventario. Se compara contra la venta real de Contífico:', false],
+    ['si no coinciden, hay descuadre en esa sucursal, ese día, ese producto.', false],
+    ['', false],
+    ['Columnas', true],
+    ['Stock inicial — con cuánto abrió (el sobrante del día anterior).', false],
+    ['Recibido — lo que llegó de producción con recepción confirmada.', false],
+    ['Bajas — mermas del día, con su nota.', false],
+    ['Sobrante (cierre) — cuántas quedaron al cerrar. Este es el dato clave.', false],
+    ['Objetivo mañana / Pedido final — cuánto debería tener y cuánto pidió.', false],
+    ['', false],
+    ['"Sin cierre"', true],
+    ['Si una sucursal no registró su cierre, ese día aparece en la hoja "Días sin cierre" y el día', false],
+    ['siguiente abre con "sin cierre" en vez de cero. Nunca se asume cero: un cero falso descuadraría', false],
+    ['el inventario en silencio.', false],
+  ]
+  const ws3 = XLSX.utils.aoa_to_sheet(guide.map(([text]) => ['', text]))
+  ws3['!cols'] = [{ wch: 3 }, { wch: 105 }]
+  guide.forEach(([, isHead], i) => {
+    const ref = XLSX.utils.encode_cell({ r: i, c: 1 })
+    if (!ws3[ref]) return
+    ws3[ref].s = isHead
+      ? { font: { bold: true, sz: 11, color: { rgb: XL_PURPLE } } }
+      : { font: { sz: 10, color: { rgb: '374151' } } }
+  })
+  XLSX.utils.book_append_sheet(wb, ws3, 'Cómo leerlo')
+
+  const branchTag = posBranch.value === 'all' ? 'todas' : posBranch.value.toLowerCase().replace(/\s+/g, '-')
+  XLSX.writeFile(wb, `sobrantes-pos_${branchTag}_${posFrom.value}_${posTo.value}.xlsx`)
+}
 }
 
 const fetchSummary = async () => {
