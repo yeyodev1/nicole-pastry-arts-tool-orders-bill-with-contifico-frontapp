@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+// @ts-ignore
+import XLSX from 'xlsx-js-style'
 import WarehouseService from '@/services/warehouse.service'
+import { posRestockService, type LeftoverRow } from '@/services/pos-restock.service'
+import { useBranches } from '@/composables/useBranches'
 import { useToast } from '@/composables/useToast'
 
 const { error: showError } = useToast()
 
-const tab = ref<'dispatch' | 'expiring'>('dispatch')
+const tab = ref<'dispatch' | 'expiring' | 'leftovers'>('dispatch')
 
 // Envíos por rango
 const today = new Date()
@@ -23,6 +27,68 @@ const days = ref(30)
 const expiring = ref<any[]>([])
 const expiredCount = ref(0)
 const isLoadingExpiring = ref(false)
+
+// Sobrantes POS (F10)
+const { branchNames, load: loadBranches } = useBranches()
+const posFrom = ref(toISO(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6)))
+const posTo = ref(toISO(today))
+const posBranch = ref('all')
+const posProduct = ref('')
+const leftovers = ref<LeftoverRow[]>([])
+const leftoverTotals = ref<any>(null)
+const missingDays = ref<Array<{ date: string; branch: string }>>([])
+const isLoadingLeftovers = ref(false)
+
+const filteredLeftovers = computed(() => {
+  const q = posProduct.value.trim().toLowerCase()
+  if (!q) return leftovers.value
+  return leftovers.value.filter(r => r.productName.toLowerCase().includes(q))
+})
+
+const fetchLeftovers = async () => {
+  if (!posFrom.value || !posTo.value) return
+  isLoadingLeftovers.value = true
+  try {
+    const res = await posRestockService.getLeftovers({
+      from: posFrom.value,
+      to: posTo.value,
+      branch: posBranch.value,
+    })
+    leftovers.value = res.rows
+    leftoverTotals.value = res.totals
+    missingDays.value = res.missing
+  } catch {
+    showError('Error cargando los sobrantes de punto de venta')
+  } finally {
+    isLoadingLeftovers.value = false
+  }
+}
+
+const exportLeftovers = () => {
+  if (filteredLeftovers.value.length === 0) {
+    showError('No hay datos para exportar')
+    return
+  }
+  const rows = filteredLeftovers.value.map(r => ({
+    Fecha: r.date,
+    Sucursal: r.branch,
+    Producto: r.productName,
+    Unidad: r.unit,
+    'Stock inicial': r.stockInicial ?? 'sin cierre',
+    Recibido: r.recibido,
+    Bajas: r.bajas,
+    'Nota bajas': r.bajasNote || '',
+    'Sobrante (cierre)': r.stockFinal,
+    'Venta implícita': r.ventaImplicita ?? 'sin cierre previo',
+    'Objetivo mañana': r.stockObjectiveTomorrow,
+    'Pedido final': r.pedidoFinal,
+    Registró: r.submittedBy,
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Sobrantes POS')
+  XLSX.writeFile(wb, `sobrantes-pos_${posFrom.value}_${posTo.value}.xlsx`)
+}
 
 const fetchSummary = async () => {
   if (!from.value || !to.value) return
@@ -63,6 +129,8 @@ const fmtDate = (d?: string) => d
 onMounted(() => {
   fetchSummary()
   fetchExpiring()
+  loadBranches()
+  fetchLeftovers()
 })
 </script>
 
@@ -75,6 +143,10 @@ onMounted(() => {
         <button :class="{ active: tab === 'expiring' }" @click="tab = 'expiring'">
           Caducidades
           <span v-if="expiredCount" class="alert-dot">{{ expiredCount }}</span>
+        </button>
+        <button :class="{ active: tab === 'leftovers' }" @click="tab = 'leftovers'">
+          Sobrantes POS
+          <span v-if="missingDays.length" class="alert-dot">{{ missingDays.length }}</span>
         </button>
       </div>
     </div>
@@ -137,7 +209,7 @@ onMounted(() => {
     </section>
 
     <!-- Caducidades -->
-    <section v-else>
+    <section v-else-if="tab === 'expiring'">
       <div class="filters">
         <div class="filter">
           <label>Próximos días</label>
@@ -184,6 +256,100 @@ onMounted(() => {
           </tbody>
         </table>
       </div>
+    </section>
+
+    <!-- Sobrantes POS (F10) -->
+    <section v-else>
+      <div class="filters">
+        <div class="filter">
+          <label>Desde</label>
+          <input type="date" v-model="posFrom" />
+        </div>
+        <div class="filter">
+          <label>Hasta</label>
+          <input type="date" v-model="posTo" />
+        </div>
+        <div class="filter">
+          <label>Sucursal</label>
+          <select v-model="posBranch">
+            <option value="all">Todas</option>
+            <option v-for="b in branchNames" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+        <div class="filter grow">
+          <label>Producto (opcional)</label>
+          <input type="text" v-model="posProduct" placeholder="Filtrar por nombre..." />
+        </div>
+        <button class="btn-primary" @click="fetchLeftovers">Generar</button>
+        <button class="btn-ghost" @click="exportLeftovers"><i class="fas fa-file-excel"></i> Excel</button>
+      </div>
+
+      <div v-if="isLoadingLeftovers" class="loading-state">
+        <div class="spinner"></div>
+      </div>
+
+      <template v-else>
+        <div class="totals-bar" v-if="leftoverTotals">
+          <span><strong>{{ leftoverTotals.rows }}</strong> registros</span>
+          <span>Sobrante total: <strong>{{ leftoverTotals.stockFinal }}</strong></span>
+          <span>Recibido: <strong>{{ leftoverTotals.recibido }}</strong></span>
+          <span>Bajas: <strong>{{ leftoverTotals.bajas }}</strong></span>
+          <span>Venta implícita: <strong>{{ leftoverTotals.ventaImplicita }}</strong></span>
+        </div>
+
+        <div v-if="missingDays.length" class="warn-bar">
+          <i class="fas fa-triangle-exclamation"></i>
+          <span>
+            <strong>{{ missingDays.length }}</strong> día(s) sin cierre registrado —
+            no se puede cuadrar inventario:
+            <em>{{ missingDays.slice(0, 6).map(m => `${m.branch} ${m.date}`).join(' · ') }}</em>
+            <span v-if="missingDays.length > 6"> y {{ missingDays.length - 6 }} más</span>
+          </span>
+        </div>
+
+        <div v-if="filteredLeftovers.length === 0" class="empty-state">
+          <p>No hay cierres de punto de venta en el rango seleccionado.</p>
+        </div>
+
+        <div v-else class="table-wrap">
+          <table class="rep-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Sucursal</th>
+                <th>Producto</th>
+                <th class="num">Stock inicial</th>
+                <th class="num">Recibido</th>
+                <th class="num">Bajas</th>
+                <th class="num">Sobrante</th>
+                <th class="num">Venta implícita</th>
+                <th class="num">Pedido</th>
+                <th>Registró</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, idx) in filteredLeftovers" :key="idx">
+                <td>{{ fmtDate(row.date) }}</td>
+                <td><span class="badge badge--branch">{{ row.branch }}</span></td>
+                <td>{{ row.productName }}</td>
+                <td class="num">
+                  <span v-if="row.stockInicial === null" class="muted">sin cierre</span>
+                  <template v-else>{{ row.stockInicial }}</template>
+                </td>
+                <td class="num">{{ row.recibido }}</td>
+                <td class="num" :class="{ 'cell--warn': row.bajas > 0 }" :title="row.bajasNote || ''">{{ row.bajas }}</td>
+                <td class="num"><strong>{{ row.stockFinal }}</strong> {{ row.unit }}</td>
+                <td class="num">
+                  <span v-if="row.ventaImplicita === null" class="muted">—</span>
+                  <template v-else>{{ row.ventaImplicita }}</template>
+                </td>
+                <td class="num">{{ row.pedidoFinal }}</td>
+                <td>{{ row.submittedBy }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
     </section>
   </div>
 </template>
@@ -331,6 +497,46 @@ onMounted(() => {
   border-radius: 50%;
   margin: 0 auto;
   animation: spin 0.8s linear infinite;
+}
+
+.btn-ghost {
+  background: white;
+  color: #4c1d95;
+  border: 1px solid #c4b5fd;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover { background: #f5f3ff; }
+  i { margin-right: 0.35rem; }
+}
+
+.warn-bar {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+
+  em { font-style: normal; opacity: 0.85; }
+}
+
+.muted { color: #9ca3af; font-size: 0.8rem; }
+.cell--warn { color: #b45309; font-weight: 700; }
+
+.badge--branch { background: #ede9fe; color: #5b21b6; }
+
+.filter select {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: white;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
