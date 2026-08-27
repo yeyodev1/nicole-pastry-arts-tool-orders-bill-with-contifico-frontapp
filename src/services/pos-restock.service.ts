@@ -65,6 +65,30 @@ export interface WeeklyObjectives {
   sunday: number;
 }
 
+export interface LeftoverRow {
+  date: string;
+  branch: string;
+  productName: string;
+  unit: string;
+  stockInicial: number | null;
+  recibido: number;
+  bajas: number;
+  bajasNote?: string;
+  stockFinal: number;
+  stockObjectiveTomorrow: number;
+  pedidoFinal: number;
+  ventaImplicita: number | null;
+  submittedBy: string;
+  submittedAt: string;
+}
+
+export interface LeftoversReport {
+  rows: LeftoverRow[];
+  totals: { rows: number; stockFinal: number; bajas: number; recibido: number; ventaImplicita: number };
+  branches: string[];
+  missing: Array<{ date: string; branch: string }>;
+}
+
 class POSRestockService extends APIBase {
   /**
    * Get the daily form data for a specific branch.
@@ -90,6 +114,20 @@ class POSRestockService extends APIBase {
 
   async upsertObjective(payload: any): Promise<void> {
     await this.post('pos/restock/objectives', payload);
+  }
+
+  /**
+   * F10 — Sobrantes de cierre por día y sucursal (reporte de bodega).
+   * `branch` omitido o 'all' devuelve todas las sucursales.
+   */
+  async getLeftovers(params: { from: string; to: string; branch?: string }): Promise<LeftoversReport> {
+    const { data } = await this.get<any>('pos/restock/leftovers', undefined, { params });
+    return {
+      rows: data.rows || [],
+      totals: data.totals || { rows: 0, stockFinal: 0, bajas: 0, recibido: 0, ventaImplicita: 0 },
+      branches: data.branches || [],
+      missing: data.missing || [],
+    };
   }
 
   async deleteObjective(branch: string, productName: string): Promise<void> {
