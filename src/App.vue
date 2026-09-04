@@ -5,7 +5,6 @@ import ToastContainer from './components/ToastContainer.vue'
 import SessionExpiredModal from './components/SessionExpiredModal.vue'
 import DialogModal from './components/DialogModal.vue'
 import UpdateBanner from './components/UpdateBanner.vue'
-import PaymentNotice from './components/PaymentNotice.vue'
 
 const route = useRoute()
 </script>
@@ -20,15 +19,11 @@ const route = useRoute()
     <DialogModal />
     <SessionExpiredModal />
     <UpdateBanner />
-    <PaymentNotice />
   </div>
 </template>
 
 <style scoped>
-/* Espacio para la barra fija de aviso de pago (PaymentNotice) */
 .app-shell {
-  padding-top: 40px;
-  box-sizing: border-box;
   display: flex;
   height: 100vh;
   height: 100dvh;

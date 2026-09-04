@@ -183,7 +183,7 @@ const exportLeftovers = () => {
   for (let i = 0; i < data.length; i++) {
     const row = HEADER_ROW + 1 + i
     for (let c = 0; c < LEFTOVER_HEADERS.length; c++) {
-      const value = aoa[row][c]
+      const value = aoa[row]?.[c]
       const isMissing = typeof value === 'string' && value.startsWith('sin cierre')
       const isLoss = c === 6 && typeof value === 'number' && value > 0
 
@@ -301,7 +301,6 @@ const exportLeftovers = () => {
 
   const branchTag = posBranch.value === 'all' ? 'todas' : posBranch.value.toLowerCase().replace(/\s+/g, '-')
   XLSX.writeFile(wb, `sobrantes-pos_${branchTag}_${posFrom.value}_${posTo.value}.xlsx`)
-}
 }
 
 const fetchSummary = async () => {

@@ -204,7 +204,7 @@ const closePanel = () => { mobileOpen.value = false }
 .mobile-topbar {
   display: none;
   position: fixed;
-  top: 40px; // debajo de la barra de aviso de pago (PaymentNotice)
+  top: 0;
   left: 0;
   right: 0;
   height: 52px;
@@ -291,10 +291,10 @@ const closePanel = () => { mobileOpen.value = false }
 // ─── Sidebar panel ───────────────────────────────────────────────────────────
 .app-sidebar {
   position: fixed;
-  top: 40px; // debajo de la barra de aviso de pago (PaymentNotice)
+  top: 0;
   left: 0;
   width: 220px;
-  height: calc(100vh - 40px);
+  height: 100vh;
   background: white;
   border-right: 1px solid $border-light;
   display: flex;
