@@ -70,6 +70,10 @@ const deliveryBadgeClass = computed(() => ({
         <span class="label">Responsable Original</span>
         <span class="value">{{ order.createdBy || order.responsible }}</span>
       </div>
+      <div v-if="order.sellerName" class="stat-card">
+        <span class="label">Vendedor (comisión)</span>
+        <span class="value">{{ order.sellerName }}</span>
+      </div>
       <div v-if="order.updatedBy && order.updatedBy !== (order.createdBy || order.responsible)" class="stat-card highlight">
         <span class="label">Última Edición</span>
         <span class="value">{{ order.updatedBy }}</span>

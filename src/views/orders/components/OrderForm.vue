@@ -6,6 +6,7 @@ import { useToast } from '@/composables/useToast'
 import { deliveryService, type DeliveryPerson } from '@/services/delivery.service'
 import orderService from '@/services/order.service'
 import { useBranches } from '@/composables/useBranches'
+import { useSellers } from '@/composables/useSellers'
 import PaymentFields from './PaymentFields.vue'
 import CustomDatePicker from '@/components/ui/CustomDatePicker.vue'
 import CustomTimeSelect from '@/components/ui/CustomTimeSelect.vue'
@@ -21,6 +22,7 @@ const dialog = useDialog()
 const toast = useToast()
 const { branchNames, load: loadBranches } = useBranches()
 const BRANCHES = branchNames
+const { activeSellers, load: loadSellers } = useSellers()
 
 const isDelivery = computed(() => props.modelValue.deliveryType === 'delivery')
 
@@ -39,7 +41,17 @@ const fetchRiders = async () => {
 onMounted(() => {
   fetchRiders()
   loadBranches()
+  loadSellers()
 })
+
+// El nombre del vendedor viaja junto a la cédula para que el pedido lo muestre
+// sin tener que volver a consultar el catálogo.
+const handleSellerChange = (e: Event) => {
+  const identification = (e.target as HTMLSelectElement).value
+  const seller = activeSellers.value.find(s => s.identification === identification)
+  props.modelValue.sellerIdentification = seller?.identification
+  props.modelValue.sellerName = seller?.name
+}
 
 const handleRiderChange = (e: Event) => {
   const target = e.target as HTMLSelectElement
@@ -239,6 +251,17 @@ const onRucInput = () => {
           <i class="fa-solid fa-user-shield"></i>
           {{ props.modelValue.responsible }}
         </div>
+      </div>
+
+      <div class="form-group">
+        <label>Vendedor a cargo</label>
+        <select :value="props.modelValue.sellerIdentification || ''" @change="handleSellerChange">
+          <option value="">Sin vendedor asignado</option>
+          <option v-for="seller in activeSellers" :key="seller._id" :value="seller.identification">
+            {{ seller.name }}
+          </option>
+        </select>
+        <small class="hint">Sale en la factura de Contífico — es la base del cálculo de comisiones.</small>
       </div>
 
       <div class="form-group">

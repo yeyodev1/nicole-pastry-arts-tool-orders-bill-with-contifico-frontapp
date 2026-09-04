@@ -85,6 +85,9 @@ export interface OrderFormData {
   invoiceNeeded: boolean
   comments: string
   responsible: string
+  /** Vendedor a cargo — sale en la factura de Contífico para el cálculo de comisiones. */
+  sellerIdentification?: string
+  sellerName?: string
   salesChannel: string
   paymentMethod: string
   invoiceData: InvoiceData
