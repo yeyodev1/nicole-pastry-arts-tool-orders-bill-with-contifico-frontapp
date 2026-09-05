@@ -54,15 +54,11 @@ const referenceLabel = computed(() => {
         :disabled="isLoading"
     />
 
-    <!-- Bank Account Input (Manual Text) -->
-    <BaseInput
-        v-if="isTransfer"
-        label="Banco de Destino"
-        v-model="localData.cuenta_bancaria_id"
-        placeholder="Ej: Banco Pichincha"
-        :disabled="isLoading"
-        hint="Escriba el nombre del banco."
-    />
+    <!-- Banco de destino: fijo, ya no lo escribe el vendedor -->
+    <div v-if="isTransfer" class="bank-notice">
+      <i class="fa-solid fa-building-columns"></i>
+      <span>Las transferencias se registran en <strong>Banco Guayaquil</strong>.</span>
+    </div>
 
     <div class="abono-section">
        <label class="toggle-label">
@@ -166,6 +162,29 @@ const referenceLabel = computed(() => {
     color: $text-light;
     font-size: 0.85rem;
     margin-left: 1.85rem;
+  }
+}
+
+.bank-notice {
+  background: lighten-color($NICOLE-PURPLE, 58%);
+  color: $text-light;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba($NICOLE-PURPLE, 0.18);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+
+  strong {
+    color: $NICOLE-PURPLE;
+    font-weight: 600;
+  }
+
+  i {
+    font-size: 1rem;
+    flex-shrink: 0;
+    color: $NICOLE-PURPLE;
   }
 }
 
