@@ -106,12 +106,9 @@ const submitPayment = async () => {
   }
 
   if (formData.value.forma_cobro === 'TRA') {
-    if (!formData.value.cuenta_bancaria_id) {
-      await dialog.alert("Debe seleccionar una cuenta bancaria para la transferencia.", { variant: 'warning', title: 'Campo requerido' })
-      return
-    }
+    // El banco de destino lo fija el backend: todas las transferencias entran
+    // a Banco Guayaquil. El vendedor ya no lo escribe.
     payload.numero_comprobante = formData.value.numero_comprobante
-    payload.cuenta_bancaria_id = formData.value.cuenta_bancaria_id
   }
 
   emit('submit', payload)
